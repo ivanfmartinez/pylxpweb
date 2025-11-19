@@ -101,9 +101,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
-    "--cov=pylxpweb",
-    "--cov-report=term-missing",
-    "--cov-report=html",
 ]
 markers = [
     "integration: Integration tests that require real API access",
