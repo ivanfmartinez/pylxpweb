@@ -30,13 +30,13 @@ The base URL is fully configurable to support regional variations and future end
 ## Installation
 
 ```bash
-# From source (development)
-git clone https://github.com/yourusername/pylxpweb.git
-cd pylxpweb
-pip install -e .
-
-# From PyPI (when published)
+# From PyPI (recommended)
 pip install pylxpweb
+
+# From source (development)
+git clone https://github.com/joyfulhouse/pylxpweb.git
+cd pylxpweb
+uv sync --all-extras --dev
 ```
 
 ## Quick Start
@@ -174,7 +174,7 @@ except APIError as e:
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/pylxpweb.git
+git clone https://github.com/joyfulhouse/pylxpweb.git
 cd pylxpweb
 
 # Install development dependencies
@@ -188,29 +188,29 @@ pip install pytest pytest-asyncio pytest-cov aiohttp
 
 ```bash
 # Run all tests
-pytest tests/
+uv run pytest tests/
 
 # Run with coverage
-pytest tests/ --cov=pylxpweb --cov-report=term-missing
+uv run pytest tests/ --cov=pylxpweb --cov-report=term-missing
 
-# Run specific test file
-pytest tests/test_client.py -v
+# Run unit tests only
+uv run pytest tests/unit/ -v
 
-# Run integration tests (requires credentials in tests/secrets.py)
-pytest tests/integration/ -v
+# Run integration tests (requires credentials in .env)
+uv run pytest tests/integration/ -v -m integration
 ```
 
 ### Code Quality
 
 ```bash
 # Format code
-ruff check --fix && ruff format
+uv run ruff check --fix && uv run ruff format
 
 # Type checking
-mypy pylxpweb/ --strict
+uv run mypy src/pylxpweb/ --strict
 
 # Lint code
-ruff check pylxpweb/ tests/
+uv run ruff check src/ tests/
 ```
 
 ## Project Structure
@@ -218,28 +218,37 @@ ruff check pylxpweb/ tests/
 ```
 pylxpweb/
 ├── docs/                        # Documentation
-│   ├── luxpower-api.yaml        # OpenAPI 3.0 specification
-│   └── claude/                  # Claude Code session docs
-│
-├── research/                    # REFERENCE ONLY - DO NOT USE
-│   ├── eg4_web_monitor/         # Production HA integration (reference)
-│   └── eg4_inverter_ha/         # Earlier implementation (reference)
+│   ├── api/                     # API endpoint documentation
+│   │   └── LUXPOWER_API.md      # Complete API reference
+│   └── luxpower-api.yaml        # OpenAPI 3.0 specification
 │
 ├── src/pylxpweb/                # Main package
 │   ├── __init__.py              # Package exports
 │   ├── client.py                # LuxpowerClient (async API client)
+│   ├── endpoints/               # Endpoint-specific implementations
+│   │   ├── devices.py           # Device and runtime data
+│   │   ├── plants.py            # Station/plant management
+│   │   ├── control.py           # Control operations
+│   │   ├── firmware.py          # Firmware management
+│   │   └── ...                  # Additional endpoints
 │   ├── models.py                # Pydantic data models
+│   ├── constants.py             # Constants and register definitions
 │   └── exceptions.py            # Custom exception classes
 │
-├── tests/                       # Test suite (95% coverage)
+├── tests/                       # Test suite (90%+ coverage)
 │   ├── conftest.py              # Pytest fixtures and aiohttp mock server
-│   ├── unit/                    # Unit tests
-│   │   ├── test_client.py       # Client tests (21 tests)
-│   │   └── test_models.py       # Model tests (23 tests)
-│   └── integration/             # Integration tests (live API, DO NOT RUN without credentials)
-│       └── test_live_api.py     # Safe read-then-write integration tests
+│   ├── unit/                    # Unit tests (136 tests)
+│   │   ├── test_client.py       # Client tests
+│   │   ├── test_models.py       # Model tests
+│   │   └── test_*.py            # Additional unit tests
+│   ├── integration/             # Integration tests (requires credentials)
+│   │   └── test_live_api.py     # Live API integration tests
+│   └── samples/                 # Sample API responses for testing
 │
 ├── .env.example                 # Environment variable template
+├── .github/                     # GitHub Actions workflows
+│   ├── workflows/               # CI/CD pipelines
+│   └── dependabot.yml          # Dependency updates
 ├── CLAUDE.md                    # Claude Code development guidelines
 ├── README.md                    # This file
 └── pyproject.toml              # Package configuration (uv-based)
@@ -303,21 +312,14 @@ Contributions are welcome! Please:
 - Use async/await for all I/O operations
 - Document all public APIs with Google-style docstrings
 
-## Research Materials
-
-The `research/` directory contains reference implementations:
-- **eg4_web_monitor/** - Complete production Home Assistant integration
-- **eg4_inverter_ha/** - Earlier implementation for comparison
-
-**IMPORTANT**: These are for research and understanding API behavior only. Do not import or use in production code.
-
 ## Credits
 
-This project is based on research from:
-- [EG4 Web Monitor](https://github.com/joyfulhouse/eg4_web_monitor) - Production Home Assistant integration
-- [EG4 Inverter HA](https://github.com/twistedroutes/eg4_inverter_ha) - Original HA integration
+This project builds upon research and knowledge from the Home Assistant community:
+- Inspired by production Home Assistant integrations for EG4/Luxpower devices
+- API endpoint research and documentation
+- Best practices for async Python libraries
 
-Special thanks to the Home Assistant community for the foundation this project builds upon.
+Special thanks to the Home Assistant community for their pioneering work with these devices.
 
 ## License
 
@@ -327,21 +329,14 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ### Finding Your Endpoint
 
-Use the automated discovery script to test which endpoint works with your credentials:
+Most EG4 users in North America should use `https://monitor.eg4electronics.com` (the default).
 
-```bash
-# Install dependencies
-pip install aiohttp python-dotenv
-
-# Configure credentials
-cp .env.example .env
-# Edit .env with your username and password
-
-# Run discovery script
-python scripts/test_endpoints.py
-```
-
-The script will test all known endpoints and recommend the correct one for your account.
+If you're unsure which endpoint to use:
+1. Try the default first: `https://monitor.eg4electronics.com`
+2. For Luxpower branded systems:
+   - US: `https://us.luxpowertek.com`
+   - EU: `https://eu.luxpowertek.com`
+3. Check your official mobile app or web portal URL for the correct regional endpoint
 
 ### Contributing New Endpoints
 
@@ -362,7 +357,7 @@ This library communicates with the official EG4/Luxpower API using the same endp
 ## Support
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/pylxpweb/issues)
+- **Issues**: [GitHub Issues](https://github.com/joyfulhouse/pylxpweb/issues)
 - **API Reference**: [docs/api/LUXPOWER_API.md](docs/api/LUXPOWER_API.md)
 
 ## Status
