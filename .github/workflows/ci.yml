@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run ruff check
+        run: uv run ruff check src/ tests/
+
+      - name: Run ruff format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Run mypy
+        run: uv run mypy --strict src/pylxpweb/
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run unit tests
+        run: uv run pytest tests/unit/ --cov=pylxpweb --cov-report=term-missing --cov-report=xml --cov-report=html
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov/
+          retention-days: 30
+
+      - name: Upload pytest results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-results
+          path: .pytest_cache/
+          retention-days: 30
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    timeout-minutes: 20
+    # Skip for Dependabot PRs (no secret access)
+    if: github.actor != 'dependabot[bot]'
+    environment: integration-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run integration tests
+        env:
+          LUXPOWER_USERNAME: ${{ secrets.LUXPOWER_USERNAME }}
+          LUXPOWER_PASSWORD: ${{ secrets.LUXPOWER_PASSWORD }}
+          LUXPOWER_BASE_URL: ${{ secrets.LUXPOWER_BASE_URL }}
+        run: uv run pytest tests/integration/ -v -m integration
+
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [lint, test, integration]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "Lint job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "Test job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.integration.result }}" != "success" ]] && [[ "${{ needs.integration.result }}" != "skipped" ]]; then
+            echo "Integration job failed"
+            exit 1
+          fi
+          echo "All CI checks passed!"

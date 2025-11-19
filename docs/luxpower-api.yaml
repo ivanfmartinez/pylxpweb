@@ -1,0 +1,3229 @@
+openapi: 3.0.3
+info:
+  title: Luxpower/EG4 Inverter Web Monitoring API
+  description: |
+    Unofficial API documentation for Luxpower/EG4 solar inverter web monitoring system.
+
+    ## Base URLs
+
+    The API is available on multiple regional endpoints:
+
+    - **EG4 Electronics (North America)**: https://monitor.eg4electronics.com
+    - **Luxpower US**: https://us.luxpowertek.com
+    - **Luxpower EU**: https://eu.luxpowertek.com
+    - **Luxpower Asia**: https://as.luxpowertek.com
+    - **Luxpower India**: https://ind.luxpowertek.com
+    - **Luxpower Philippines**: https://phi.luxpowertek.com
+    - **Luxpower Vietnam**: https://vn.luxpowertek.com
+    - **Luxpower Africa**: https://af.luxpowertek.com
+
+    ## Authentication
+
+    All endpoints (except `/api/login`) require authentication via session cookie:
+
+    1. POST credentials to `/WManage/api/login`
+    2. Extract `JSESSIONID` cookie from response
+    3. Include cookie in subsequent requests
+    4. Session expires after ~2 hours
+    5. Re-authenticate on 401 Unauthorized response
+
+    ## Request Format
+
+    - **Method**: POST (all endpoints use POST)
+    - **Content-Type**: `application/x-www-form-urlencoded; charset=UTF-8`
+    - **Accept**: `application/json`
+    - **Body**: Form-encoded key-value pairs
+
+    ## Data Scaling
+
+    Many numeric values are scaled integers that require division:
+
+    - **Voltage**: Divide by 100 (e.g., 5100 → 51.00V)
+    - **Current**: Divide by 100 (e.g., 1500 → 15.00A)
+    - **Frequency**: Divide by 100 (e.g., 5998 → 59.98Hz)
+    - **Cell Voltage**: Divide by 1000 (e.g., 3300 → 3.300V)
+    - **Temperature**: Direct value in Celsius
+    - **Power**: Already in watts (no scaling needed)
+
+    ## Device Hierarchy
+
+    **Single Inverter Setup** (most common):
+    ```
+    Station/Plant (plantId)
+    └── Inverter (serialNum)
+        └── Battery Modules (0 or more)
+    ```
+
+    **Parallel Group Setup** (multi-inverter or GridBOSS):
+    ```
+    Station/Plant (plantId)
+    └── Parallel Group (groupId)
+        ├── MID Device / GridBOSS (optional, 0 or 1 per group)
+        └── Inverters (1 or more)
+            └── Battery Modules (0 or more per inverter)
+    ```
+
+    **Key Points**:
+    - Parallel groups are **optional** - only present in multi-inverter or GridBOSS installations
+    - A parallel group can have 1+ inverters (typically 2+ for actual parallel operation)
+    - A parallel group with 1 inverter + GridBOSS is valid (GridBOSS manages grid interaction)
+    - Single inverters without GridBOSS are directly associated with plants (no parallel group)
+    - Each inverter can have 0 or more battery modules
+
+    ## Important Notes
+
+    - Serial numbers are 10-digit numeric strings (e.g., "1234567890")
+    - Battery modules use `batteryKey` for unique identification
+    - GridBOSS devices have different sensor sets than standard inverters
+    - All energy values in Wh (divide by 10 for kWh display)
+    - Parameter IDs are integer-based for configuration
+
+  version: 1.0.0
+  contact:
+    name: Community Documentation
+    url: https://github.com/joyfulhouse/pylxpweb
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://monitor.eg4electronics.com/WManage
+    description: EG4 Electronics (North America)
+  - url: https://us.luxpowertek.com/WManage
+    description: Luxpower US
+  - url: https://eu.luxpowertek.com/WManage
+    description: Luxpower EU
+  - url: https://as.luxpowertek.com/WManage
+    description: Luxpower Asia (Default)
+
+tags:
+  - name: Authentication
+    description: Login and session management
+  - name: Station Discovery
+    description: List and manage plants/stations
+  - name: Device Discovery
+    description: Discover inverters, GridBOSS, and battery modules
+  - name: Monitoring
+    description: Overview and monitoring endpoints with real-time metrics
+  - name: Runtime Data
+    description: Real-time device metrics
+  - name: Energy Statistics
+    description: Energy production and consumption data
+  - name: Device Control
+    description: Configure and control devices (requires authorization)
+  - name: Locale
+    description: Geographic location data (continents, regions, countries)
+  - name: Firmware Management
+    description: Read-only firmware monitoring and status (write operations require extreme caution)
+  - name: User Preferences
+    description: User settings and favorites
+  - name: Analytics
+    description: Charts and historical data
+
+paths:
+  /api/login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate user
+      description: |
+        Authenticate with username and password to obtain a session cookie.
+        Session expires after approximately 2 hours.
+      operationId: login
+      security: []  # No authentication required for login
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - account
+                - password
+              properties:
+                account:
+                  type: string
+                  description: Username for authentication
+                  example: myusername
+                password:
+                  type: string
+                  description: Password for authentication
+                  format: password
+                  example: mypassword
+                language:
+                  type: string
+                  description: Preferred language (optional)
+                  example: ENGLISH
+      responses:
+        '200':
+          description: Successful authentication
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: JSESSIONID=ABC123; Path=/; HttpOnly
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /web/config/plant/list/viewer:
+    post:
+      tags:
+        - Station Discovery
+      summary: List available stations/plants
+      description: Get list of all stations/plants accessible to the authenticated user
+      operationId: listPlants
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                sort:
+                  type: string
+                  default: createDate
+                  description: Sort field
+                order:
+                  type: string
+                  default: desc
+                  enum: [asc, desc]
+                  description: Sort order
+                searchText:
+                  type: string
+                  default: ""
+                  description: Search filter text
+                targetPlantId:
+                  type: integer
+                  description: Specific plant ID to retrieve (optional)
+                page:
+                  type: integer
+                  default: 1
+                  description: Page number for pagination
+                rows:
+                  type: integer
+                  default: 20
+                  description: Number of rows per page
+      responses:
+        '200':
+          description: Successful retrieval of plant list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    description: Total number of plants
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlantInfo'
+
+  /api/plantOverview/list/viewer:
+    post:
+      tags:
+        - Monitoring
+      summary: Get plant overview with real-time metrics
+      description: |
+        Get plant-level aggregated data with real-time power metrics.
+
+        This endpoint provides:
+        - Real-time power metrics (PV, charge, discharge, consumption)
+        - Energy totals (today, total)
+        - Inverter details nested within plant data
+
+        **Comparison with /web/config/plant/list/viewer**:
+        - Plant Overview: Real-time monitoring data, plant-level aggregation
+        - Plant List Viewer: Configuration data, timezone/DST settings
+      operationId: getPlantOverview
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                searchText:
+                  type: string
+                  default: ""
+                  description: Search filter for plant name/address
+      responses:
+        '200':
+          description: Plant overview with real-time metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantOverviewResponse'
+
+  /locale/region:
+    post:
+      tags:
+        - Locale
+      summary: Get regions for a continent
+      description: |
+        Retrieve list of regions for a specific continent.
+        Used for plant configuration and location hierarchy.
+
+        **Continent Values**:
+        - ASIA
+        - AFRICA
+        - NORTH_AMERICA
+        - SOUTH_AMERICA
+        - EUROPE
+        - OCEANIA
+      operationId: getRegions
+      security: []  # No authentication required
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - continent
+              properties:
+                continent:
+                  type: string
+                  enum:
+                    - ASIA
+                    - AFRICA
+                    - NORTH_AMERICA
+                    - SOUTH_AMERICA
+                    - EUROPE
+                    - OCEANIA
+                  description: Continent enum value
+                  example: NORTH_AMERICA
+      responses:
+        '200':
+          description: List of regions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    value:
+                      type: string
+                      description: Region enum value
+                      example: NORTH_AMERICA
+                    text:
+                      type: string
+                      description: Human-readable region name
+                      example: North America
+
+  /locale/country:
+    post:
+      tags:
+        - Locale
+      summary: Get countries for a region
+      description: |
+        Retrieve list of countries for a specific region.
+        Used for plant configuration and location hierarchy.
+
+        **Usage**: First call /locale/region to get regions, then call this
+        endpoint to get countries for a specific region.
+      operationId: getCountries
+      security: []  # No authentication required
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - region
+              properties:
+                region:
+                  type: string
+                  description: Region enum value (from /locale/region)
+                  example: NORTH_AMERICA
+      responses:
+        '200':
+          description: List of countries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    value:
+                      type: string
+                      description: Country enum value
+                      example: UNITED_STATES_OF_AMERICA
+                    text:
+                      type: string
+                      description: Human-readable country name
+                      example: United States of America
+
+  /api/inverterOverview/getParallelGroupDetails:
+    post:
+      tags:
+        - Device Discovery
+      summary: Get parallel group device hierarchy
+      description: Retrieve detailed parallel group structure including GridBOSS and inverters
+      operationId: getParallelGroupDetails
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - plantId
+              properties:
+                plantId:
+                  type: integer
+                  description: Plant/station ID
+                  example: 12345
+      responses:
+        '200':
+          description: Parallel group details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupDetails'
+
+  /api/inverterOverview/list:
+    post:
+      tags:
+        - Monitoring
+      summary: Get paginated list of all inverters with real-time metrics
+      description: |
+        Get per-inverter metrics across all plants or filtered by specific plant.
+
+        **Features**:
+        - Per-inverter real-time power metrics
+        - Battery state (SOC, voltage)
+        - Energy totals per inverter
+        - Parallel group information
+        - Pagination support
+        - Status filtering (all, normal, fault, offline)
+        - Plant filtering (-1 for all plants)
+
+        **Comparison with /api/inverterOverview/getParallelGroupDetails**:
+        - inverterOverview/list: Paginated, per-inverter metrics, status filtering
+        - getParallelGroupDetails: Hierarchical parallel group structure
+      operationId: listInvertersWithMetrics
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - page
+                - rows
+                - plantId
+                - searchText
+                - statusText
+              properties:
+                page:
+                  type: integer
+                  description: Page number (1-indexed)
+                  default: 1
+                  example: 1
+                rows:
+                  type: integer
+                  description: Number of rows per page
+                  default: 30
+                  example: 30
+                plantId:
+                  type: integer
+                  description: Plant ID (-1 for all plants, or specific plant ID)
+                  default: -1
+                  example: -1
+                searchText:
+                  type: string
+                  description: Search filter for serial number or device name
+                  default: ""
+                  example: ""
+                statusText:
+                  type: string
+                  description: Status filter
+                  default: "all"
+                  enum:
+                    - all
+                    - normal
+                    - fault
+                    - offline
+                  example: "all"
+      responses:
+        '200':
+          description: Inverter overview with real-time metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InverterOverviewResponse'
+
+  /api/inverter/getInverterRuntime:
+    post:
+      tags:
+        - Runtime Data
+      summary: Get inverter runtime data
+      description: |
+        Retrieve real-time operational data for an inverter.
+
+        **Data Scaling Required**:
+        - Voltage values: ÷100 (e.g., 5100 → 51.00V)
+        - Current values: ÷100 (e.g., 1500 → 15.00A)
+        - Frequency: ÷100 (e.g., 5998 → 59.98Hz)
+        - Power: No scaling (direct watts)
+        - Temperature: No scaling (direct Celsius)
+
+        **Refresh Interval & Caching**:
+
+        The API updates runtime data in discrete batches approximately every **60-120 seconds** (avg 96.8s),
+        not in real-time. Polling more frequently than 60 seconds provides no benefit.
+
+        **Empirical Research Findings** (Nov 2025):
+        - Monitored endpoint every 5 seconds for 10 minutes (120 polls)
+        - Only 6 polls (5%) showed data changes
+        - Average update interval: 96.8 seconds
+        - Minimum update interval: 60.4 seconds
+        - Maximum update interval: 121.1 seconds
+
+        **Update Pattern**:
+        - Data is cached server-side with periodic refresh
+        - All changing fields update together in batches
+        - Update intervals vary between 60-120 seconds
+        - Most dynamic fields: `ppv`, `pToUser`, `pCharge` (update every cycle)
+        - Less frequent changes: `vBat`, `soc` (update occasionally)
+
+        **Recommended Polling Intervals**:
+        - **Standard monitoring**: 60 seconds (optimal for most use cases)
+        - **Real-time control**: 30-45 seconds (if rapid response needed)
+        - **Low-priority**: 120 seconds (for historical tracking)
+
+        **Caching Strategy**:
+        - Client-side cache TTL: 20-40 seconds recommended
+        - Prevents excessive API calls within update windows
+        - Balances freshness with API efficiency
+
+        See: https://github.com/joyfulhouse/eg4_web_monitor/issues/39#issuecomment-3553548319
+      operationId: getInverterRuntime
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  description: 10-digit device serial number
+                  example: "1234567890"
+      responses:
+        '200':
+          description: Inverter runtime data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InverterRuntime'
+
+  /api/inverter/getInverterEnergyInfo:
+    post:
+      tags:
+        - Energy Statistics
+      summary: Get inverter energy statistics
+      description: Retrieve energy production, consumption, and grid interaction statistics
+      operationId: getInverterEnergy
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  description: 10-digit device serial number
+                  example: "1234567890"
+      responses:
+        '200':
+          description: Energy statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnergyInfo'
+
+  /api/inverter/getInverterEnergyInfoParallel:
+    post:
+      tags:
+        - Energy Statistics
+      summary: Get parallel group energy statistics
+      description: Retrieve aggregate energy data for entire parallel group
+      operationId: getParallelEnergy
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  description: Serial number of any inverter in the parallel group
+                  example: "1234567890"
+      responses:
+        '200':
+          description: Parallel group energy statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnergyInfo'
+
+  /api/battery/getBatteryInfo:
+    post:
+      tags:
+        - Runtime Data
+      summary: Get battery information
+      description: |
+        Retrieve battery status including individual battery module data.
+
+        **Battery Module Identification**:
+        - Each battery has unique `batteryKey` (e.g., "1234567890_Battery_ID_01")
+        - Use `batteryKey` for tracking individual modules
+        - `batteryArray` contains per-module metrics
+
+        **Data Scaling Required**:
+        - Voltage: ÷100 for battery pack, ÷1000 for cell voltages
+        - Current: ÷100
+        - Temperature: No scaling (direct Celsius)
+      operationId: getBatteryInfo
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+      responses:
+        '200':
+          description: Battery information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatteryInfo'
+
+  /api/midbox/getMidboxRuntime:
+    post:
+      tags:
+        - Runtime Data
+      summary: Get GridBOSS/MID device runtime data
+      description: |
+        Retrieve GridBOSS (MID) device data including grid management,
+        smart load ports, AC coupling, and UPS metrics.
+      operationId: getMidboxRuntime
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  description: GridBOSS device serial number
+                  example: "0987654321"
+      responses:
+        '200':
+          description: GridBOSS runtime data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MidboxRuntime'
+
+  /web/maintain/remoteRead/read:
+    post:
+      tags:
+        - Device Control
+      summary: Read device configuration from Hold registers
+      description: |
+        Read configuration parameters from inverter Modbus Hold registers.
+
+        **IMPORTANT**: This endpoint reads ONLY Hold registers (configuration/settings).
+        - Hold registers are read/write configuration parameters
+        - For real-time runtime data (power, voltage, etc.), use `/api/inverter/getInverterRuntime`
+        - Input registers (read-only runtime data) are NOT accessible via this endpoint
+
+        **CRITICAL**: JSON parameter keys in response ≠ Modbus register addresses!
+        - Query with `startRegister` (Modbus address like 0, 127, 240)
+        - Response contains named keys like `"HOLD_AC_CHARGE_POWER_CMD"` (not register numbers)
+        - Each register range returns different JSON parameter keys
+        - Parameter key names vary by device model and firmware version
+
+        **Complete Parameter Documentation**:
+        - `docs/api/PARAMETER_MAPPING.md` - Comprehensive register reference (Hold registers)
+        - `research/REGISTER_NUMBER_MAPPING.md` - Live API mapping (18KPV verified, registers 0-199)
+        - `research/register_number_mapping.json` - Machine-readable register→parameter mappings
+
+        ## Hold Registers (0-198) - Configuration Parameters
+        Read/write configuration including AC charge settings, battery limits, grid protection,
+        operating modes, and system configuration.
+
+        **Common Hold Register Ranges**:
+        - **0-20**: System configuration (time, serial, communication)
+        - **21**: Function enable register (critical bit field - see below)
+        - **25-58**: Grid voltage/frequency protection limits
+        - **59-62**: Reactive power control
+        - **66-73**: AC charge configuration (power, SOC limit, schedules)
+        - **74-89**: Discharge configuration
+        - **99-109**: Battery protection (voltage/current limits, SOC cutoffs)
+
+        **Critical Register 21 (FuncEn)** - Function Enable Bit Field:
+        - Bit 0: EPSEn (Off-grid mode)
+        - Bit 7: ACChargeEn (AC charge enable)
+        - Bit 9: SetToStandby (0=Standby, 1=Power On)
+        - Bit 10: ForcedDischgEn (Forced discharge)
+        - Bit 11: ForcedChgEn (Force charge)
+
+        ## Modbus Query Limitations
+
+        **IMPORTANT**: The underlying Modbus RTU protocol has strict limitations:
+        - **Maximum Registers Per Query**: 40 registers
+        - **Register Grouping**: Cannot cross boundaries (0-39, 40-79, 80-119, etc.)
+
+        **Current Frontend Strategy (3 calls)**:
+        - Call 1: startRegister=0, pointNumber=127 (registers 0-126)
+        - Call 2: startRegister=127, pointNumber=127 (registers 127-253)
+        - Call 3: startRegister=240, pointNumber=127 (registers 240-366)
+
+        **Note**: This 3-call strategy works via web API but violates Modbus 40-register limit.
+        For Modbus-compliant implementation, use multiple 40-register queries respecting group boundaries.
+
+        ## Recommended Reading Strategies
+
+        **Option 1: Current Frontend Strategy** (compatibility):
+        ```
+        Read 1: startRegister=0, pointNumber=127
+        Read 2: startRegister=127, pointNumber=127
+        Read 3: startRegister=240, pointNumber=127
+        ```
+
+        **Option 2: Modbus-Compliant Grouping** (best practice):
+        ```
+        Hold Registers (5 calls):
+          - startRegister=0,   pointNumber=40  (0-39)
+          - startRegister=40,  pointNumber=40  (40-79)
+          - startRegister=80,  pointNumber=40  (80-119)
+          - startRegister=120, pointNumber=40  (120-159)
+          - startRegister=160, pointNumber=39  (160-198)
+        ```
+
+        **Option 3: Logical Grouping** (optimized for use cases):
+        ```
+        AC Charge Settings: startRegister=66, pointNumber=8
+        Battery Protection: startRegister=99, pointNumber=11
+        Grid Protection:    startRegister=25, pointNumber=34
+        Function Control:   startRegister=21, pointNumber=1
+        ```
+
+        ## Data Scaling
+
+        Different register values require different scaling factors:
+        - **Voltage (high precision)**: ÷100 (e.g., 5100 → 51.00V)
+        - **Voltage (standard)**: ÷10 (e.g., 240 → 24.0V)
+        - **Current**: ÷100 (e.g., 1500 → 15.00A)
+        - **Power**: No scaling (direct watts)
+        - **Frequency**: ÷100 (e.g., 5998 → 59.98Hz)
+        - **Cell Voltage**: ÷1000 (e.g., 3300 → 3.300V)
+        - **Temperature**: No scaling (direct Celsius)
+
+        ## Common Parameters
+
+        | Register | Name | Description | Range | R/W |
+        |----------|------|-------------|-------|-----|
+        | 21 | FuncEn | Function enable bit field | 0-65535 | R/W |
+        | 66 | ACChgPowerCMD | AC charge power | 0-100% | R/W |
+        | 67 | ACChgSOCLimit | AC charge SOC limit | 0-100% | R/W |
+        | 105 | EOD | On-grid discharge cutoff | 10-90% | R/W |
+        | 106 | SOC_Low_Limit_EPS | Off-grid SOC limit | 0-100% | R/W |
+
+        **See Also**:
+        - `/web/maintain/remoteSet/write` - Write parameters
+        - `/web/maintain/remoteSet/functionControl` - Control function bits
+        - `docs/api/PARAMETER_MAPPING.md` - Complete register reference
+      operationId: readParameters
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+                - startRegister
+                - pointNumber
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+                startRegister:
+                  type: integer
+                  description: "Starting register address (common values: 0, 127, 240, 500, 2000, 5000)"
+                  default: 0
+                  example: 0
+                pointNumber:
+                  type: integer
+                  description: Number of registers to read (typically 127)
+                  default: 127
+                  example: 127
+                autoRetry:
+                  type: boolean
+                  description: Enable automatic retry on failure (optional)
+                  default: true
+                  example: true
+      responses:
+        '200':
+          description: Parameter read response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParameterReadResponse'
+
+  /web/maintain/remoteSet/write:
+    post:
+      tags:
+        - Device Control
+      summary: Write device parameters to Hold registers
+      description: |
+        **⚠️ WRITE OPERATION - CHANGES DEVICE CONFIGURATION**
+
+        Write configuration parameters to inverter Hold registers (addresses 0-198).
+
+        **Complete Parameter Documentation**: See `docs/api/PARAMETER_MAPPING.md` for all writable parameters.
+
+        ## Important Warnings
+
+        1. **Read-Modify-Write Pattern Required for Register 21 (FuncEn)**:
+           - Register 21 is a bit field controlling multiple functions
+           - ALWAYS read current value first, modify specific bits, then write back
+           - Incorrect writes can disable critical functions (AC charge, operating mode, etc.)
+           - Use `/web/maintain/remoteSet/functionControl` for safer bit manipulation
+
+        2. **Validate Before Writing**:
+           - Respect parameter ranges (see PARAMETER_MAPPING.md)
+           - Out-of-range values may be rejected or cause device malfunction
+           - Test with non-critical parameters first
+
+        3. **Battery Protection**:
+           - Registers 99-106 control battery voltage/current limits
+           - Incorrect values can damage batteries or void warranty
+           - Match battery manufacturer specifications exactly
+
+        ## Common Parameters
+
+        ### AC Charge Configuration (Registers 66-73)
+
+        | Register | Name | Description | Range | Example |
+        |----------|------|-------------|-------|---------|
+        | 66 | ACChgPowerCMD | AC charge power | 0-100% | 50 |
+        | 67 | ACChgSOCLimit | AC charge SOC limit | 0-100% | 100 |
+        | 68 | ACChgStartHour1 | Time period 1 start hour | 0-23 | 23 |
+        | 69 | ACChgStartMin1 | Time period 1 start min | 0-59 | 0 |
+        | 70 | ACChgEndHour1 | Time period 1 end hour | 0-23 | 7 |
+        | 71 | ACChgEndMin1 | Time period 1 end min | 0-59 | 0 |
+        | 72 | ACChgEnable1 | Time period 1 enable | 0-1 | 1 |
+        | 73 | ACChgEnable2 | Time period 2 enable | 0-1 | 0 |
+
+        ### Battery Protection (Registers 99-109)
+
+        | Register | Name | Description | Range | Example |
+        |----------|------|-------------|-------|---------|
+        | 99 | BatVoltMaxChg | Max charge voltage | 48-65V (×100) | 5800 (58.00V) |
+        | 100 | BatVoltMinChg | Min charge voltage | 40-55V (×100) | 4800 (48.00V) |
+        | 103 | MaxChgCurr | Max charge current | 0-200A (×10) | 1000 (100.0A) |
+        | 104 | MaxDisChgCurr | Max discharge current | 0-200A (×10) | 1000 (100.0A) |
+        | 105 | EOD | On-grid discharge cutoff | 10-90% | 15 |
+        | 106 | SOC_Low_Limit_EPS | Off-grid SOC limit | 0-100% | 10 |
+
+        ### Grid Protection (Registers 25-28)
+
+        | Register | Name | Description | Range | Example |
+        |----------|------|-------------|-------|---------|
+        | 25 | GridVoltHigh1 | Grid voltage high limit 1 | 200-300V (×10) | 2640 (264.0V) |
+        | 26 | GridVoltLow1 | Grid voltage low limit 1 | 150-250V (×10) | 1840 (184.0V) |
+        | 27 | GridFreqHigh1 | Grid frequency high 1 | 50-65Hz (×100) | 6020 (60.20Hz) |
+        | 28 | GridFreqLow1 | Grid frequency low 1 | 45-55Hz (×100) | 5980 (59.80Hz) |
+
+        ## Critical Register 21 - Function Enable Bit Field
+
+        **DO NOT write directly to this register without reading current value first!**
+
+        Instead, use `/web/maintain/remoteSet/functionControl` endpoint for safe bit manipulation.
+
+        If you must write directly:
+        1. Read current value via `/web/maintain/remoteRead/read` with startRegister=21, pointNumber=1
+        2. Modify specific bits using bitwise operations
+        3. Write modified value back
+
+        **Bit Definitions**:
+        - Bit 0: EPSEn (0=Off-grid disabled, 1=Off-grid enabled)
+        - Bit 7: ACChargeEn (0=AC charge disabled, 1=AC charge enabled)
+        - Bit 9: SetToStandby (0=Standby mode, 1=Power on)
+        - Bit 10: ForcedDischgEn (0=Forced discharge disabled, 1=Forced discharge enabled)
+        - Bit 11: ForcedChgEn (0=Force charge disabled, 1=Force charge enabled)
+
+        ## Data Scaling for Writes
+
+        When writing values, apply inverse scaling:
+        - **Voltage (high precision)**: Multiply by 100 (51.00V → 5100)
+        - **Voltage (standard)**: Multiply by 10 (24.0V → 240)
+        - **Current**: Multiply by 100 (15.00A → 1500)
+        - **Frequency**: Multiply by 100 (59.98Hz → 5998)
+        - **Percentages**: Direct value (80% → 80)
+        - **Hours/Minutes**: Direct value (23:30 → 23, 30)
+
+        ## Example Workflows
+
+        **Example 1: Enable AC Charge to 80% SOC**:
+        ```
+        1. Write register 66 (ACChgPowerCMD): value=50 (50% power)
+        2. Write register 67 (ACChgSOCLimit): value=80 (80% SOC)
+        3. Use functionControl endpoint to set bit 7 (ACChargeEn) = true
+        ```
+
+        **Example 2: Configure AC Charge Schedule (11 PM to 7 AM)**:
+        ```
+        1. Write register 68 (ACChgStartHour1): value=23
+        2. Write register 69 (ACChgStartMin1): value=0
+        3. Write register 70 (ACChgEndHour1): value=7
+        4. Write register 71 (ACChgEndMin1): value=0
+        5. Write register 72 (ACChgEnable1): value=1
+        ```
+
+        **Example 3: Set Battery Discharge Cutoff to 15%**:
+        ```
+        Write register 105 (EOD): value=15
+        ```
+
+        **See Also**:
+        - `/web/maintain/remoteRead/read` - Read parameters before writing
+        - `/web/maintain/remoteSet/functionControl` - Safer way to control function bits
+        - `docs/api/PARAMETER_MAPPING.md` - Complete parameter reference
+      operationId: writeParameter
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+                - holdParam
+                - valueText
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+                holdParam:
+                  type: string
+                  description: Parameter name to write
+                  example: HOLD_SYSTEM_CHARGE_SOC_LIMIT
+                valueText:
+                  type: string
+                  description: Value to write (as string)
+                  example: "90"
+                clientType:
+                  type: string
+                  default: WEB
+                  enum: [WEB, APP]
+                remoteSetType:
+                  type: string
+                  default: NORMAL
+                  enum: [NORMAL, QUICK]
+      responses:
+        '200':
+          description: Parameter write response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /web/maintain/remoteSet/functionControl:
+    post:
+      tags:
+        - Device Control
+      summary: Control device functions
+      description: |
+        **⚠️ WRITE OPERATION - CHANGES DEVICE STATE**
+
+        Enable or disable device functions.
+
+        **Common Functions**:
+        - `FUNC_EPS_EN`: Battery backup (EPS) mode
+        - `FUNC_SET_TO_STANDBY`: Standby mode
+        - `FUNC_GRID_PEAK_SHAVING`: Peak shaving mode
+      operationId: controlFunction
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+                - functionParam
+                - enable
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+                functionParam:
+                  type: string
+                  description: Function parameter name
+                  example: FUNC_EPS_EN
+                enable:
+                  type: string
+                  description: Enable or disable function
+                  enum: ["true", "false"]
+                  example: "true"
+                clientType:
+                  type: string
+                  default: WEB
+                remoteSetType:
+                  type: string
+                  default: NORMAL
+      responses:
+        '200':
+          description: Function control response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /web/config/quickCharge/start:
+    post:
+      tags:
+        - Device Control
+      summary: Start quick charge
+      description: |
+        **⚠️ WRITE OPERATION - STARTS CHARGING**
+
+        Initiate quick charge operation for the inverter.
+      operationId: startQuickCharge
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+                clientType:
+                  type: string
+                  default: WEB
+      responses:
+        '200':
+          description: Quick charge start response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /web/config/quickCharge/stop:
+    post:
+      tags:
+        - Device Control
+      summary: Stop quick charge
+      description: |
+        **⚠️ WRITE OPERATION - STOPS CHARGING**
+
+        Stop active quick charge operation.
+      operationId: stopQuickCharge
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+                clientType:
+                  type: string
+                  default: WEB
+      responses:
+        '200':
+          description: Quick charge stop response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /web/config/quickCharge/getStatusInfo:
+    post:
+      tags:
+        - Runtime Data
+      summary: Get quick charge status
+      description: Check current quick charge operation status
+      operationId: getQuickChargeStatus
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+      responses:
+        '200':
+          description: Quick charge status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuickChargeStatus'
+
+  /web/maintain/standardUpdate/checkUpdates:
+    post:
+      tags:
+        - Firmware Management
+      summary: Check firmware updates (READ-ONLY)
+      description: |
+        **✅ READ-ONLY OPERATION - Safe to call**
+
+        Check if firmware updates are available for a specific device.
+        Returns current firmware versions, available updates, and compatibility information.
+
+        **Update Availability**:
+        - `success: false` - No firmware update available
+        - `success: true` - Firmware update available
+        - When `success: true`, `infoForwardUrl` contains release notes and update details
+
+        **Firmware Version Format**: `{standard}-{v1}{v2}{v3}`
+        - Example: "fAAB-2122" means fAAB standard, v21 app, v22 parameters
+        - Standards: "fAAB" (18KPV), "IAAB" (GridBOSS)
+
+        **Update Detection**:
+        - Compare `v1` with `lastV1` for application updates
+        - Compare `v2` with `lastV2` for parameter updates
+        - Check `pcs1UpdateMatch`, `pcs2UpdateMatch` for compatibility
+      operationId: checkFirmwareUpdates
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  description: Device serial number
+                  example: "1234567890"
+      responses:
+        '200':
+          description: Firmware update check result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FirmwareUpdateCheck'
+                  - type: object
+                    properties:
+                      success:
+                        type: boolean
+                        example: false
+                        description: No firmware update available
+              examples:
+                updateAvailable:
+                  summary: Update available
+                  value:
+                    success: true
+                    details:
+                      serialNum: "0987654321"
+                      deviceType: 6
+                      standard: fAAB
+                      fwCodeBeforeUpload: fAAB-2122
+                      v1: 33
+                      v2: 34
+                      lastV1: 37
+                      lastV2: 37
+                      pcs1UpdateMatch: true
+                      pcs2UpdateMatch: true
+                    infoForwardUrl: "http://os.solarcloudsystem.com/#/apiLogin?..."
+                noUpdate:
+                  summary: No update available
+                  value:
+                    success: false
+
+  /web/maintain/remoteUpdate/info:
+    post:
+      tags:
+        - Firmware Management
+      summary: Get firmware update status (READ-ONLY)
+      description: |
+        **✅ READ-ONLY OPERATION - Safe to call**
+
+        Monitor active firmware update progress for all devices in user's account.
+        Shows real-time progress, package counts, and update status.
+
+        **Use for monitoring** firmware updates initiated through web UI or mobile app.
+      operationId: getFirmwareUpdateStatus
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  type: integer
+                  description: User ID from login response
+                  example: 15415
+      responses:
+        '200':
+          description: Firmware update status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmwareUpdateStatus'
+
+  /web/maintain/standardUpdate/check12KParallelStatus:
+    post:
+      tags:
+        - Firmware Management
+      summary: Check update eligibility (READ-ONLY)
+      description: |
+        **✅ READ-ONLY OPERATION - Safe to call**
+
+        Check if device is eligible for firmware update.
+
+        **Important**: Despite the misleading endpoint name, this works for ALL devices:
+        - Single inverters (non-parallel)
+        - GridBOSS/MID devices
+        - 12K, 18K, and other inverter models
+        - Parallel configurations
+
+        **Returns**:
+        - `allowToUpdate`: Device ready for update
+        - `deviceUpdating`: Device currently updating
+        - `parallelGroupUpdating`: Another device in group updating
+      operationId: checkUpdateEligibility
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - userId
+                - serialNum
+              properties:
+                userId:
+                  type: integer
+                  description: User ID from login response
+                  example: 15415
+                serialNum:
+                  type: string
+                  description: Device serial number
+                  example: "1234567890"
+      responses:
+        '200':
+          description: Update eligibility status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateEligibilityStatus'
+
+  /web/maintain/standardUpdate/run:
+    post:
+      tags:
+        - Firmware Management
+      summary: Start firmware update (⚠️ WRITE OPERATION)
+      description: |
+        **⚠️ CRITICAL WARNING - WRITE OPERATION**
+
+        This endpoint initiates an actual firmware update that:
+        - Takes 20-40 minutes to complete
+        - Makes device unavailable during update
+        - Requires uninterrupted power and network
+        - Should NEVER be automated without user confirmation
+        - May brick device if interrupted
+
+        **Recommended**: Focus on read-only monitoring endpoints instead.
+        Most applications should only monitor firmware status, not initiate updates.
+
+        **Pre-update checklist**:
+        1. Call `check12KParallelStatus` to verify eligibility
+        2. Call `checkUpdates` to confirm update available
+        3. Verify device online and stable
+        4. Get explicit user confirmation
+        5. Monitor via `remoteUpdate/info` endpoint
+      operationId: startFirmwareUpdate
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - userId
+                - serialNum
+              properties:
+                userId:
+                  type: integer
+                  description: User ID from login response
+                  example: 15415
+                serialNum:
+                  type: string
+                  description: Device serial number
+                  example: "1234567890"
+                tryFastMode:
+                  type: boolean
+                  description: Attempt fast update mode (optional, may reduce time by 20-30%)
+                  default: false
+                  example: false
+      responses:
+        '200':
+          description: Update initiation response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Update cannot be started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  msg:
+                    type: string
+                    enum:
+                      - Device is already updating
+                      - No firmware update available
+                      - Another device in parallel group is updating
+                    example: Device is already updating
+                  code:
+                    type: string
+                    enum:
+                      - UPDATE_IN_PROGRESS
+                      - NO_UPDATE_AVAILABLE
+                      - PARALLEL_GROUP_UPDATING
+                    example: UPDATE_IN_PROGRESS
+
+  /web/config/plant/edit:
+    post:
+      tags:
+        - Station Discovery
+      summary: Update plant configuration
+      description: |
+        **⚠️ WRITE OPERATION - MODIFIES PLANT SETTINGS**
+
+        Update plant/station configuration including timezone and DST settings.
+      operationId: updatePlant
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - plantId
+                - name
+                - longitude
+                - latitude
+                - createDate
+                - nominalPower
+                - continent
+                - region
+                - country
+                - timezone
+                - daylightSavingTime
+              properties:
+                plantId:
+                  type: integer
+                  example: 12345
+                name:
+                  type: string
+                  example: My Solar Station
+                nominalPower:
+                  type: integer
+                  description: Solar PV power rating in Watts
+                  example: 20000
+                continent:
+                  type: string
+                  example: NORTH_AMERICA
+                region:
+                  type: string
+                  example: NORTH_AMERICA
+                country:
+                  type: string
+                  example: UNITED_STATES_OF_AMERICA
+                timezone:
+                  type: string
+                  example: WEST8
+                daylightSavingTime:
+                  type: boolean
+                  example: true
+                longitude:
+                  type: string
+                  description: Geographic coordinate (read-only, must provide current value)
+                  example: "-118.25"
+                latitude:
+                  type: string
+                  description: Geographic coordinate (read-only, must provide current value)
+                  example: "34.05"
+                createDate:
+                  type: string
+                  format: date
+                  description: Plant creation date (read-only, must provide current value)
+                  example: "2025-05-05"
+      responses:
+        '200':
+          description: Plant update response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/analyze/chart/dayLine:
+    post:
+      tags:
+        - Analytics
+      summary: Get time-series data for specific sensor attribute
+      description: |
+        Retrieve hourly time-series data for any sensor attribute over a specific date.
+
+        **Available Attributes**: `vpv1`, `vpv2`, `ppv`, `vBat`, `soc`, `pCharge`,
+        `pDisCharge`, `pToGrid`, `pToUser`, `vacr`, `fac`, `tinner`, and many more.
+
+        **Use Case**: Generate line charts for any runtime sensor over time.
+
+        **Note**: Very flexible endpoint - supports all InverterRuntime fields as attributes.
+      operationId: getChartDayLine
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+                - attr
+                - dateText
+              properties:
+                serialNum:
+                  type: string
+                  description: Device serial number
+                  example: "4524850115"
+                attr:
+                  type: string
+                  description: Sensor attribute name (from InverterRuntime fields)
+                  example: "vpv1"
+                dateText:
+                  type: string
+                  format: date
+                  description: Date in YYYY-MM-DD format
+                  example: "2025-11-19"
+      responses:
+        '200':
+          description: Time-series data points
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  dataPoints:
+                    type: array
+                    description: Hourly data points (typically 24 entries for full day)
+                    items:
+                      type: object
+                      properties:
+                        time:
+                          type: string
+                          example: "00:00"
+                        value:
+                          type: number
+                          example: 5100
+
+  /api/analyze/energy/dayColumn:
+    post:
+      tags:
+        - Energy Statistics
+      summary: Get hourly energy breakdown for specific day
+      description: |
+        Retrieve hourly energy data for specific energy type and day.
+        Returns column chart data (24 hourly values).
+
+        **Energy Types**:
+        - `eInvDay` - Inverter daily energy production
+        - `eToUserDay` - Load consumption
+        - `eToGridDay` - Grid export
+        - `eAcChargeDay` - AC charging
+        - `eBatChargeDay` - Battery charging
+        - `eBatDischargeDay` - Battery discharging
+      operationId: getEnergyDayColumn
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+                - parallel
+                - year
+                - month
+                - day
+                - energyType
+              properties:
+                serialNum:
+                  type: string
+                  example: "4512670118"
+                parallel:
+                  type: boolean
+                  description: Whether to query parallel group data
+                  example: false
+                year:
+                  type: integer
+                  example: 2025
+                month:
+                  type: integer
+                  example: 11
+                day:
+                  type: integer
+                  example: 19
+                energyType:
+                  type: string
+                  enum:
+                    - eInvDay
+                    - eToUserDay
+                    - eToGridDay
+                    - eAcChargeDay
+                    - eBatChargeDay
+                    - eBatDischargeDay
+                  example: "eInvDay"
+      responses:
+        '200':
+          description: Hourly energy breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnergyBreakdown'
+
+  /api/analyze/energy/monthColumn:
+    post:
+      tags:
+        - Energy Statistics
+      summary: Get daily energy breakdown for specific month
+      description: Returns daily energy data for entire month (column chart format)
+      operationId: getEnergyMonthColumn
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+                - parallel
+                - year
+                - month
+                - energyType
+              properties:
+                serialNum:
+                  type: string
+                  example: "4512670118"
+                parallel:
+                  type: boolean
+                  example: false
+                year:
+                  type: integer
+                  example: 2025
+                month:
+                  type: integer
+                  example: 11
+                energyType:
+                  type: string
+                  example: "eInvDay"
+      responses:
+        '200':
+          description: Daily energy breakdown for month
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnergyBreakdown'
+
+  /api/analyze/energy/yearColumn:
+    post:
+      tags:
+        - Energy Statistics
+      summary: Get monthly energy breakdown for specific year
+      description: Returns monthly energy data for entire year
+      operationId: getEnergyYearColumn
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+                - parallel
+                - year
+                - energyType
+              properties:
+                serialNum:
+                  type: string
+                  example: "4512670118"
+                parallel:
+                  type: boolean
+                  example: false
+                year:
+                  type: integer
+                  example: 2025
+                energyType:
+                  type: string
+                  example: "eToUserDay"
+      responses:
+        '200':
+          description: Monthly energy breakdown for year
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnergyBreakdown'
+
+  /api/analyze/energy/totalColumn:
+    post:
+      tags:
+        - Energy Statistics
+      summary: Get yearly energy breakdown for lifetime
+      description: Returns energy data broken down by year for device lifetime
+      operationId: getEnergyTotalColumn
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+                - parallel
+                - energyType
+              properties:
+                serialNum:
+                  type: string
+                  example: "4512670118"
+                parallel:
+                  type: boolean
+                  example: false
+                energyType:
+                  type: string
+                  example: "eToUserDay"
+      responses:
+        '200':
+          description: Yearly energy breakdown for lifetime
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnergyBreakdown'
+
+  /api/analyze/event/list:
+    post:
+      tags:
+        - Analytics
+      summary: Get fault/warning/event log with pagination
+      description: |
+        Retrieve system events including faults, warnings, and informational messages.
+
+        **Event Types**: Fault codes, warning codes, or `_all` for all events.
+
+        **Use Case**: Monitor system health, track faults over time, generate alerts.
+      operationId: getEventList
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - page
+                - rows
+                - plantId
+                - serialNum
+                - eventText
+              properties:
+                page:
+                  type: integer
+                  default: 1
+                  example: 1
+                rows:
+                  type: integer
+                  default: 30
+                  example: 30
+                plantId:
+                  type: integer
+                  description: Plant ID (-1 for all plants)
+                  example: -1
+                serialNum:
+                  type: string
+                  description: Device serial number
+                  example: "4512670118"
+                eventText:
+                  type: string
+                  description: Event filter (_all, or specific fault/warning code)
+                  default: "_all"
+                  example: "_all"
+      responses:
+        '200':
+          description: Paginated event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+
+  /api/battery/getBatteryInfoForSet:
+    post:
+      tags:
+        - Runtime Data
+      summary: Get simplified battery list for UI selection
+      description: |
+        Retrieve lightweight battery enumeration (without full metrics).
+
+        **Difference from `/api/battery/getBatteryInfo`**:
+        - This endpoint: Simplified list (batteryKey, SN, index, status only)
+        - Full endpoint: Complete metrics (voltage, current, SOC, SoH, temps, etc.)
+
+        **Use Case**: Populate dropdown menus, battery selection UI.
+      operationId: getBatteryInfoForSet
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  description: Inverter serial number
+                  example: "4512670118"
+      responses:
+        '200':
+          description: Simplified battery list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatteryInfoForSet'
+
+  /api/inverter/getInverterInfo:
+    post:
+      tags:
+        - Device Discovery
+      summary: Get inverter static information
+      description: |
+        Retrieve inverter configuration and static details (model, firmware, capacity, etc.).
+
+        **Complements** `/api/inverter/getInverterRuntime`:
+        - This endpoint: Static configuration data
+        - Runtime endpoint: Dynamic operational metrics
+      operationId: getInverterInfo
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  example: "4512670118"
+      responses:
+        '200':
+          description: Inverter static information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InverterInfo'
+
+  /api/predict/solar/dayPredictColumnParallel:
+    post:
+      tags:
+        - Analytics
+      summary: Solar production forecast for parallel group
+      description: |
+        Get predicted solar production for today/tomorrow based on weather and historical data.
+
+        **Use Case**: Display expected PV generation, optimize battery charging schedules.
+      operationId: getSolarPrediction
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  example: "4524850115"
+      responses:
+        '200':
+          description: Solar production forecast
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolarForecast'
+
+  /api/weather/forecast:
+    post:
+      tags:
+        - Analytics
+      summary: Weather forecast for plant location
+      description: |
+        Get weather forecast data for plant's geographic location.
+
+        **Use Case**: Display weather conditions affecting solar production.
+      operationId: getWeatherForecast
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - serialNum
+              properties:
+                serialNum:
+                  type: string
+                  example: "4524850115"
+      responses:
+        '200':
+          description: Weather forecast data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeatherForecast'
+
+  /web/analyze/data/export/{serialNum}/{startDate}:
+    get:
+      tags:
+        - Analytics
+      summary: Export historical data to CSV/Excel
+      description: |
+        Download historical runtime data for specified date range.
+
+        **Query Parameters**:
+        - Without `endDateText`: Export single day
+        - With `endDateText`: Export date range
+
+        **Use Case**: Download data for external analysis, archival, reporting.
+      operationId: exportHistoricalData
+      parameters:
+        - name: serialNum
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "4512670118"
+        - name: startDate
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2025-11-16"
+        - name: endDateText
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2025-11-16"
+      responses:
+        '200':
+          description: CSV/Excel file download
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.ms-excel:
+              schema:
+                type: string
+                format: binary
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: JSESSIONID
+      description: Session cookie obtained from /api/login endpoint
+
+  schemas:
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        userId:
+          type: integer
+          example: 10001
+        username:
+          type: string
+          example: example_user
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        role:
+          type: string
+          enum: [VIEWER, INSTALLER, ADMIN]
+          example: VIEWER
+        platform:
+          type: string
+          example: EG4
+        timezone:
+          type: string
+          example: WEST8
+        timezoneText:
+          type: string
+          example: "GMT -8"
+        plants:
+          type: array
+          description: Array of plants/stations accessible to user
+          items:
+            type: object
+            properties:
+              plantId:
+                type: integer
+                example: 12345
+              name:
+                type: string
+                example: My Solar Station
+              timezoneHourOffset:
+                type: integer
+                example: -8
+              inverters:
+                type: array
+                description: |
+                  Array of inverters in this plant.
+                  - Single inverter setups: Inverters are directly associated with the plant
+                  - Parallel group setups: Inverters are organized into parallel groups (see parallelGroups)
+                items:
+                  $ref: '#/components/schemas/InverterBasic'
+              parallelGroups:
+                type: array
+                description: |
+                  Parallel groups (optional - only present in multi-inverter or MID-equipped installations).
+                  - Empty array: Single inverter setup (no parallel group)
+                  - Non-empty: Multi-inverter or GridBOSS/MID setup
+                items:
+                  type: object
+                  properties:
+                    parallelGroup:
+                      type: string
+                      description: Parallel group identifier (e.g., "A", "B")
+                      example: A
+                    parallelFirstDeviceSn:
+                      type: string
+                      description: Serial number of the first device in this parallel group
+                      example: "1111111111"
+
+    PlantInfo:
+      type: object
+      properties:
+        plantId:
+          type: integer
+          example: 12345
+        name:
+          type: string
+          example: My Solar Station
+        nominalPower:
+          type: integer
+          description: Solar PV power rating in Watts
+          example: 20000
+        country:
+          type: string
+          example: United States of America
+        timezone:
+          type: string
+          example: "GMT -8"
+        daylightSavingTime:
+          type: boolean
+          example: true
+        createDate:
+          type: string
+          format: date
+          example: "2025-05-05"
+        address:
+          type: string
+          example: 123 Example Street
+        longitude:
+          type: number
+          format: double
+          example: -118.25
+        latitude:
+          type: number
+          format: double
+          example: 34.05
+
+    InverterBasic:
+      type: object
+      properties:
+        serialNum:
+          type: string
+          description: 10-digit device serial number
+          example: "1234567890"
+        phase:
+          type: integer
+          description: Phase type (1=single, 3=three-phase)
+          example: 1
+        lost:
+          type: boolean
+          description: Device offline status
+          example: false
+        deviceType:
+          type: integer
+          description: Device type code
+          example: 6
+        subDeviceType:
+          type: integer
+          description: Sub-device type code
+          example: 164
+        deviceTypeText4APP:
+          type: string
+          description: Human-readable device model
+          example: 18KPV
+        powerRating:
+          type: integer
+          description: Power rating code
+          example: 6
+        batteryType:
+          type: string
+          enum: [LITHIUM, LEAD_ACID]
+          example: LITHIUM
+        allowGenExercise:
+          type: boolean
+          example: true
+        withbatteryData:
+          type: boolean
+          description: Whether device has battery data available
+          example: true
+
+    ParallelGroupDetails:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        parallelGroups:
+          type: array
+          items:
+            type: object
+            properties:
+              parallelGroup:
+                type: string
+                example: A
+              devices:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InverterBasic'
+
+    InverterList:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/InverterBasic'
+
+    InverterRuntime:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        serialNum:
+          type: string
+          example: "1234567890"
+        fwCode:
+          type: string
+          description: Firmware code
+          example: fAAB-2122
+        powerRatingText:
+          type: string
+          example: 12kW
+        lost:
+          type: boolean
+          example: false
+        statusText:
+          type: string
+          example: normal
+        serverTime:
+          type: string
+          format: date-time
+          example: "2025-09-10 16:48:01"
+        deviceTime:
+          type: string
+          format: date-time
+          example: "2025-09-10 09:48:01"
+        vpv1:
+          type: integer
+          description: PV1 voltage (÷100 for volts)
+          example: 0
+        vpv2:
+          type: integer
+          description: PV2 voltage (÷100 for volts)
+          example: 1
+        ppv1:
+          type: integer
+          description: PV1 power (watts)
+          example: 0
+        ppv2:
+          type: integer
+          description: PV2 power (watts)
+          example: 0
+        ppv:
+          type: integer
+          description: Total PV power (watts)
+          example: 0
+        vacr:
+          type: integer
+          description: AC voltage phase R (÷100 for volts)
+          example: 2411
+        vacs:
+          type: integer
+          description: AC voltage phase S (÷100 for volts)
+          example: 256
+        vact:
+          type: integer
+          description: AC voltage phase T (÷100 for volts)
+          example: 0
+        fac:
+          type: integer
+          description: AC frequency (÷100 for Hz)
+          example: 5998
+        pToGrid:
+          type: integer
+          description: Power to grid (watts)
+          example: 0
+        pToUser:
+          type: integer
+          description: Power to user/load (watts)
+          example: 1030
+        tinner:
+          type: integer
+          description: Internal temperature (Celsius)
+          example: 39
+        tradiator1:
+          type: integer
+          description: Radiator 1 temperature (Celsius)
+          example: 45
+        tradiator2:
+          type: integer
+          description: Radiator 2 temperature (Celsius)
+          example: 43
+        tBat:
+          type: integer
+          description: Battery temperature (Celsius)
+          example: 2
+        vBat:
+          type: integer
+          description: Battery voltage (÷100 for volts)
+          example: 530
+        soc:
+          type: integer
+          description: State of charge (%)
+          example: 71
+        pCharge:
+          type: integer
+          description: Charge power (watts)
+          example: 1045
+        pDisCharge:
+          type: integer
+          description: Discharge power (watts)
+          example: 0
+        batPower:
+          type: integer
+          description: Net battery power (watts, positive=charging)
+          example: 1045
+        pinv:
+          type: integer
+          description: Inverter power (watts)
+          example: 0
+        prec:
+          type: integer
+          description: Rectifier power (watts)
+          example: 1067
+        peps:
+          type: integer
+          description: EPS power (watts)
+          example: 0
+        maxChgCurr:
+          type: integer
+          description: Max charge current (÷100 for amps)
+          example: 6000
+        maxDischgCurr:
+          type: integer
+          description: Max discharge current (÷100 for amps)
+          example: 6000
+
+    EnergyInfo:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        serialNum:
+          type: string
+          example: "1234567890"
+        soc:
+          type: integer
+          description: Current state of charge (%)
+          example: 71
+        todayYielding:
+          type: integer
+          description: Today's PV production (Wh)
+          example: 0
+        totalYielding:
+          type: integer
+          description: Lifetime PV production (Wh)
+          example: 0
+        todayCharging:
+          type: integer
+          description: Today's battery charging (Wh)
+          example: 9
+        totalCharging:
+          type: integer
+          description: Lifetime battery charging (Wh)
+          example: 18111
+        todayDischarging:
+          type: integer
+          description: Today's battery discharging (Wh)
+          example: 0
+        totalDischarging:
+          type: integer
+          description: Lifetime battery discharging (Wh)
+          example: 15778
+        todayImport:
+          type: integer
+          description: Today's grid import (Wh)
+          example: 191
+        totalImport:
+          type: integer
+          description: Lifetime grid import (Wh)
+          example: 48475
+        todayExport:
+          type: integer
+          description: Today's grid export (Wh)
+          example: 0
+        totalExport:
+          type: integer
+          description: Lifetime grid export (Wh)
+          example: 33390
+        todayUsage:
+          type: integer
+          description: Today's consumption (Wh)
+          example: 196
+        totalUsage:
+          type: integer
+          description: Lifetime consumption (Wh)
+          example: 69269
+
+    BatteryInfo:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        serialNum:
+          type: string
+          example: "1234567890"
+        soc:
+          type: integer
+          description: Overall state of charge (%)
+          example: 71
+        vBat:
+          type: integer
+          description: Battery voltage (÷100 for volts)
+          example: 530
+        pCharge:
+          type: integer
+          description: Charge power (watts)
+          example: 1045
+        pDisCharge:
+          type: integer
+          description: Discharge power (watts)
+          example: 0
+        batStatus:
+          type: string
+          example: Charging
+        maxBatteryCharge:
+          type: integer
+          description: Maximum battery capacity (Ah)
+          example: 840
+        currentBatteryCharge:
+          type: number
+          format: double
+          description: Current battery charge (Ah)
+          example: 596.4
+        batteryArray:
+          type: array
+          description: Individual battery modules
+          items:
+            type: object
+            properties:
+              batteryKey:
+                type: string
+                description: Unique battery identifier
+                example: 1234567890_Battery_ID_01
+              batterySn:
+                type: string
+                example: Battery_ID_01
+              batIndex:
+                type: integer
+                description: Battery position in array
+                example: 0
+              lost:
+                type: boolean
+                example: false
+              totalVoltage:
+                type: integer
+                description: Module voltage (÷100 for volts)
+                example: 5305
+              current:
+                type: integer
+                description: Module current (÷100 for amps)
+                example: 60
+              soc:
+                type: integer
+                description: State of charge (%)
+                example: 67
+              soh:
+                type: integer
+                description: State of health (%)
+                example: 100
+              currentRemainCapacity:
+                type: integer
+                description: Remaining capacity (Ah)
+                example: 187
+              currentFullCapacity:
+                type: integer
+                description: Full capacity (Ah)
+                example: 280
+              batMaxCellTemp:
+                type: integer
+                description: Max cell temperature (÷10 for Celsius)
+                example: 240
+              batMinCellTemp:
+                type: integer
+                description: Min cell temperature (÷10 for Celsius)
+                example: 240
+              batMaxCellVoltage:
+                type: integer
+                description: Max cell voltage (millivolts, ÷1000 for volts)
+                example: 3317
+              batMinCellVoltage:
+                type: integer
+                description: Min cell voltage (millivolts, ÷1000 for volts)
+                example: 3315
+              cycleCnt:
+                type: integer
+                description: Charge/discharge cycle count
+                example: 58
+              fwVersionText:
+                type: string
+                example: "2.17"
+
+    MidboxRuntime:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        serialNum:
+          type: string
+          example: "0987654321"
+        fwCode:
+          type: string
+          example: IAAB-1300
+        midboxData:
+          type: object
+          properties:
+            status:
+              type: integer
+              example: 0
+            serverTime:
+              type: string
+              format: date-time
+              example: "2025-09-10 16:47:45"
+            deviceTime:
+              type: string
+              format: date-time
+              example: "2025-09-10 09:47:45"
+            gridRmsVolt:
+              type: integer
+              description: Grid RMS voltage (÷100 for volts)
+              example: 2418
+            upsRmsVolt:
+              type: integer
+              description: UPS RMS voltage (÷100 for volts)
+              example: 2403
+            genRmsVolt:
+              type: integer
+              description: Generator RMS voltage (÷100 for volts)
+              example: 10
+            gridL1RmsVolt:
+              type: integer
+              description: Grid L1 voltage (÷100 for volts)
+              example: 1208
+            gridL2RmsVolt:
+              type: integer
+              description: Grid L2 voltage (÷100 for volts)
+              example: 1206
+            gridL1RmsCurr:
+              type: integer
+              description: Grid L1 current (÷100 for amps)
+              example: 0
+            gridL2RmsCurr:
+              type: integer
+              description: Grid L2 current (÷100 for amps)
+              example: 0
+            gridL1ActivePower:
+              type: integer
+              description: Grid L1 active power (watts)
+              example: 872
+            gridL2ActivePower:
+              type: integer
+              description: Grid L2 active power (watts)
+              example: 1169
+            hybridPower:
+              type: integer
+              description: Hybrid power (watts)
+              example: -2042
+            smartPort1Status:
+              type: integer
+              description: Smart port 1 status
+              example: 2
+            smartPort2Status:
+              type: integer
+              description: Smart port 2 status
+              example: 0
+            smartPort3Status:
+              type: integer
+              description: Smart port 3 status
+              example: 0
+            smartPort4Status:
+              type: integer
+              description: Smart port 4 status
+              example: 0
+            gridFreq:
+              type: integer
+              description: Grid frequency (÷100 for Hz)
+              example: 5998
+
+    ParameterReadResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        inverterSn:
+          type: string
+          description: "Device serial number (note: API uses 'inverterSn', not 'serialNum')"
+          example: "1234567890"
+        deviceType:
+          type: integer
+          description: Device type code
+          example: 6
+        startRegister:
+          type: integer
+          description: Starting register address from request
+          example: 0
+        pointNumber:
+          type: integer
+          description: Number of registers read from request
+          example: 127
+        valueFrame:
+          type: string
+          description: Raw value frame data
+          example: "00010002..."
+        parameters:
+          type: object
+          additionalProperties: true
+          description: |
+            **CRITICAL**: Parameters are returned as FLAT key-value pairs in the response root,
+            NOT nested under a 'parameters' field!
+
+            **API Response Structure**:
+            ```json
+            {
+              "success": true,
+              "inverterSn": "1234567890",
+              "deviceType": 6,
+              "startRegister": 66,
+              "pointNumber": 8,
+              "valueFrame": "...",
+              "HOLD_AC_CHARGE_POWER_CMD": 50,        ← Parameter keys at root level
+              "HOLD_AC_CHARGE_SOC_LIMIT": 100,       ← Not nested!
+              "HOLD_AC_CHARGE_START_HOUR_1": 23
+            }
+            ```
+
+            **Parameter Key Naming**:
+            - Keys are descriptive names like `"HOLD_AC_CHARGE_POWER_CMD"`
+            - NOT Modbus register numbers like `"66"`
+            - Prefixes indicate register type:
+              - `HOLD_*` - Hold registers (configuration, read/write)
+              - `INPUT_*` - Input registers (runtime data, read-only)
+              - `FUNC_*` - Function enable bits (from register 21)
+              - `BIT_*` - Bit field values
+              - `MIDBOX_*` - GridBOSS-specific parameters
+
+            **Verified Parameter Examples (18KPV)**:
+
+            Register 21 (Function Enable - 27 bit fields):
+            - `FUNC_EPS_EN` - Off-grid mode enable
+            - `FUNC_AC_CHARGE` - AC charge enable
+            - `FUNC_SET_TO_STANDBY` - Standby mode control
+            - `FUNC_FORCED_CHG_EN` - Force charge enable
+            - `FUNC_FORCED_DISCHG_EN` - Forced discharge enable
+            - Plus 22 additional function bits
+
+            Register 66-67 (AC Charge Control):
+            - `HOLD_AC_CHARGE_POWER_CMD` - AC charge power (0-100%)
+            - `HOLD_AC_CHARGE_SOC_LIMIT` - AC charge SOC limit (0-100%)
+
+            Register 70-71 (AC Charge Schedule):
+            - `HOLD_AC_CHARGE_START_HOUR_1` - Schedule 1 start hour
+            - `HOLD_AC_CHARGE_START_MINUTE_1` - Schedule 1 start minute
+
+            Register 100 (Battery Protection):
+            - `HOLD_LEAD_ACID_DISCHARGE_CUT_OFF_VOLT` - Discharge cutoff
+
+            Register 110 (System Functions - 14 bit fields):
+            - `FUNC_PV_GRID_OFF_EN` - PV grid-off enable
+            - `FUNC_MICRO_GRID_EN` - Microgrid mode
+            - `FUNC_BATTERY_ECO_EN` - Battery eco mode
+            - `BIT_WORKING_MODE` - Working mode selection
+            - Plus 10 additional fields
+
+            **Device-Specific Differences**:
+            - 18KPV: 147 registers with parameters, 488 total parameters
+            - GridBOSS: Different parameter set (includes `MIDBOX_*` parameters)
+            - Parameter keys vary by device model and firmware version
+
+            **Discovery Strategy**:
+            1. Query register ranges: (0,127), (127,127), (240,127)
+            2. Collect all parameter keys from flat response structure
+            3. Map keys to functionality based on prefix and values
+            4. Test with your specific device model for accurate mappings
+
+    QuickChargeStatus:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        hasUnclosedQuickChargeTask:
+          type: boolean
+          description: Whether quick charge is currently active
+          example: false
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation completed successfully
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Error description
+
+    FirmwareUpdateCheck:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        details:
+          type: object
+          properties:
+            serialNum:
+              type: string
+              example: "1234567890"
+            deviceType:
+              type: integer
+              description: Device type code (6=Inverter, 9=GridBOSS)
+              example: 6
+            standard:
+              type: string
+              description: Firmware standard/family
+              example: fAAB
+            firmwareType:
+              type: string
+              example: PCS
+            fwCodeBeforeUpload:
+              type: string
+              description: Current firmware version (format {standard}-{v1}{v2})
+              example: fAAB-2122
+            v1:
+              type: integer
+              description: Current application firmware version
+              example: 33
+            v2:
+              type: integer
+              description: Current parameter firmware version
+              example: 34
+            v3Value:
+              type: integer
+              description: Third firmware component version
+              example: 0
+            lastV1:
+              type: integer
+              description: Latest available application firmware version
+              example: 37
+            lastV1FileName:
+              type: string
+              description: Latest application firmware filename
+              example: FAAB-25xx_20250925_App.hex
+            lastV2:
+              type: integer
+              description: Latest available parameter firmware version
+              example: 37
+            lastV2FileName:
+              type: string
+              description: Latest parameter firmware filename
+              example: fAAB-xx25_Para375_20250925.hex
+            m3Version:
+              type: integer
+              description: Master controller version
+              example: 33
+            pcs1UpdateMatch:
+              type: boolean
+              description: Whether PCS1 (app) update is compatible
+              example: true
+            pcs2UpdateMatch:
+              type: boolean
+              description: Whether PCS2 (parameter) update is compatible
+              example: true
+            pcs3UpdateMatch:
+              type: boolean
+              description: Whether PCS3 update is compatible
+              example: false
+            needRunStep2:
+              type: boolean
+              description: Whether multi-step update required (step 2)
+              example: false
+            needRunStep3:
+              type: boolean
+              description: Whether multi-step update required (step 3)
+              example: false
+            needRunStep4:
+              type: boolean
+              description: Whether multi-step update required (step 4)
+              example: false
+            needRunStep5:
+              type: boolean
+              description: Whether multi-step update required (step 5)
+              example: false
+            midbox:
+              type: boolean
+              description: Whether device is GridBOSS/MID
+              example: false
+            lowVoltBattery:
+              type: boolean
+              description: Low voltage battery system
+              example: true
+            type6:
+              type: boolean
+              description: Type 6 device flag
+              example: true
+        infoForwardUrl:
+          type: string
+          description: |
+            URL to firmware release notes and update details.
+            Only present when `success: true` (update available).
+            Contains comprehensive release notes, changelog, and update instructions.
+          example: http://os.solarcloudsystem.com/#/apiLogin?...
+
+    FirmwareUpdateStatus:
+      type: object
+      properties:
+        receiving:
+          type: boolean
+          description: Whether system is receiving firmware file
+          example: false
+        progressing:
+          type: boolean
+          description: Whether update is currently in progress
+          example: true
+        fileReady:
+          type: boolean
+          description: Whether firmware file is ready for installation
+          example: false
+        deviceInfos:
+          type: array
+          description: Array of devices with active or recent updates
+          items:
+            type: object
+            properties:
+              inverterSn:
+                type: string
+                description: Serial number of device being updated
+                example: "1234567890"
+              startTime:
+                type: string
+                format: date-time
+                description: Update start timestamp
+                example: "2025-11-18 19:16:59"
+              stopTime:
+                type: string
+                format: date-time
+                description: Update completion timestamp (empty if in progress)
+                example: ""
+              standardUpdate:
+                type: boolean
+                description: Whether this is standard update process
+                example: true
+              firmware:
+                type: string
+                description: Firmware version being installed
+                example: FAAB-25xx
+              firmwareType:
+                type: string
+                description: Firmware type
+                example: PCS
+              updateStatus:
+                type: string
+                enum:
+                  - READY
+                  - UPLOADING
+                  - COMPLETE
+                  - FAILED
+                description: Current update status
+                example: READY
+              isSendStartUpdate:
+                type: boolean
+                description: Whether start command sent to device
+                example: true
+              isSendEndUpdate:
+                type: boolean
+                description: Whether completion command sent
+                example: false
+              packageIndex:
+                type: integer
+                description: Current package number being transferred
+                example: 439
+              updateRate:
+                type: string
+                description: Progress as percentage and package count
+                example: "78% - 439 / 561"
+
+    UpdateEligibilityStatus:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        msg:
+          type: string
+          enum:
+            - allowToUpdate
+            - deviceUpdating
+            - parallelGroupUpdating
+            - notAllowedInParallel
+          description: Update eligibility status message
+          example: allowToUpdate
+
+    PlantOverviewResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        total:
+          type: integer
+          description: Total number of plants matching filter
+          example: 1
+        rows:
+          type: array
+          description: Array of plants with real-time metrics
+          items:
+            type: object
+            properties:
+              plantId:
+                type: integer
+                example: 19147
+              name:
+                type: string
+                example: "123 Main St"
+              ppv:
+                type: integer
+                description: Total PV power (W)
+                example: 2609
+              ppvText:
+                type: string
+                example: "2 kW"
+              pCharge:
+                type: integer
+                description: Battery charging power (W)
+                example: 2039
+              pChargeText:
+                type: string
+                example: "2 kW"
+              pDisCharge:
+                type: integer
+                description: Battery discharging power (W)
+                example: 0
+              pDisChargeText:
+                type: string
+                example: "0 W"
+              pConsumption:
+                type: integer
+                description: Consumption power (W)
+                example: 1030
+              pConsumptionText:
+                type: string
+                example: "1 kW"
+              todayYielding:
+                type: integer
+                description: Today's PV production (×0.1 kWh)
+                example: 146
+              totalYielding:
+                type: integer
+                description: Lifetime PV production (×0.1 kWh)
+                example: 14297
+              inverters:
+                type: array
+                description: Nested inverter details
+                items:
+                  $ref: '#/components/schemas/InverterBasic'
+
+    InverterOverviewResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        total:
+          type: integer
+          description: Total number of inverters matching filter
+          example: 2
+        rows:
+          type: array
+          description: Array of inverters with real-time metrics
+          items:
+            type: object
+            properties:
+              serialNum:
+                type: string
+                example: "1234567890"
+              statusText:
+                type: string
+                enum:
+                  - normal
+                  - fault
+                  - offline
+                example: normal
+              deviceType:
+                type: integer
+                description: Device type code (6=18KPV, 9=Grid Boss)
+                example: 6
+              deviceTypeText:
+                type: string
+                example: "18KPV"
+              phase:
+                type: integer
+                example: 1
+              plantId:
+                type: integer
+                example: 19147
+              plantName:
+                type: string
+                example: "123 Main St"
+              ppv:
+                type: integer
+                description: PV power (W)
+                example: 2609
+              ppvText:
+                type: string
+                example: "2 kW"
+              pCharge:
+                type: integer
+                description: Battery charging power (W)
+                example: 2039
+              pChargeText:
+                type: string
+                example: "2 kW"
+              pDisCharge:
+                type: integer
+                description: Battery discharging power (W)
+                example: 0
+              pDisChargeText:
+                type: string
+                example: "0 W"
+              pConsumption:
+                type: integer
+                description: Consumption power (W)
+                example: 0
+              pConsumptionText:
+                type: string
+                example: "0 W"
+              soc:
+                type: string
+                description: State of charge
+                example: "82 %"
+              vBat:
+                type: integer
+                description: Battery voltage (×0.1 V)
+                example: 537
+              vBatText:
+                type: string
+                example: "53.7 V"
+              totalYielding:
+                type: integer
+                description: Lifetime PV production (×0.1 kWh)
+                example: 14297
+              totalYieldingText:
+                type: string
+                example: "1429.7 kWh"
+              totalDischarging:
+                type: integer
+                description: Lifetime battery discharge (×0.1 kWh)
+                example: 27718
+              totalDischargingText:
+                type: string
+                example: "2771.8 kWh"
+              totalExport:
+                type: integer
+                description: Lifetime grid export (×0.1 kWh)
+                example: 61276
+              totalExportText:
+                type: string
+                example: "6127.6 kWh"
+              totalUsage:
+                type: integer
+                description: Lifetime consumption (×0.1 kWh)
+                example: 36363
+              totalUsageText:
+                type: string
+                example: "3636.3 kWh"
+              parallelGroup:
+                type: string
+                description: Parallel group identifier
+                example: "A"
+              parallelIndex:
+                type: string
+                description: Position within parallel group
+                example: "2"
+              parallelInfo:
+                type: string
+                example: "A2, Parallel"
+              parallelModel:
+                type: string
+                enum:
+                  - PARALLEL
+                  - STANDALONE
+                example: "PARALLEL"
+
+    EnergyBreakdown:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        dataPoints:
+          type: array
+          description: Energy values for each time period (hour/day/month/year)
+          items:
+            type: object
+            properties:
+              period:
+                type: string
+                description: Time period label (e.g., "00:00", "2025-11-01", "November", "2025")
+                example: "00:00"
+              value:
+                type: number
+                description: Energy value in Wh
+                example: 1500
+
+    EventListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        total:
+          type: integer
+          description: Total number of events
+          example: 15
+        rows:
+          type: array
+          items:
+            type: object
+            properties:
+              eventId:
+                type: integer
+                example: 12345
+              serialNum:
+                type: string
+                example: "4512670118"
+              eventCode:
+                type: string
+                description: Fault/warning code
+                example: "F01"
+              eventType:
+                type: string
+                enum: [FAULT, WARNING, INFO]
+                example: "FAULT"
+              eventText:
+                type: string
+                description: Human-readable event description
+                example: "Grid voltage high"
+              startTime:
+                type: string
+                format: date-time
+                description: Event start timestamp
+                example: "2025-11-19 10:30:00"
+              endTime:
+                type: string
+                format: date-time
+                description: Event end timestamp (empty if ongoing)
+                example: "2025-11-19 10:45:00"
+              statusText:
+                type: string
+                enum: [ACTIVE, RESOLVED]
+                example: "RESOLVED"
+
+    BatteryInfoForSet:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        serialNum:
+          type: string
+          example: "4512670118"
+        totalNumber:
+          type: integer
+          description: Total battery count
+          example: 3
+        batteryArray:
+          type: array
+          description: Simplified battery list (no detailed metrics)
+          items:
+            type: object
+            properties:
+              batteryKey:
+                type: string
+                description: Unique battery identifier
+                example: "4512670118_Battery_ID_01"
+              batterySn:
+                type: string
+                description: Battery serial number
+                example: "Battery_ID_01"
+              batIndex:
+                type: integer
+                description: Battery position in array (0-indexed)
+                example: 0
+              lost:
+                type: boolean
+                description: Whether battery is offline
+                example: false
+
+    InverterInfo:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        serialNum:
+          type: string
+          example: "4512670118"
+        deviceType:
+          type: integer
+          example: 6
+        deviceTypeText:
+          type: string
+          description: Human-readable device model
+          example: "18KPV"
+        powerRating:
+          type: integer
+          description: Power rating code
+          example: 6
+        powerRatingText:
+          type: string
+          example: "12kW"
+        fwCode:
+          type: string
+          description: Firmware version
+          example: "fAAB-2122"
+        batteryType:
+          type: string
+          enum: [LITHIUM, LEAD_ACID]
+          example: "LITHIUM"
+        nominalCapacity:
+          type: integer
+          description: Nominal battery capacity (Ah)
+          example: 280
+        installedCapacity:
+          type: integer
+          description: Installed PV capacity (W)
+          example: 20000
+        phase:
+          type: integer
+          description: Phase type (1=single, 3=three-phase)
+          example: 1
+
+    SolarForecast:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        serialNum:
+          type: string
+          example: "4524850115"
+        forecastDate:
+          type: string
+          format: date
+          example: "2025-11-20"
+        predictions:
+          type: array
+          description: Hourly or daily solar production predictions
+          items:
+            type: object
+            properties:
+              time:
+                type: string
+                description: Time period (hour or date)
+                example: "12:00"
+              predictedPower:
+                type: number
+                description: Predicted PV power (W)
+                example: 8500
+              confidence:
+                type: number
+                description: Prediction confidence (0-100%)
+                example: 85
+
+    WeatherForecast:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        location:
+          type: object
+          properties:
+            latitude:
+              type: number
+              example: 34.05
+            longitude:
+              type: number
+              example: -118.25
+            city:
+              type: string
+              example: "Los Angeles"
+        current:
+          type: object
+          properties:
+            temperature:
+              type: number
+              description: Current temperature (Celsius)
+              example: 22
+            conditions:
+              type: string
+              example: "Partly Cloudy"
+            cloudCover:
+              type: integer
+              description: Cloud cover percentage
+              example: 30
+        forecast:
+          type: array
+          description: Multi-day forecast
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+                example: "2025-11-20"
+              tempHigh:
+                type: number
+                example: 25
+              tempLow:
+                type: number
+                example: 18
+              conditions:
+                type: string
+                example: "Sunny"
+              cloudCover:
+                type: integer
+                example: 10
+
+security:
+  - cookieAuth: []

@@ -1,0 +1,145 @@
+[project]
+name = "pylxpweb"
+version = "0.1.0"
+description = "Python client library for Luxpower/EG4 inverter web monitoring API"
+readme = "README.md"
+authors = [
+    { name = "Bryan Li", email = "bryan.li@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.13.2",
+    "pydantic>=2.12.4",
+]
+license = {text = "MIT"}
+keywords = ["luxpower", "eg4", "inverter", "solar", "api", "client"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-asyncio>=0.25.2",
+    "pytest-cov>=7.0.0",
+    "pytest-aiohttp>=1.1.0",
+    "mypy>=1.18.2",
+    "ruff>=0.14.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.10,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG",  # flake8-unused-arguments
+    "SIM",  # flake8-simplify
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["ARG"]  # Allow unused arguments in tests
+"src/pylxpweb/registers.py" = ["E501"]  # Allow long lines in auto-generated register data
+"utils/**/*" = ["E501", "SIM101"]  # Allow long lines and simplified conditions in utility scripts
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+warn_no_return = true
+follow_imports = "normal"
+show_error_codes = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "pytest",
+    "pytest.*",
+]
+ignore_missing_imports = true
+
+# Allow pydantic models to use decorators without type errors
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--cov=pylxpweb",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+markers = [
+    "integration: Integration tests that require real API access",
+]
+
+[tool.coverage.run]
+source = ["src/pylxpweb"]
+omit = [
+    "tests/*",
+    "research/*",
+    "*/site-packages/*",
+    "*/distutils/*",
+    "utils/*",
+    "src/pylxpweb/constants.py",
+    "src/pylxpweb/registers.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "if typing.TYPE_CHECKING:",
+]
+precision = 2
+skip_empty = true
+fail_under = 90
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+    "python-dotenv>=1.2.1",
+]

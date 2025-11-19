@@ -1,0 +1,20 @@
+[
+  {
+    "id": 99999,
+    "plantId": 99999,
+    "name": "Example Solar Station",
+    "nominalPower": 0,
+    "country": "United States of America",
+    "currentTimezoneWithMinute": -700,
+    "timezone": "GMT -8",
+    "daylightSavingTime": true,
+    "createDate": "2025-05-05",
+    "noticeFault": false,
+    "noticeWarn": false,
+    "noticeEmail": "",
+    "noticeEmail2": "",
+    "contactPerson": "",
+    "contactPhone": "",
+    "address": ""
+  }
+]
