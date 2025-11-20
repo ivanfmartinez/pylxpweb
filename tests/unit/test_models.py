@@ -42,9 +42,9 @@ class TestLoginResponse:
         model = LoginResponse.model_validate(data)
 
         assert model.success is True
-        assert model.userId == 15415
-        assert model.username == "bryanli"
-        assert model.email == "user@example.com"
+        assert model.userId == 99999
+        assert model.username == "testuser"
+        assert model.email == "testuser@gmail.com"
         assert len(model.plants) == 1
         assert model.plants[0].plantId == 99999
 
@@ -55,7 +55,7 @@ class TestLoginResponse:
 
         serialized = model.model_dump(mode="json")
         # Email should be obfuscated
-        assert serialized["email"] != "user@example.com"
+        assert serialized["email"] != "testuser@gmail.com"
         assert "@gmail.com" in serialized["email"]
 
     def test_obfuscate_phone(self) -> None:
@@ -91,7 +91,7 @@ class TestPlantInfo:
         model = PlantInfo.model_validate(data[0])
 
         assert model.plantId == 99999
-        assert model.name == "My Solar Station"
+        assert model.name == "Example Solar Station"
         assert model.daylightSavingTime is True
 
     def test_obfuscate_contact_info(self) -> None:

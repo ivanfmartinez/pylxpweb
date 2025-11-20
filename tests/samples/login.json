@@ -6,7 +6,7 @@
   "readonly": false,
   "role": "VIEWER",
   "realName": "Test User",
-  "email": "user@example.com",
+  "email": "testuser@gmail.com",
   "countryText": "United States of America",
   "currentContinentIndex": 4,
   "currentRegionIndex": 0,
@@ -46,7 +46,7 @@
   "timezone": "WEST8",
   "timezoneText": "GMT -8",
   "language": "ENGLISH",
-  "telNumber": "",
+  "telNumber": "555-123-4567",
   "address": "",
   "platform": "EG4",
   "userVisitRecord": {
