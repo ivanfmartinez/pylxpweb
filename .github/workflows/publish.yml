@@ -13,13 +13,14 @@ on:
           - testpypi
           - pypi
 
+# Only one release at a time
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: publish
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
+  id-token: write  # Required for OIDC PyPI publishing
 
 jobs:
   lint:
@@ -27,162 +28,180 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
+      - name: Set up Python
+        run: uv python install 3.13
 
-      - name: Run ruff check
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run ruff linting
         run: uv run ruff check src/ tests/
 
-      - name: Run ruff format check
+      - name: Run ruff formatting check
         run: uv run ruff format --check src/ tests/
 
-      - name: Run mypy
-        run: uv run mypy --strict src/pylxpweb/
+      - name: Run mypy type checking
+        run: uv run mypy src/pylxpweb/
 
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Set up Python
+        run: uv python install 3.13
+
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras
 
       - name: Run unit tests
-        run: uv run pytest tests/unit/ -v
+        run: |
+          uv run pytest tests/unit/ \
+            --cov=pylxpweb \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --junitxml=pytest.xml
 
-  integration:
+  integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    needs: [lint, test]
     timeout-minutes: 20
-    environment: integration-test
+    needs: [lint, test]
+    environment: integration-tests
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Set up Python
+        run: uv python install 3.13
+
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras
 
       - name: Run integration tests
         env:
           LUXPOWER_USERNAME: ${{ secrets.LUXPOWER_USERNAME }}
           LUXPOWER_PASSWORD: ${{ secrets.LUXPOWER_PASSWORD }}
           LUXPOWER_BASE_URL: ${{ secrets.LUXPOWER_BASE_URL }}
-        run: uv run pytest tests/integration/ -v -m integration
+        run: |
+          uv run pytest tests/integration/ \
+            -v \
+            --tb=short \
+            --log-cli-level=WARNING
 
   build:
-    name: Build Distribution
+    name: Build Package
     runs-on: ubuntu-latest
-    needs: [lint, test, integration]
+    timeout-minutes: 10
+    needs: [lint, test, integration-tests]
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --all-extras
 
       - name: Build package
         run: uv build
 
-      - name: Print hashes
-        run: cd dist && sha256sum * | tee SHA256SUMS
+      - name: Check package
+        run: uv run twine check dist/*
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v5
         with:
-          name: dist
+          name: python-package-distributions
           path: dist/
           retention-days: 7
 
   publish-testpypi:
     name: Publish to TestPyPI
     runs-on: ubuntu-latest
-    needs: [build]
+    timeout-minutes: 10
+    needs: build
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'testpypi')
     environment: testpypi
+    permissions:
+      id-token: write
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
         with:
-          name: dist
+          name: python-package-distributions
           path: dist/
 
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-          skip-existing: true
+          print-hash: true
 
-      - name: Add summary
+      - name: Create TestPyPI summary
         run: |
-          echo "## Package Published to TestPyPI :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧪 Published to TestPyPI" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Test installation with:" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pylxpweb" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Package: pylxpweb" >> $GITHUB_STEP_SUMMARY
+          echo "Version: $(ls dist/*.whl | sed 's/.*pylxpweb-//' | sed 's/-.*//')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Test install: \`pip install --index-url https://test.pypi.org/simple/ pylxpweb\`" >> $GITHUB_STEP_SUMMARY
 
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [build, publish-testpypi]
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
     environment: pypi
+    permissions:
+      id-token: write
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
         with:
-          name: dist
+          name: python-package-distributions
           path: dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
 
-      - name: Add summary
+      - name: Create PyPI summary
         run: |
-          echo "## Package Published to PyPI :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 Published to PyPI" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Install with:" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "pip install pylxpweb" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Package: pylxpweb" >> $GITHUB_STEP_SUMMARY
+          echo "Version: $(ls dist/*.whl | sed 's/.*pylxpweb-//' | sed 's/-.*//')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Install: \`pip install pylxpweb\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 View on PyPI: https://pypi.org/project/pylxpweb/" >> $GITHUB_STEP_SUMMARY

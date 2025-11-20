@@ -5,6 +5,7 @@ This approach is faster and more reliable than using TestServer.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 import pytest
@@ -14,14 +15,6 @@ from pylxpweb import LuxpowerClient
 from pylxpweb.exceptions import LuxpowerAuthError
 
 # Import fixtures
-from tests.conftest_aioresponses import (
-    battery_response,
-    energy_response,
-    login_response,
-    mocked_api,
-    plants_response,
-    runtime_response,
-)
 
 # Base URL for all tests
 BASE_URL = "https://monitor.eg4electronics.com"
@@ -280,10 +273,8 @@ class TestErrorHandling:
             assert client._current_backoff_delay == 0.0
 
             # Try to login with wrong credentials (will fail)
-            try:
+            with contextlib.suppress(LuxpowerAuthError):
                 await client.login()
-            except LuxpowerAuthError:
-                pass
 
             # Verify backoff was increased (client retries, so 2 errors)
             assert client._consecutive_errors >= 1

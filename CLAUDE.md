@@ -430,38 +430,87 @@ Unit Tests (parallel)         ─┼─> Integration Tests ─> CI Success
                                └─> (all must pass)
 ```
 
+Triggers: Push to main/master, Pull Requests, Manual Dispatch
+
 1. **Lint & Type Check** (10 min timeout):
+   - Uses: `actions/checkout@v5`, `astral-sh/setup-uv@v7`
+   - Python: 3.13 (via `uv python install 3.13`)
    - `ruff check src/ tests/`
    - `ruff format --check src/ tests/`
    - `mypy --strict src/pylxpweb/`
 
 2. **Unit Tests** (15 min timeout):
-   - `pytest tests/unit/ --cov=pylxpweb --cov-report=xml --cov-report=html`
-   - Upload coverage to Codecov
-   - Upload test artifacts (30-day retention)
+   - Uses: `actions/checkout@v5`, `astral-sh/setup-uv@v7`
+   - Python: 3.13 (via `uv python install 3.13`)
+   - `pytest tests/unit/ --cov=pylxpweb --cov-report=term-missing --cov-report=xml --cov-report=html -v`
+   - Upload coverage to Codecov (`codecov/codecov-action@v5`)
+   - Upload coverage HTML and pytest results (30-day retention via `upload-artifact@v5`)
 
 3. **Integration Tests** (20 min timeout):
-   - Depends on: Lint, Type Check, Unit Tests all passing
-   - Uses GitHub environment secrets (LUXPOWER_USERNAME, LUXPOWER_PASSWORD, LUXPOWER_BASE_URL)
+   - Depends on: Lint & Unit Tests passing
+   - Uses: `actions/checkout@v5`, `astral-sh/setup-uv@v7`
+   - Python: 3.13 (via `uv python install 3.13`)
+   - Environment: `integration-test` (for secrets)
    - Skips for Dependabot PRs (no secret access)
    - `pytest tests/integration/ -v -m integration`
+   - Environment variables: LUXPOWER_USERNAME, LUXPOWER_PASSWORD, LUXPOWER_BASE_URL
 
 4. **CI Success**:
    - Final validation gate
    - Checks all upstream jobs passed
 
 **Publish Workflow** (`.github/workflows/publish.yml`):
-- Triggers: GitHub releases, manual dispatch
-- Environments: `testpypi` and `pypi`
-- Quality gates: lint, type check, unit tests, integration tests
-- Uses OIDC authentication (`id-token: write`)
-- Build artifacts with 7-day retention
-- Publishes to TestPyPI first, then PyPI (requires TestPyPI success)
+```
+Lint ─┐
+Test  ─┼─> Integration Tests ─> Build ─> TestPyPI ─> PyPI
+       │
+       └─> (all must pass)
+```
+
+Triggers: GitHub releases (`published`), Manual dispatch (choose testpypi/pypi)
+
+1. **Lint & Type Check** (10 min timeout):
+   - Uses: `actions/checkout@v5`, `astral-sh/setup-uv@v7`
+   - Python: 3.13 (via `uv python install 3.13`)
+   - Same checks as CI workflow
+
+2. **Unit Tests** (15 min timeout):
+   - Uses: `actions/checkout@v5`, `astral-sh/setup-uv@v7`
+   - Python: 3.13 (via `uv python install 3.13`)
+   - `pytest tests/unit/ --cov=pylxpweb --cov-report=term-missing --cov-report=xml --junitxml=pytest.xml`
+
+3. **Integration Tests** (20 min timeout):
+   - Depends on: Lint & Unit Tests passing
+   - Environment: `integration-tests`
+   - Same setup as CI workflow
+
+4. **Build Package** (10 min timeout):
+   - Depends on: All quality checks passing
+   - `uv build` - Creates wheel and sdist
+   - `uv run twine check dist/*` - Validates package
+   - Upload artifacts: `python-package-distributions` (7-day retention via `upload-artifact@v5`)
+
+5. **Publish to TestPyPI** (10 min timeout):
+   - Environment: `testpypi`
+   - Permissions: `id-token: write` (OIDC authentication)
+   - Uses: `pypa/gh-action-pypi-publish@release/v1`
+   - Repository: `https://test.pypi.org/legacy/`
+   - Creates summary with test install command
+
+6. **Publish to PyPI** (10 min timeout):
+   - Depends on: Build & TestPyPI success
+   - Environment: `pypi`
+   - Permissions: `id-token: write` (OIDC authentication)
+   - Uses: `pypa/gh-action-pypi-publish@release/v1`
+   - Creates summary with PyPI link and install command
 
 **Dependabot** (`.github/dependabot.yml`):
-- Weekly updates for GitHub Actions
-- Weekly updates for pip dependencies
-- Auto-merge strategy for minor/patch updates (optional)
+- **GitHub Actions**: Weekly updates (Mondays), max 5 PRs, uses latest `@v5`/`@v6`/`@v7` versions
+- **Python (uv ecosystem)**: Weekly updates (Mondays), max 10 PRs
+  - Groups: `development-dependencies` and `production-dependencies`
+  - Update types: Minor and patch updates grouped together
+  - Reviewer: `bryanli` (ensures uv compatibility)
+- Commit messages: `chore(deps): ...` format
 
 ### GitHub Secrets Configuration
 

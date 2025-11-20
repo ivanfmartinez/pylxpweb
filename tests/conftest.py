@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
+from aioresponses import aioresponses
 
 
 def is_ci_environment() -> bool:
@@ -639,3 +640,14 @@ async def live_client():
 
     async with LuxpowerClient(username, password, base_url=base_url) as client:
         yield client
+
+
+@pytest.fixture
+def mocked_api() -> Generator[aioresponses, None, None]:
+    """Create aioresponses mock for HTTP requests.
+
+    This fixture provides a context manager for mocking aiohttp requests
+    using the aioresponses library.
+    """
+    with aioresponses() as m:
+        yield m
