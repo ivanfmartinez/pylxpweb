@@ -37,6 +37,7 @@ from .exceptions import (
     LuxpowerAuthError,
     LuxpowerConnectionError,
     LuxpowerDeviceError,
+    LuxpowerDeviceOfflineError,
     LuxpowerError,
 )
 from .models import OperatingMode
@@ -49,6 +50,7 @@ __all__ = [
     "LuxpowerAuthError",
     "LuxpowerConnectionError",
     "LuxpowerDeviceError",
+    "LuxpowerDeviceOfflineError",
     # Endpoint modules
     "PlantEndpoints",
     "DeviceEndpoints",

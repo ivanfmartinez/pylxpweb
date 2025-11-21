@@ -87,10 +87,10 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: [lint, test]
-    timeout-minutes: 20
+    timeout-minutes: 30
     # Skip for Dependabot PRs (no secret access)
     if: github.actor != 'dependabot[bot]'
-    environment: integration-test
+    environment: integration-tests
     steps:
       - uses: actions/checkout@v5
 
@@ -111,7 +111,27 @@ jobs:
           LUXPOWER_USERNAME: ${{ secrets.LUXPOWER_USERNAME }}
           LUXPOWER_PASSWORD: ${{ secrets.LUXPOWER_PASSWORD }}
           LUXPOWER_BASE_URL: ${{ secrets.LUXPOWER_BASE_URL }}
-        run: uv run pytest tests/integration/ -v -m integration
+        run: |
+          uv run pytest tests/integration/ \
+            -v \
+            -m integration \
+            --reruns 2 \
+            --reruns-delay 300 \
+            --only-rerun "LuxpowerDeviceOfflineError" \
+            --only-rerun "LuxpowerConnectionError" \
+            --only-rerun "TimeoutError" \
+            --only-rerun "timeout" \
+            --tb=short
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: integration-test-results
+          path: |
+            .pytest_cache/
+            test-results/
+          retention-days: 7
 
   ci-success:
     name: CI Success

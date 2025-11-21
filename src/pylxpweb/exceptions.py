@@ -21,3 +21,7 @@ class LuxpowerAPIError(LuxpowerError):
 
 class LuxpowerDeviceError(LuxpowerError):
     """Raised when there's an issue with device operations."""
+
+
+class LuxpowerDeviceOfflineError(LuxpowerDeviceError):
+    """Raised when a device is offline or unreachable."""
