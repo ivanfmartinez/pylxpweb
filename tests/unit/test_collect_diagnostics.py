@@ -79,12 +79,13 @@ class TestSanitizeValue:
         assert result == "Example Station"
 
     def test_sanitize_plant_name_safe(self) -> None:
-        """Test plant name without address is preserved."""
+        """Test that ALL station/plant names are sanitized (privacy requirement)."""
+        # Station names are ALWAYS sanitized, even if they don't look like addresses
         result = sanitize_value("name", "My Home Solar")
-        assert result == "My Home Solar"
+        assert result == "Example Station"
 
         result = sanitize_value("station_name", "East Wing")
-        assert result == "East Wing"
+        assert result == "Example Station"
 
     def test_sanitize_nested_dict(self) -> None:
         """Test sanitization of nested dictionary."""
@@ -170,6 +171,7 @@ class TestSanitizeDiagnostics:
 
         # Check sanitization
         station = result["stations"][0]
+        assert station["id"] == "00000"  # Station IDs are sanitized (privacy)
         assert station["name"] == "Example Station"
         assert station["location"] == "123 Example Street, City, State"
         mid_device = station["parallel_groups"][0]["mid_device"]
@@ -181,7 +183,6 @@ class TestSanitizeDiagnostics:
         assert result["collection_timestamp"] == "2025-11-20T14:30:00"
         assert result["pylxpweb_version"] == "0.2.2"
         assert result["base_url"] == "https://monitor.eg4electronics.com"
-        assert station["id"] == 12345
         assert mid_device["model"] == "MID-GridBOSS"
         assert inverter["model"] == "EG4-18KPV"
         battery = inverter["battery_bank"]["batteries"][0]
@@ -223,8 +224,9 @@ class TestAddressDetection:
             assert result == "Example Station", f"Failed to detect address: {addr}"
 
     def test_preserve_safe_plant_names(self) -> None:
-        """Test preservation of safe plant names."""
-        safe_names = [
+        """Test that ALL station/plant names are sanitized (privacy requirement)."""
+        # Per user requirement: ALL station names should be redacted for privacy
+        names_to_sanitize = [
             "My Home Solar",
             "East Wing",
             "Solar Array 1",
@@ -233,9 +235,9 @@ class TestAddressDetection:
             "Rooftop Installation",
         ]
 
-        for name in safe_names:
+        for name in names_to_sanitize:
             result = sanitize_value("name", name)
-            assert result == name, f"Incorrectly sanitized safe name: {name}"
+            assert result == "Example Station", f"Failed to sanitize name: {name}"
 
 
 if __name__ == "__main__":

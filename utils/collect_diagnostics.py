@@ -35,7 +35,6 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -57,6 +56,13 @@ def sanitize_value(key: str, value: Any) -> Any:
     Returns:
         Sanitized value (placeholder for sensitive data, original for safe data)
     """
+    # Recursively sanitize nested structures FIRST (before checking field names)
+    # This ensures we process nested dicts/lists before applying field-level sanitization
+    if isinstance(value, dict):
+        return {k: sanitize_value(k, v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [sanitize_value(key, item) for item in value]
+
     # Convert key to lowercase for case-insensitive matching
     key_lower = key.lower()
 
@@ -79,6 +85,8 @@ def sanitize_value(key: str, value: Any) -> Any:
         return value
 
     # Addresses - replace with placeholder
+    # Note: "location" is intentionally included here for string values,
+    # but dicts are already processed recursively above
     if any(
         pattern in key_lower
         for pattern in [
@@ -107,21 +115,13 @@ def sanitize_value(key: str, value: Any) -> Any:
             return 0.0
         return value
 
-    # Plant/Station names that might contain addresses
-    if "name" in key_lower and isinstance(value, str):
-        # Check if it looks like an address (contains numbers and common address words)
-        if re.search(
-            r"\d+.*\b(street|st|avenue|ave|road|rd|drive|dr|way|lane|ln|boulevard|blvd|court|ct)\b",
-            value.lower(),
-        ):
-            return "Example Station"
-        return value
+    # Station/Plant IDs - always sanitize
+    if key_lower in ["id", "plant_id", "station_id"] and isinstance(value, (int, str)):
+        return "00000"
 
-    # Recursively sanitize nested structures
-    if isinstance(value, dict):
-        return {k: sanitize_value(k, v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [sanitize_value(key, item) for item in value]
+    # Plant/Station names - always sanitize (may contain addresses or personal info)
+    if key_lower in ["name", "plant_name", "station_name"] and isinstance(value, str):
+        return "Example Station"
 
     return value
 
