@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2025-11-20
+
 ### Added
+
+- **Operating Mode Control** - New operating mode control for inverters with `OperatingMode` enum:
+  - `OperatingMode.NORMAL` - Normal operation mode
+  - `OperatingMode.STANDBY` - Standby mode (inverter disabled)
+  - `set_operating_mode(mode)` - Set inverter operating mode
+  - `get_operating_mode()` - Get current operating mode (reads FUNC_EN register bit 9)
+
+- **Quick Charge Control** - Convenience methods on `BaseInverter` for quick charge operations:
+  - `enable_quick_charge()` / `disable_quick_charge()` - Control quick charge operation
+  - `get_quick_charge_status()` - Check if quick charge is active (returns bool)
+
+- **Quick Discharge Control** - New quick discharge endpoints and convenience methods:
+  - API: `start_quick_discharge()` / `stop_quick_discharge()` in `ControlEndpoints`
+  - `BaseInverter`: `enable_quick_discharge()` / `disable_quick_discharge()`
+  - `get_quick_discharge_status()` - Check if quick discharge is active (returns bool)
+  - Uses shared `quickCharge/getStatusInfo` endpoint for status (returns both charge & discharge status)
+
+- **API Discovery** - Documented quick discharge endpoints in OpenAPI spec:
+  - `/web/config/quickDischarge/start` - Start quick discharge operation
+  - `/web/config/quickDischarge/stop` - Stop quick discharge operation
+  - Updated `QuickChargeStatus` model with `hasUnclosedQuickDischargeTask` field
+  - Note: No separate `quickDischarge/getStatusInfo` endpoint (returns HTTP 404)
 
 - **Diagnostic Data Collection Tool** (`utils/collect_diagnostics.py`) - Comprehensive diagnostic data collection utility for support and troubleshooting:
   - Automatically collects station information, device hierarchy, runtime data, energy statistics, battery data, and parameter settings
@@ -26,6 +50,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Coverage Reports**:
   - Added `coverage.json` to `.gitignore` to prevent test artifacts from being tracked
+
+### Design Decisions
+
+- **Operating Mode vs. Quick Charge/Discharge**: Operating mode (NORMAL/STANDBY) is distinct from quick charge/discharge operations, which are functions that work independently alongside operating modes
+- **Status Methods Return Bool**: Convenience methods like `get_quick_charge_status()` return `bool` for simplicity rather than the full `QuickChargeStatus` object
+- **Shared Status Endpoint**: Quick discharge status is retrieved via `quickCharge/getStatusInfo` endpoint, which returns both charge and discharge status in a single response
+
+### Testing
+
+- ✅ **Unit tests**: 335 passed (31 new tests added)
+- ✅ **Coverage**: >83% (new operating mode and quick charge/discharge code fully covered)
+- ✅ **All quality checks passing**: linting, type checking, coverage
+
+### Notes
+
+- Resolves Issue #14 - Operating mode control and quick charge/discharge support
+- All changes are backward compatible
+- No integration tests for quick charge/discharge operations (safety concern with live electrical systems)
 
 ## [0.2.2] - 2025-11-20
 
@@ -188,11 +230,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History Summary
 
+- **v0.2.3** (2025-11-20): Operating mode control, quick charge/discharge support, diagnostic tool
+- **v0.2.2** (2025-11-20): Integration test fixes, SOC limit API correction
 - **v0.2.1** (2025-11-20): Battery current control convenience methods, comprehensive documentation
 - **v0.2.0** (2025-11-19): Object-oriented device hierarchy, helper methods, register mapping
 - **v0.1.1** (2025-11-15): Bug fixes and improvements
 - **v0.1.0** (2025-11-14): Initial release with core functionality
 
+[0.2.3]: https://github.com/joyfulhouse/pylxpweb/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/joyfulhouse/pylxpweb/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/joyfulhouse/pylxpweb/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/joyfulhouse/pylxpweb/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/joyfulhouse/pylxpweb/compare/v0.1.0...v0.1.1
