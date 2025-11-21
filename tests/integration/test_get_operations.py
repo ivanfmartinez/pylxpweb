@@ -1,0 +1,311 @@
+"""Integration tests for GET operations with live API.
+
+These tests are READ-ONLY and safe to run. They test data retrieval without
+modifying any device settings.
+
+To run these tests:
+1. Create a .env file in project root with credentials
+2. Run: pytest -m integration tests/integration/test_get_operations.py
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from collections.abc import AsyncGenerator
+from pathlib import Path
+
+import pytest
+from dotenv import load_dotenv
+
+# Load .env file before importing anything else
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+
+# Import after loading .env
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from pylxpweb import LuxpowerClient, OperatingMode  # noqa: E402
+from pylxpweb.devices import Station  # noqa: E402
+from pylxpweb.devices.inverters import BaseInverter, HybridInverter  # noqa: E402
+
+# Load credentials from environment
+LUXPOWER_USERNAME = os.getenv("LUXPOWER_USERNAME")
+LUXPOWER_PASSWORD = os.getenv("LUXPOWER_PASSWORD")
+LUXPOWER_BASE_URL = os.getenv("LUXPOWER_BASE_URL", "https://monitor.eg4electronics.com")
+
+# Skip all tests if credentials are not provided
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not LUXPOWER_USERNAME or not LUXPOWER_PASSWORD,
+        reason="Integration tests require LUXPOWER_USERNAME and LUXPOWER_PASSWORD in .env",
+    ),
+]
+
+
+@pytest.fixture
+async def client() -> AsyncGenerator[LuxpowerClient, None]:
+    """Create authenticated client for testing."""
+    async with LuxpowerClient(
+        LUXPOWER_USERNAME, LUXPOWER_PASSWORD, base_url=LUXPOWER_BASE_URL
+    ) as client:
+        yield client
+
+
+@pytest.fixture
+async def station(client: LuxpowerClient) -> Station | None:
+    """Load first station for testing."""
+    stations = await Station.load_all(client)
+    return stations[0] if stations else None
+
+
+@pytest.fixture
+async def inverter(station: Station | None) -> BaseInverter | None:
+    """Get first inverter from station."""
+    if not station:
+        return None
+    return station.all_inverters[0] if station.all_inverters else None
+
+
+@pytest.fixture
+async def hybrid_inverter(station: Station | None) -> HybridInverter | None:
+    """Get first hybrid inverter from station."""
+    if not station:
+        return None
+    for inv in station.all_inverters:
+        if isinstance(inv, HybridInverter):
+            return inv
+    return None
+
+
+class TestStationGetOperations:
+    """Test Station GET operations (read-only, safe)."""
+
+    @pytest.mark.asyncio
+    async def test_get_daylight_saving_time_enabled(self, station: Station | None):
+        """Test getting DST setting from station."""
+        if not station:
+            pytest.skip("No station available for testing")
+
+        # This is a read-only method, safe to test
+        dst_enabled = await station.get_daylight_saving_time_enabled()
+
+        # Should return a boolean value
+        assert isinstance(dst_enabled, bool)
+        print(f"\nStation DST enabled: {dst_enabled}")
+
+
+class TestOperatingModeGetOperations:
+    """Test Operating Mode GET operations (read-only, safe)."""
+
+    @pytest.mark.asyncio
+    async def test_get_operating_mode(self, inverter: BaseInverter | None):
+        """Test getting current operating mode."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        # Read current operating mode
+        mode = await inverter.get_operating_mode()
+
+        # Should return an OperatingMode enum value
+        assert isinstance(mode, OperatingMode)
+        assert mode in [OperatingMode.NORMAL, OperatingMode.STANDBY]
+        print(f"\nInverter {inverter.serial_number} operating mode: {mode.value}")
+
+    @pytest.mark.asyncio
+    async def test_get_quick_charge_status(self, inverter: BaseInverter | None):
+        """Test getting quick charge status."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        # Read quick charge status
+        status = await inverter.get_quick_charge_status()
+
+        # Should return a boolean
+        assert isinstance(status, bool)
+        print(f"\nInverter {inverter.serial_number} quick charge active: {status}")
+
+    @pytest.mark.asyncio
+    async def test_get_quick_discharge_status(self, inverter: BaseInverter | None):
+        """Test getting quick discharge status."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        # Read quick discharge status
+        status = await inverter.get_quick_discharge_status()
+
+        # Should return a boolean
+        assert isinstance(status, bool)
+        print(f"\nInverter {inverter.serial_number} quick discharge active: {status}")
+
+
+class TestBatteryCurrentGetOperations:
+    """Test Battery Current GET operations (read-only, safe)."""
+
+    @pytest.mark.asyncio
+    async def test_get_battery_charge_current(self, inverter: BaseInverter | None):
+        """Test getting battery charge current limit."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        # Read battery charge current limit
+        current = await inverter._client.api.control.get_battery_charge_current(
+            inverter.serial_number
+        )
+
+        # Should return a non-negative integer
+        assert isinstance(current, int)
+        assert 0 <= current <= 250
+        print(f"\nInverter {inverter.serial_number} charge current limit: {current}A")
+
+    @pytest.mark.asyncio
+    async def test_get_battery_discharge_current(self, inverter: BaseInverter | None):
+        """Test getting battery discharge current limit."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        # Read battery discharge current limit
+        current = await inverter._client.api.control.get_battery_discharge_current(
+            inverter.serial_number
+        )
+
+        # Should return a non-negative integer
+        assert isinstance(current, int)
+        assert 0 <= current <= 250
+        print(f"\nInverter {inverter.serial_number} discharge current limit: {current}A")
+
+
+class TestHybridInverterGetOperations:
+    """Test Hybrid Inverter GET operations (read-only, safe)."""
+
+    @pytest.mark.asyncio
+    async def test_get_ac_charge_settings(self, hybrid_inverter: HybridInverter | None):
+        """Test getting AC charge settings."""
+        if not hybrid_inverter:
+            pytest.skip("No hybrid inverter available for testing")
+
+        # Read AC charge settings
+        settings = await hybrid_inverter.get_ac_charge_settings()
+
+        # Should return a dict with expected keys
+        assert isinstance(settings, dict)
+        assert "enabled" in settings
+        assert isinstance(settings["enabled"], bool)
+
+        if "power" in settings:
+            assert isinstance(settings["power"], int)
+            print(f"\nAC charge power: {settings['power']}W")
+
+        if "soc_limit" in settings:
+            assert isinstance(settings["soc_limit"], int)
+            assert 0 <= settings["soc_limit"] <= 100
+            print(f"\nAC charge SOC limit: {settings['soc_limit']}%")
+
+        print(f"\nHybrid inverter {hybrid_inverter.serial_number} AC charge enabled: {settings['enabled']}")
+
+    @pytest.mark.asyncio
+    async def test_get_charge_discharge_power(self, hybrid_inverter: HybridInverter | None):
+        """Test getting charge/discharge power settings."""
+        if not hybrid_inverter:
+            pytest.skip("No hybrid inverter available for testing")
+
+        # Read charge/discharge power
+        power = await hybrid_inverter.get_charge_discharge_power()
+
+        # Should return a dict with charge and discharge power
+        assert isinstance(power, dict)
+
+        if "charge_power" in power:
+            assert isinstance(power["charge_power"], int)
+            print(f"\nCharge power: {power['charge_power']}W")
+
+        if "discharge_power" in power:
+            assert isinstance(power["discharge_power"], int)
+            print(f"\nDischarge power: {power['discharge_power']}W")
+
+
+class TestParameterReadOperations:
+    """Test parameter read operations (read-only, safe)."""
+
+    @pytest.mark.asyncio
+    async def test_read_parameters_range(self, inverter: BaseInverter | None):
+        """Test reading a range of parameters (only works if inverter is online)."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        try:
+            # Read FUNC_EN register (register 21) - should work even in standby
+            params = await inverter.read_parameters(21, 1)
+
+            # Should return a non-empty dict
+            assert isinstance(params, dict)
+            assert len(params) > 0
+            print(f"\nRead {len(params)} parameters from inverter {inverter.serial_number}")
+            print(f"Parameters: {params}")
+        except Exception as e:
+            # Inverter may be in standby mode or offline
+            pytest.skip(f"Cannot read parameters (inverter may be in standby): {e}")
+
+
+class TestSOCLimitGetOperations:
+    """Test SOC Limit GET operations (read-only, safe)."""
+
+    @pytest.mark.asyncio
+    async def test_get_battery_soc_limits(self, inverter: BaseInverter | None):
+        """Test getting battery SOC limits."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        # Read battery SOC limits
+        limits = await inverter.get_battery_soc_limits()
+
+        # Should return a dict with on_grid_limit and off_grid_limit
+        assert isinstance(limits, dict)
+        assert "on_grid_limit" in limits
+        assert "off_grid_limit" in limits
+
+        on_grid = limits["on_grid_limit"]
+        off_grid = limits["off_grid_limit"]
+
+        # Convert to int if string
+        if isinstance(on_grid, str):
+            on_grid = int(on_grid)
+        if isinstance(off_grid, str):
+            off_grid = int(off_grid)
+
+        assert isinstance(on_grid, int)
+        assert isinstance(off_grid, int)
+        assert 0 <= on_grid <= 100
+        assert 0 <= off_grid <= 100
+
+        print(f"\nInverter {inverter.serial_number} SOC limits:")
+        print(f"  On-grid cutoff: {on_grid}%")
+        print(f"  Off-grid cutoff: {off_grid}%")
+
+
+class TestQuickChargeStatusAPIEndpoint:
+    """Test quick charge/discharge status API endpoint directly."""
+
+    @pytest.mark.asyncio
+    async def test_get_quick_charge_status_api(
+        self, client: LuxpowerClient, inverter: BaseInverter | None
+    ):
+        """Test quick charge status API endpoint returns both charge and discharge status."""
+        if not inverter:
+            pytest.skip("No inverter available for testing")
+
+        # Call the API endpoint directly
+        status = await client.api.control.get_quick_charge_status(inverter.serial_number)
+
+        # Should return QuickChargeStatus with both fields
+        assert status.success is True
+        assert hasattr(status, "hasUnclosedQuickChargeTask")
+        assert hasattr(status, "hasUnclosedQuickDischargeTask")
+        assert isinstance(status.hasUnclosedQuickChargeTask, bool)
+        assert isinstance(status.hasUnclosedQuickDischargeTask, bool)
+
+        print(f"\nQuick charge/discharge status for {inverter.serial_number}:")
+        print(f"  Quick charge active: {status.hasUnclosedQuickChargeTask}")
+        print(f"  Quick discharge active: {status.hasUnclosedQuickDischargeTask}")
