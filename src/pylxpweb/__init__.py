@@ -39,6 +39,7 @@ from .exceptions import (
     LuxpowerDeviceError,
     LuxpowerError,
 )
+from .models import OperatingMode
 
 __version__ = "0.2.2"
 __all__ = [
@@ -56,4 +57,6 @@ __all__ = [
     "ForecastingEndpoints",
     "ExportEndpoints",
     "FirmwareEndpoints",
+    # Enums
+    "OperatingMode",
 ]

@@ -358,6 +358,62 @@ class ControlEndpoints(BaseEndpoint):
         )
         return QuickChargeStatus.model_validate(response)
 
+    async def start_quick_discharge(
+        self, inverter_sn: str, client_type: str = "WEB"
+    ) -> SuccessResponse:
+        """Start quick discharge operation.
+
+         WARNING: This starts discharging!
+
+        Args:
+            inverter_sn: Inverter serial number
+            client_type: Client type (WEB/APP)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Example:
+            result = await client.control.start_quick_discharge("1234567890")
+            if result.success:
+                print("Quick discharge started successfully")
+        """
+        await self.client._ensure_authenticated()
+
+        data = {"inverterSn": inverter_sn, "clientType": client_type}
+
+        response = await self.client._request(
+            "POST", "/WManage/web/config/quickDischarge/start", data=data
+        )
+        return SuccessResponse.model_validate(response)
+
+    async def stop_quick_discharge(
+        self, inverter_sn: str, client_type: str = "WEB"
+    ) -> SuccessResponse:
+        """Stop quick discharge operation.
+
+         WARNING: This stops discharging!
+
+        Args:
+            inverter_sn: Inverter serial number
+            client_type: Client type (WEB/APP)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Example:
+            result = await client.control.stop_quick_discharge("1234567890")
+            if result.success:
+                print("Quick discharge stopped successfully")
+        """
+        await self.client._ensure_authenticated()
+
+        data = {"inverterSn": inverter_sn, "clientType": client_type}
+
+        response = await self.client._request(
+            "POST", "/WManage/web/config/quickDischarge/stop", data=data
+        )
+        return SuccessResponse.model_validate(response)
+
     # ============================================================================
     # Convenience Helper Methods
     # ============================================================================

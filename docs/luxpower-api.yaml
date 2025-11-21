@@ -1101,8 +1101,19 @@ paths:
     post:
       tags:
         - Runtime Data
-      summary: Get quick charge status
-      description: Check current quick charge operation status
+      summary: Get quick charge/discharge status
+      description: |
+        Check current quick charge and quick discharge operation status.
+
+        **Important Discovery**: This endpoint returns status for BOTH quick charge
+        and quick discharge operations in a single response.
+
+        **Response Fields**:
+        - `hasUnclosedQuickChargeTask`: True if quick charge is active
+        - `hasUnclosedQuickDischargeTask`: True if quick discharge is active
+
+        **Note**: There is no separate `/web/config/quickDischarge/getStatusInfo` endpoint.
+        Use this endpoint to check status of both charge and discharge operations.
       operationId: getQuickChargeStatus
       requestBody:
         required: true
@@ -1119,11 +1130,82 @@ paths:
                   example: "1234567890"
       responses:
         '200':
-          description: Quick charge status
+          description: Quick charge/discharge status
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuickChargeStatus'
+
+  /web/config/quickDischarge/start:
+    post:
+      tags:
+        - Device Control
+      summary: Start quick discharge
+      description: |
+        **⚠️ WRITE OPERATION - STARTS DISCHARGING**
+
+        Initiate quick discharge operation for the inverter.
+
+        **Status Checking**: Use `/web/config/quickCharge/getStatusInfo` to check
+        discharge status (returns `hasUnclosedQuickDischargeTask` field).
+      operationId: startQuickDischarge
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+                clientType:
+                  type: string
+                  default: WEB
+      responses:
+        '200':
+          description: Quick discharge start response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /web/config/quickDischarge/stop:
+    post:
+      tags:
+        - Device Control
+      summary: Stop quick discharge
+      description: |
+        **⚠️ WRITE OPERATION - STOPS DISCHARGING**
+
+        Stop active quick discharge operation.
+      operationId: stopQuickDischarge
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - inverterSn
+              properties:
+                inverterSn:
+                  type: string
+                  description: Inverter serial number
+                  example: "1234567890"
+                clientType:
+                  type: string
+                  default: WEB
+      responses:
+        '200':
+          description: Quick discharge stop response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
 
   /web/maintain/standardUpdate/checkUpdates:
     post:
@@ -2583,6 +2665,12 @@ components:
 
     QuickChargeStatus:
       type: object
+      description: |
+        Quick charge/discharge status response.
+
+        **Important**: This response includes status for BOTH quick charge and quick discharge.
+        The `/web/config/quickCharge/getStatusInfo` endpoint is the single source of truth
+        for both operation statuses.
       properties:
         success:
           type: boolean
@@ -2590,6 +2678,10 @@ components:
         hasUnclosedQuickChargeTask:
           type: boolean
           description: Whether quick charge is currently active
+          example: false
+        hasUnclosedQuickDischargeTask:
+          type: boolean
+          description: Whether quick discharge is currently active
           example: false
 
     SuccessResponse:

@@ -10,6 +10,8 @@ from abc import abstractmethod
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from pylxpweb.models import OperatingMode
+
 from ..base import BaseDevice
 from ..models import DeviceInfo, Entity
 
@@ -680,3 +682,160 @@ class BaseInverter(BaseDevice):
             120
         """
         return await self._client.api.control.get_battery_discharge_current(self.serial_number)
+
+    # ============================================================================
+    # Operating Mode Control (Issue #14)
+    # ============================================================================
+
+    async def set_operating_mode(self, mode: OperatingMode) -> bool:
+        """Set inverter operating mode.
+
+        Valid operating modes:
+        - NORMAL: Normal operation (power on)
+        - STANDBY: Standby mode (power off)
+
+        Note: Quick Charge and Quick Discharge are not operating modes,
+        they are separate functions that can be enabled/disabled independently.
+
+        Args:
+            mode: Operating mode (NORMAL or STANDBY)
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> from pylxpweb.models import OperatingMode
+            >>> await inverter.set_operating_mode(OperatingMode.NORMAL)
+            True
+            >>> await inverter.set_operating_mode(OperatingMode.STANDBY)
+            True
+        """
+        # Import here to avoid circular dependency
+        from pylxpweb.models import OperatingMode as OM
+
+        standby = mode == OM.STANDBY
+        return await self.set_standby_mode(standby)
+
+    async def get_operating_mode(self) -> OperatingMode:
+        """Get current operating mode.
+
+        Returns:
+            Current operating mode (NORMAL or STANDBY)
+
+        Example:
+            >>> from pylxpweb.models import OperatingMode
+            >>> mode = await inverter.get_operating_mode()
+            >>> mode
+            <OperatingMode.NORMAL: 'normal'>
+        """
+        # Import here to avoid circular dependency
+        from pylxpweb.models import OperatingMode as OM
+
+        # Read FUNC_EN register bit 9 (FUNC_EN_BIT_SET_TO_STANDBY)
+        # 0 = Standby, 1 = Normal (Power On)
+        params = await self.read_parameters(21, 1)
+        func_en = params.get("FUNC_EN_REGISTER", 0)
+
+        # Bit 9: 0=Standby, 1=Normal
+        is_standby = not bool((func_en >> 9) & 1)
+
+        return OM.STANDBY if is_standby else OM.NORMAL
+
+    # ============================================================================
+    # Quick Charge Control (Issue #14)
+    # ============================================================================
+
+    async def enable_quick_charge(self) -> bool:
+        """Enable quick charge function.
+
+        Quick charge is a function control (not an operating mode) that
+        can be active alongside Normal or Standby operating modes.
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> await inverter.enable_quick_charge()
+            True
+        """
+        result = await self._client.api.control.start_quick_charge(self.serial_number)
+        return result.success
+
+    async def disable_quick_charge(self) -> bool:
+        """Disable quick charge function.
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> await inverter.disable_quick_charge()
+            True
+        """
+        result = await self._client.api.control.stop_quick_charge(self.serial_number)
+        return result.success
+
+    async def get_quick_charge_status(self) -> bool:
+        """Get quick charge function status.
+
+        Returns:
+            True if quick charge is active, False otherwise
+
+        Example:
+            >>> is_active = await inverter.get_quick_charge_status()
+            >>> is_active
+            False
+        """
+        status = await self._client.api.control.get_quick_charge_status(self.serial_number)
+        return status.hasUnclosedQuickChargeTask
+
+    # ============================================================================
+    # Quick Discharge Control (Issue #14)
+    # ============================================================================
+
+    async def enable_quick_discharge(self) -> bool:
+        """Enable quick discharge function.
+
+        Quick discharge is a function control (not an operating mode) that
+        can be active alongside Normal or Standby operating modes.
+
+        Note: There is no status endpoint for quick discharge, unlike quick charge.
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> await inverter.enable_quick_discharge()
+            True
+        """
+        result = await self._client.api.control.start_quick_discharge(self.serial_number)
+        return result.success
+
+    async def disable_quick_discharge(self) -> bool:
+        """Disable quick discharge function.
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> await inverter.disable_quick_discharge()
+            True
+        """
+        result = await self._client.api.control.stop_quick_discharge(self.serial_number)
+        return result.success
+
+    async def get_quick_discharge_status(self) -> bool:
+        """Get quick discharge function status.
+
+        Note: Uses the quickCharge/getStatusInfo endpoint which returns status
+        for both quick charge and quick discharge operations.
+
+        Returns:
+            True if quick discharge is active, False otherwise
+
+        Example:
+            >>> is_active = await inverter.get_quick_discharge_status()
+            >>> is_active
+            False
+        """
+        status = await self._client.api.control.get_quick_charge_status(self.serial_number)
+        return status.hasUnclosedQuickDischargeTask

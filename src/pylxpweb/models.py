@@ -12,6 +12,22 @@ from typing import Any
 from pydantic import BaseModel, Field, field_serializer
 
 
+class OperatingMode(str, Enum):
+    """Inverter operating modes.
+
+    These are the two valid operating states for an inverter:
+    - NORMAL: Normal operation (power on)
+    - STANDBY: Standby mode (power off)
+
+    Note: Quick Charge and Quick Discharge are not operating modes,
+    they are function controls (enable/disable) that work alongside
+    the operating mode.
+    """
+
+    NORMAL = "normal"
+    STANDBY = "standby"
+
+
 def _obfuscate_serial(serial: str) -> str:
     """Obfuscate serial number, showing only first 2 and last 2 digits."""
     if len(serial) <= 4:
@@ -742,10 +758,15 @@ class ParameterReadResponse(BaseModel):
 
 
 class QuickChargeStatus(BaseModel):
-    """Quick charge status response."""
+    """Quick charge/discharge status response.
+
+    Note: The quickCharge/getStatusInfo endpoint returns status for BOTH
+    quick charge and quick discharge operations.
+    """
 
     success: bool
     hasUnclosedQuickChargeTask: bool
+    hasUnclosedQuickDischargeTask: bool = False  # May not be present in older API versions
 
 
 class SuccessResponse(BaseModel):
