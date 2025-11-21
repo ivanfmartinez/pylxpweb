@@ -422,10 +422,204 @@ uv run python utils/map_registers.py -s 0987654321 -r 0,381 -r 2032,127
 python3 utils/json_to_markdown.py GridBoss_0987654321.json docs/registers/GridBoss_0987654321.md
 ```
 
+## Diagnostic Data Collection Tool
+
+**`collect_diagnostics.py`** - Comprehensive diagnostic data collection for support and troubleshooting.
+
+### Overview
+
+This tool collects complete system information from your Luxpower/EG4 inverter installation for support purposes. All sensitive information (serial numbers, addresses) is automatically sanitized.
+
+### What It Collects
+
+- **Station/Plant Information**: ID, name, location, capacity
+- **Device Hierarchy**: Parallel groups, standalone inverters, MID devices (GridBOSS)
+- **Runtime Data**: Real-time inverter status, power generation, battery status
+- **Energy Statistics**: Daily/monthly/annual energy production and consumption
+- **Battery Information**:
+  - Aggregate battery bank data (SOC, voltage, charge/discharge power)
+  - Individual battery module data (voltage, current, SOC, temperature, cell voltages)
+- **Parameter Settings**: All device configuration parameters (automatically included)
+  - Standard Inverters (18KPV): 367 registers across 3 ranges (0-126, 127-253, 240-366)
+  - MID Devices (GridBOSS): 508 registers across 2 ranges (0-380, 2032-2158)
+
+### Privacy & Security
+
+**All sensitive information is automatically sanitized** by default:
+- Serial numbers → Masked (e.g., `45****15`)
+- Street addresses → Replaced with `123 Example Street, City, State`
+- GPS coordinates → Replaced with `0.0`
+- Plant names containing addresses → Replaced with `Example Station`
+
+You can disable sanitization with `--no-sanitize` flag, but this is **NOT RECOMMENDED** when sharing diagnostic files.
+
+### Installation
+
+```bash
+# Install from source
+cd pylxpweb
+pip install -e .
+
+# Or install from PyPI (when published)
+pip install pylxpweb
+```
+
+### Usage
+
+#### Basic Usage (Environment Variables)
+
+The easiest way to use the tool is with environment variables:
+
+```bash
+# Set credentials (add to .env or export)
+export LUXPOWER_USERNAME=your_username
+export LUXPOWER_PASSWORD=your_password
+export LUXPOWER_BASE_URL=https://monitor.eg4electronics.com  # Optional, defaults to EG4
+
+# Run diagnostic collection
+pylxpweb-diagnostics
+
+# Or run directly
+python -m utils.collect_diagnostics
+```
+
+#### Command-Line Arguments
+
+```bash
+# Specify credentials via command line
+pylxpweb-diagnostics --username USER --password PASS
+
+# Specify output file
+pylxpweb-diagnostics --output my_system_diagnostics.json
+
+# Use different API endpoint
+pylxpweb-diagnostics --base-url https://eu.luxpowertek.com
+```
+
+**Note**: Parameters are automatically collected for all discovered devices - no additional flags needed.
+
+#### Regional API Endpoints
+
+| Region | Base URL | Description |
+|--------|----------|-------------|
+| **EG4 (US)** | `https://monitor.eg4electronics.com` | Default, EG4-branded devices |
+| **Luxpower (US)** | `https://us.luxpowertek.com` | Luxpower-branded devices (US region) |
+| **Luxpower (EU)** | `https://eu.luxpowertek.com` | Luxpower-branded devices (EU region) |
+
+### Output Format
+
+The diagnostic tool creates a JSON file with complete system information:
+
+```json
+{
+  "collection_timestamp": "2025-11-20T14:30:00.000000",
+  "pylxpweb_version": "0.2.2",
+  "base_url": "https://monitor.eg4electronics.com",
+  "stations": [
+    {
+      "id": 12345,
+      "name": "Example Station",
+      "parallel_groups": [
+        {
+          "mid_device": {
+            "serial_number": "45****15",
+            "model": "MID-GridBOSS",
+            "runtime_data": { ... }
+          },
+          "inverters": [
+            {
+              "serial_number": "45****18",
+              "model": "EG4-18KPV",
+              "runtime_data": { ... },
+              "energy_data": { ... },
+              "battery_bank": {
+                "soc": 85,
+                "voltage": 53.9,
+                "batteries": [...]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Example Output
+
+```bash
+$ pylxpweb-diagnostics --username myuser --password mypass
+
+╔═══════════════════════════════════════════════════════════╗
+║  Luxpower/EG4 Diagnostic Data Collection Tool            ║
+║  pylxpweb v0.2.2                                          ║
+╚═══════════════════════════════════════════════════════════╝
+
+🔐 Authenticating...
+✅ Authentication successful!
+
+🔍 Discovering stations...
+✅ Found 1 station(s)
+
+📊 Processing Station 1/1: My Home System
+  ├─ 1 Parallel Group(s)
+  │  ├─ Group 1: 2 inverter(s)
+  │  │  ├─ MID Device: 4524850115
+  │  │  │  ✅ Runtime data collected
+  │  │  ├─ Inverter 1: 4512670118
+  │  │  │  ├─ Refreshing runtime/energy/battery data...
+  │  │  │  │  ✅ Runtime data
+  │  │  │  │  ✅ Energy data
+  │  │  │  │  ✅ Battery bank (2 batteries)
+
+✅ Diagnostic collection complete!
+📎 Share this file for support: diagnostics_20251120_143000.json
+```
+
+### API Call Estimate
+
+**Station Discovery** (once):
+- 2× Plant list queries
+- 1× Inverter overview list
+- 1× Parallel group details (if GridBOSS/MID device present)
+
+**Per Inverter**:
+- 1× Runtime data (concurrent with energy and battery)
+- 1× Energy statistics (concurrent)
+- 1× Battery information (concurrent)
+- 3× Parameter reads (0-126, 127-253, 240-366)
+
+**Per MID Device (GridBOSS)**:
+- 1× Runtime data
+- 2× Parameter reads (0-380, 2032-2158)
+
+**Example: 2 Inverters + 1 MID Device**:
+- Total API calls: **~19 calls** (~30-45 seconds)
+  - 4 discovery calls
+  - 12 inverter calls (6 per inverter: 3 data + 3 parameters)
+  - 3 MID calls (1 runtime + 2 parameters)
+
+### Use Cases
+
+1. **Bug Reports**: Attach diagnostic file to GitHub issues for faster resolution
+2. **Feature Requests**: Help developers understand your specific hardware configuration
+3. **Support**: Share with support teams to troubleshoot integration issues
+4. **Documentation**: Contribute sample data for different inverter models
+5. **Development**: Use for creating test fixtures and unit tests
+
+### Privacy Notice
+
+When sharing diagnostic files for support:
+1. ✅ **Always use default sanitization** (remove `--no-sanitize` flag)
+2. ✅ Review the output file before sharing to ensure no sensitive data leaked
+3. ✅ Share via private channels (email, support tickets, private GitHub issues)
+4. ❌ **Do NOT** post unsanitized diagnostic files in public forums
+
 ## Additional Utilities
 
-Future utilities will be added to this directory for tasks such as:
-- Parameter reading and writing
+Future utilities may be added to this directory for tasks such as:
+- Parameter reading and writing helpers
 - Firmware version checking
 - Batch operations across multiple devices
 - Data logging and analysis

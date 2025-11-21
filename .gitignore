@@ -45,6 +45,7 @@ env/
 .cache
 nosetests.xml
 coverage.xml
+coverage.json
 *.cover
 *.log
 .pytest_cache/
