@@ -1,0 +1,55 @@
+{
+  "collection_timestamp": "2025-11-20T18:54:45.856102",
+  "pylxpweb_version": "0.2.2",
+  "base_url": "https://monitor.eg4electronics.com",
+  "stations": [
+    {
+      "id": "00000",
+      "name": "Example Station",
+      "location": {
+        "lat": null,
+        "lng": null,
+        "address": "123 Example Street, City, State"
+      },
+      "capacity": 18.0,
+      "parallel_groups": [
+        {
+          "mid_device": {
+            "serial_number": "45******15",
+            "model": "MID-GridBOSS",
+            "runtime": {
+              "status": 1,
+              "grid_voltage": 240.5,
+              "grid_frequency": 60.0
+            }
+          },
+          "inverters": [
+            {
+              "serial_number": "45******18",
+              "model": "EG4-18KPV",
+              "runtime": {
+                "status": 1,
+                "pv_voltage_1": 120.0,
+                "pv_power": 5000
+              },
+              "energy": {
+                "e_pv_all": 1000.0,
+                "e_charge_all": 500.0
+              },
+              "battery_bank": {
+                "soc": 85,
+                "voltage": 53.9,
+                "batteries": []
+              },
+              "parameters": {
+                "0": 0,
+                "21": 65535
+              }
+            }
+          ]
+        }
+      ],
+      "standalone_inverters": []
+    }
+  ]
+}
