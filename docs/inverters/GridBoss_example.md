@@ -1,11 +1,15 @@
-# Grid Boss Register Map
-## Serial Number: 0987654321
+# Grid Boss Register Map (Example)
+## Serial Number: 0987654321 (Example)
+
+> **Note**: This is a sanitized example register map for documentation purposes.
+> The serial number and sample values shown are generic examples, not real device data.
+> Use the utilities in `utils/` to generate register maps for your own devices.
 
 ## Metadata
 
-- **Timestamp**: 2025-11-19T04:57:12.325673Z
+- **Timestamp**: 2025-11-19 (Example)
 - **Base URL**: https://monitor.eg4electronics.com
-- **Serial Number**: 0987654321
+- **Serial Number**: 0987654321 (Example)
 - **Device Type**: Grid Boss
 
 ### Input Ranges

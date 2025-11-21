@@ -1,11 +1,15 @@
-# 18KPV Register Map
-## Serial Number: 1234567890
+# 18KPV Register Map (Example)
+## Serial Number: 1234567890 (Example)
+
+> **Note**: This is a sanitized example register map for documentation purposes.
+> The serial number and sample values shown are generic examples, not real device data.
+> Use the utilities in `utils/` to generate register maps for your own devices.
 
 ## Metadata
 
-- **Timestamp**: 2025-11-19T04:59:12.167210Z
+- **Timestamp**: 2025-11-19 (Example)
 - **Base URL**: https://monitor.eg4electronics.com
-- **Serial Number**: 1234567890
+- **Serial Number**: 1234567890 (Example)
 - **Device Type**: 18KPV
 
 ### Input Ranges
