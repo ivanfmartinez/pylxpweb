@@ -356,3 +356,327 @@ class BaseInverter(BaseDevice):
             success = success and result.success
 
         return success
+
+    # ============================================================================
+    # Battery Backup Control (Issue #8)
+    # ============================================================================
+
+    async def enable_battery_backup(self) -> bool:
+        """Enable battery backup (EPS) mode.
+
+        Universal control: All inverters support EPS mode.
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> await inverter.enable_battery_backup()
+            True
+        """
+        result = await self._client.api.control.enable_battery_backup(self.serial_number)
+        return result.success
+
+    async def disable_battery_backup(self) -> bool:
+        """Disable battery backup (EPS) mode.
+
+        Universal control: All inverters support EPS mode.
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> await inverter.disable_battery_backup()
+            True
+        """
+        result = await self._client.api.control.disable_battery_backup(self.serial_number)
+        return result.success
+
+    async def get_battery_backup_status(self) -> bool:
+        """Get current battery backup (EPS) mode status.
+
+        Universal control: All inverters support EPS mode.
+
+        Returns:
+            True if EPS mode is enabled, False otherwise
+
+        Example:
+            >>> is_enabled = await inverter.get_battery_backup_status()
+            >>> is_enabled
+            True
+        """
+        return await self._client.api.control.get_battery_backup_status(self.serial_number)
+
+    # ============================================================================
+    # AC Charge Power Control (Issue #9)
+    # ============================================================================
+
+    async def set_ac_charge_power(self, power_kw: float) -> bool:
+        """Set AC charge power limit.
+
+        Universal control: All inverters support AC charging.
+
+        Args:
+            power_kw: Power limit in kilowatts (0.0 to 15.0)
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If power_kw is out of valid range
+
+        Example:
+            >>> await inverter.set_ac_charge_power(5.0)
+            True
+        """
+        if not 0.0 <= power_kw <= 15.0:
+            raise ValueError(f"AC charge power must be between 0.0 and 15.0 kW, got {power_kw}")
+
+        # API accepts kW values directly
+        result = await self._client.api.control.write_parameter(
+            self.serial_number, "HOLD_AC_CHARGE_POWER_CMD", str(power_kw)
+        )
+        return result.success
+
+    async def get_ac_charge_power(self) -> float:
+        """Get current AC charge power limit.
+
+        Universal control: All inverters support AC charging.
+
+        Returns:
+            Current power limit in kilowatts
+
+        Example:
+            >>> power = await inverter.get_ac_charge_power()
+            >>> power
+            5.0
+        """
+        params = await self.read_parameters(66, 1)
+        value = params.get("HOLD_AC_CHARGE_POWER_CMD", 0.0)
+        # API returns kW values directly
+        return float(value)
+
+    # ============================================================================
+    # PV Charge Power Control (Issue #10)
+    # ============================================================================
+
+    async def set_pv_charge_power(self, power_kw: int) -> bool:
+        """Set PV (forced) charge power limit.
+
+        Universal control: All inverters support PV charging.
+
+        Args:
+            power_kw: Power limit in kilowatts (0 to 15, integer values only)
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If power_kw is out of valid range
+
+        Example:
+            >>> await inverter.set_pv_charge_power(10)
+            True
+        """
+        if not 0 <= power_kw <= 15:
+            raise ValueError(f"PV charge power must be between 0 and 15 kW, got {power_kw}")
+
+        # API accepts integer kW values directly
+        result = await self._client.api.control.write_parameter(
+            self.serial_number, "HOLD_FORCED_CHG_POWER_CMD", str(power_kw)
+        )
+        return result.success
+
+    async def get_pv_charge_power(self) -> int:
+        """Get current PV (forced) charge power limit.
+
+        Universal control: All inverters support PV charging.
+
+        Returns:
+            Current power limit in kilowatts (integer)
+
+        Example:
+            >>> power = await inverter.get_pv_charge_power()
+            >>> power
+            10
+        """
+        params = await self._client.api.control.read_device_parameters_ranges(self.serial_number)
+        value = params.get("HOLD_FORCED_CHG_POWER_CMD", 0)
+        # API returns integer kW values directly
+        return int(value)
+
+    # ============================================================================
+    # Grid Peak Shaving Control (Issue #11)
+    # ============================================================================
+
+    async def set_grid_peak_shaving_power(self, power_kw: float) -> bool:
+        """Set grid peak shaving power limit.
+
+        Universal control: Most inverters support peak shaving.
+
+        Args:
+            power_kw: Power limit in kilowatts (0.0 to 25.5)
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If power_kw is out of valid range
+
+        Example:
+            >>> await inverter.set_grid_peak_shaving_power(7.0)
+            True
+        """
+        if not 0.0 <= power_kw <= 25.5:
+            raise ValueError(
+                f"Grid peak shaving power must be between 0.0 and 25.5 kW, got {power_kw}"
+            )
+
+        # API accepts kW values directly
+        result = await self._client.api.control.write_parameter(
+            self.serial_number, "_12K_HOLD_GRID_PEAK_SHAVING_POWER", str(power_kw)
+        )
+        return result.success
+
+    async def get_grid_peak_shaving_power(self) -> float:
+        """Get current grid peak shaving power limit.
+
+        Universal control: Most inverters support peak shaving.
+
+        Returns:
+            Current power limit in kilowatts
+
+        Example:
+            >>> power = await inverter.get_grid_peak_shaving_power()
+            >>> power
+            7.0
+        """
+        params = await self._client.api.control.read_device_parameters_ranges(self.serial_number)
+        value = params.get("_12K_HOLD_GRID_PEAK_SHAVING_POWER", 0.0)
+        # API returns kW values directly
+        return float(value)
+
+    # ============================================================================
+    # AC Charge SOC Limit Control (Issue #12)
+    # ============================================================================
+
+    async def set_ac_charge_soc_limit(self, soc_percent: int) -> bool:
+        """Set AC charge stop SOC limit (when to stop AC charging).
+
+        Universal control: All inverters support AC charge SOC limits.
+
+        Args:
+            soc_percent: SOC percentage (0 to 100)
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If soc_percent is out of valid range (0-100)
+
+        Example:
+            >>> await inverter.set_ac_charge_soc_limit(90)
+            True
+        """
+        if not 0 <= soc_percent <= 100:
+            raise ValueError(f"AC charge SOC limit must be between 0 and 100%, got {soc_percent}")
+
+        result = await self._client.api.control.write_parameter(
+            self.serial_number, "HOLD_AC_CHARGE_SOC_LIMIT", str(soc_percent)
+        )
+        return result.success
+
+    async def get_ac_charge_soc_limit(self) -> int:
+        """Get current AC charge stop SOC limit.
+
+        Universal control: All inverters support AC charge SOC limits.
+
+        Returns:
+            Current SOC limit percentage
+
+        Example:
+            >>> limit = await inverter.get_ac_charge_soc_limit()
+            >>> limit
+            90
+        """
+        params = await self.read_parameters(67, 1)
+        return int(params.get("HOLD_AC_CHARGE_SOC_LIMIT", 100))
+
+    # ============================================================================
+    # Battery Current Control (Issue #13)
+    # ============================================================================
+
+    async def set_battery_charge_current(self, current_amps: int) -> bool:
+        """Set battery charge current limit.
+
+        Universal control: All inverters support charge current limits.
+
+        Args:
+            current_amps: Current limit in amperes (0 to 250)
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If current_amps is out of valid range
+
+        Example:
+            >>> await inverter.set_battery_charge_current(100)
+            True
+        """
+        result = await self._client.api.control.set_battery_charge_current(
+            self.serial_number, current_amps
+        )
+        return result.success
+
+    async def set_battery_discharge_current(self, current_amps: int) -> bool:
+        """Set battery discharge current limit.
+
+        Universal control: All inverters support discharge current limits.
+
+        Args:
+            current_amps: Current limit in amperes (0 to 250)
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If current_amps is out of valid range
+
+        Example:
+            >>> await inverter.set_battery_discharge_current(120)
+            True
+        """
+        result = await self._client.api.control.set_battery_discharge_current(
+            self.serial_number, current_amps
+        )
+        return result.success
+
+    async def get_battery_charge_current(self) -> int:
+        """Get current battery charge current limit.
+
+        Universal control: All inverters support charge current limits.
+
+        Returns:
+            Current limit in amperes
+
+        Example:
+            >>> current = await inverter.get_battery_charge_current()
+            >>> current
+            100
+        """
+        return await self._client.api.control.get_battery_charge_current(self.serial_number)
+
+    async def get_battery_discharge_current(self) -> int:
+        """Get current battery discharge current limit.
+
+        Universal control: All inverters support discharge current limits.
+
+        Returns:
+            Current limit in amperes
+
+        Example:
+            >>> current = await inverter.get_battery_discharge_current()
+            >>> current
+            120
+        """
+        return await self._client.api.control.get_battery_discharge_current(self.serial_number)

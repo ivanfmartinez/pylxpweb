@@ -481,3 +481,39 @@ class Station(BaseDevice):
             logging.getLogger(__name__).warning(
                 "Failed to load devices for station %s", self.id, exc_info=True
             )
+
+    # ============================================================================
+    # Station-Level Control Operations (Issue #15)
+    # ============================================================================
+
+    async def set_daylight_saving_time(self, enabled: bool) -> bool:
+        """Set daylight saving time adjustment for the station.
+
+        This is a station-level setting that affects all devices in the station.
+
+        Args:
+            enabled: True to enable DST, False to disable
+
+        Returns:
+            True if successful, False otherwise
+
+        Example:
+            >>> await station.set_daylight_saving_time(True)
+            True
+        """
+        result = await self._client.api.plants.set_daylight_saving_time(self.id, enabled)
+        return bool(result.get("success", False))
+
+    async def get_daylight_saving_time_enabled(self) -> bool:
+        """Get current daylight saving time setting.
+
+        Returns:
+            True if DST is enabled, False otherwise
+
+        Example:
+            >>> is_dst = await station.get_daylight_saving_time_enabled()
+            >>> is_dst
+            False
+        """
+        plant_details = await self._client.api.plants.get_plant_details(self.id)
+        return bool(plant_details.get("daylightSavingTime", False))

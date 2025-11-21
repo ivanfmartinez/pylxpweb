@@ -242,7 +242,7 @@ FUNC_EN_BIT_FORCED_DISCHG_EN = 10  # Forced discharge enable
 FUNC_EN_BIT_FORCED_CHG_EN = 11  # Force charge enable
 
 # AC Charge Parameters
-HOLD_AC_CHARGE_POWER_CMD = 66  # AC charge power (0-100%)
+HOLD_AC_CHARGE_POWER_CMD = 66  # AC charge power (0.0-15.0 kW)
 HOLD_AC_CHARGE_SOC_LIMIT = 67  # AC charge SOC limit (0-100%)
 HOLD_AC_CHARGE_START_HOUR_1 = 68  # Time period 1 start hour (0-23)
 HOLD_AC_CHARGE_START_MIN_1 = 69  # Time period 1 start minute (0-59)
