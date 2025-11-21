@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2025-11-20
+
+### Fixed
+
+- **Dependency Compatibility**: Lowered pydantic requirement from `>=2.12.4` to `>=2.12.0` for Home Assistant compatibility (HA uses pydantic 2.12.2)
+
 ## [0.2.4] - 2025-11-20
 
 ### Added
