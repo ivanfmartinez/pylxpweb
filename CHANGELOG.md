@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Diagnostic Data Collection Tool** (`utils/collect_diagnostics.py`) - Comprehensive diagnostic data collection utility for support and troubleshooting:
+  - Automatically collects station information, device hierarchy, runtime data, energy statistics, battery data, and parameter settings
+  - Sanitizes sensitive information by default (serial numbers, addresses, GPS coordinates)
+  - Collects 367 registers for standard inverters, 508 registers for MID devices (GridBOSS)
+  - Outputs JSON file with complete system state for support tickets
+  - CLI tool: `python -m utils.collect_diagnostics --username USER --password PASS`
+  - Comprehensive documentation in `utils/README.md`
+
+### Changed
+
+- **Project Structure Cleanup**:
+  - Moved development/research scripts from root and `utils/` to `research/` directory (gitignored)
+  - Cleaned up `utils/` to contain only user-facing utilities: `collect_diagnostics.py`, `json_to_markdown.py`, `map_registers.py`
+  - Removed local testing script `verify_cicd.sh`
+
+- **Coverage Reports**:
+  - Added `coverage.json` to `.gitignore` to prevent test artifacts from being tracked
+
 ## [0.2.2] - 2025-11-20
 
 ### Fixed
