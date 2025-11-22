@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from pylxpweb import LuxpowerClient, OperatingMode  # noqa: E402
 from pylxpweb.devices import Station  # noqa: E402
 from pylxpweb.devices.inverters import BaseInverter  # noqa: E402
+from pylxpweb.exceptions import LuxpowerAPIError  # noqa: E402
 
 # Load credentials from environment
 LUXPOWER_USERNAME = os.getenv("LUXPOWER_USERNAME")
@@ -103,18 +104,30 @@ class TestOperatingModeGetOperations:
     """Test Operating Mode GET operations (read-only, safe)."""
 
     @pytest.mark.asyncio
-    async def test_get_operating_mode(self, inverter: BaseInverter | None):
+    async def test_get_operating_mode(
+        self, client: LuxpowerClient, inverter: BaseInverter | None
+    ):
         """Test getting current operating mode."""
         if not inverter:
             pytest.skip("No inverter available for testing")
 
-        # Read current operating mode
-        mode = await inverter.get_operating_mode()
+        try:
+            # Read current operating mode
+            mode = await inverter.get_operating_mode()
 
-        # Should return an OperatingMode enum value
-        assert isinstance(mode, OperatingMode)
-        assert mode in [OperatingMode.NORMAL, OperatingMode.STANDBY]
-        print(f"\nInverter {inverter.serial_number} operating mode: {mode.value}")
+            # Should return an OperatingMode enum value
+            assert isinstance(mode, OperatingMode)
+            assert mode in [OperatingMode.NORMAL, OperatingMode.STANDBY]
+            print(f"\nInverter {inverter.serial_number} operating mode: {mode.value}")
+
+        except LuxpowerAPIError as err:
+            # If apiBlocked, skip test - account lacks permission for parameter read
+            if "apiBlocked" in str(err):
+                pytest.skip(
+                    f"Operating mode read blocked (apiBlocked) - "
+                    f"account lacks permission for parameter read operations"
+                )
+            raise  # Re-raise if different error
 
     @pytest.mark.asyncio
     async def test_get_quick_charge_status(self, inverter: BaseInverter | None):
@@ -183,96 +196,117 @@ class TestACChargeGetOperations:
     """Test AC Charge GET operations (read-only, safe)."""
 
     @pytest.mark.asyncio
-    async def test_get_ac_charge_power(self, hybrid_inverter: BaseInverter | None):
+    async def test_get_ac_charge_power(
+        self, client: LuxpowerClient, hybrid_inverter: BaseInverter | None
+    ):
         """Test getting AC charge power setting."""
         if not hybrid_inverter:
             pytest.skip("No hybrid-capable inverter available for testing")
 
-        # Refresh parameters and read AC charge power
-        await hybrid_inverter.refresh(include_parameters=True)
-        power = hybrid_inverter.ac_charge_power_limit
+        try:
+            # Refresh parameters and read AC charge power
+            await hybrid_inverter.refresh(include_parameters=True)
+            power = hybrid_inverter.ac_charge_power_limit
 
-        # Should return a float
-        assert isinstance(power, (int, float))
-        assert power >= 0
-        print(f"\nInverter {hybrid_inverter.serial_number} AC charge power: {power}W")
+            # Should return a float
+            assert isinstance(power, (int, float))
+            assert power >= 0
+            print(f"\nInverter {hybrid_inverter.serial_number} AC charge power: {power}W")
+
+        except LuxpowerAPIError as err:
+            if "apiBlocked" in str(err):
+                pytest.skip(
+                    "AC charge power read blocked (apiBlocked) - "
+                    "account lacks permission for parameter read operations"
+                )
+            raise
 
     @pytest.mark.asyncio
-    async def test_get_ac_charge_soc_limit(self, hybrid_inverter: BaseInverter | None):
+    async def test_get_ac_charge_soc_limit(
+        self, client: LuxpowerClient, hybrid_inverter: BaseInverter | None
+    ):
         """Test getting AC charge SOC limit setting."""
         if not hybrid_inverter:
             pytest.skip("No hybrid-capable inverter available for testing")
 
-        # First refresh parameters to populate the cache
-        await hybrid_inverter.refresh(include_parameters=True)
+        try:
+            # First refresh parameters to populate the cache
+            await hybrid_inverter.refresh(include_parameters=True)
 
-        # Read AC charge SOC limit from cached parameters
-        soc_limit = hybrid_inverter.ac_charge_soc_limit
+            # Read AC charge SOC limit from cached parameters
+            soc_limit = hybrid_inverter.ac_charge_soc_limit
 
-        # Should return an integer between 0-100
-        assert isinstance(soc_limit, int)
-        assert 0 <= soc_limit <= 100
-        print(f"\nInverter {hybrid_inverter.serial_number} AC charge SOC limit: {soc_limit}%")
+            # Should return an integer between 0-100
+            assert isinstance(soc_limit, int)
+            assert 0 <= soc_limit <= 100
+            print(f"\nInverter {hybrid_inverter.serial_number} AC charge SOC limit: {soc_limit}%")
+
+        except LuxpowerAPIError as err:
+            if "apiBlocked" in str(err):
+                pytest.skip(
+                    "AC charge SOC limit read blocked (apiBlocked) - "
+                    "account lacks permission for parameter read operations"
+                )
+            raise
 
 
 class TestParameterReadOperations:
-    """Test parameter read operations (read-only, safe)."""
+    """Test parameter read operations (read-only, safe).
 
-    @pytest.mark.asyncio
-    async def test_read_parameters_range(self, inverter: BaseInverter | None):
-        """Test reading a range of parameters (only works if inverter is online)."""
-        if not inverter:
-            pytest.skip("No inverter available for testing")
+    NOTE: Direct read_parameters() test removed because:
+    1. The method is deprecated in favor of refresh(include_parameters=True)
+    2. Functionality is tested via property accessors in other tests
+    """
 
-        try:
-            # Read FUNC_EN register (register 21) - should work even in standby
-            params = await inverter.read_parameters(21, 1)
-
-            # Should return a non-empty dict
-            assert isinstance(params, dict)
-            assert len(params) > 0
-            print(f"\nRead {len(params)} parameters from inverter {inverter.serial_number}")
-            print(f"Parameters: {params}")
-        except Exception as e:
-            # Inverter may be in standby mode or offline
-            pytest.skip(f"Cannot read parameters (inverter may be in standby): {e}")
+    pass  # Class kept for organizational purposes
 
 
 class TestSOCLimitGetOperations:
     """Test SOC Limit GET operations (read-only, safe)."""
 
     @pytest.mark.asyncio
-    async def test_get_battery_soc_limits(self, inverter: BaseInverter | None):
+    async def test_get_battery_soc_limits(
+        self, client: LuxpowerClient, inverter: BaseInverter | None
+    ):
         """Test getting battery SOC limits."""
         if not inverter:
             pytest.skip("No inverter available for testing")
 
-        # Refresh parameters and read battery SOC limits
-        await inverter.refresh(include_parameters=True)
-        limits = inverter.battery_soc_limits
+        try:
+            # Refresh parameters and read battery SOC limits
+            await inverter.refresh(include_parameters=True)
+            limits = inverter.battery_soc_limits
 
-        # Should return a dict with on_grid_limit and off_grid_limit
-        assert isinstance(limits, dict)
-        assert "on_grid_limit" in limits
-        assert "off_grid_limit" in limits
+            # Should return a dict with on_grid_limit and off_grid_limit
+            assert isinstance(limits, dict)
+            assert "on_grid_limit" in limits
+            assert "off_grid_limit" in limits
 
-        on_grid = limits["on_grid_limit"]
-        off_grid = limits["off_grid_limit"]
+            on_grid = limits["on_grid_limit"]
+            off_grid = limits["off_grid_limit"]
 
-        # Convert to int if string
-        if isinstance(on_grid, str):
-            on_grid = int(on_grid)
-        if isinstance(off_grid, str):
-            off_grid = int(off_grid)
+            # Convert to int if string
+            if isinstance(on_grid, str):
+                on_grid = int(on_grid)
+            if isinstance(off_grid, str):
+                off_grid = int(off_grid)
 
-        assert isinstance(on_grid, int)
-        assert isinstance(off_grid, int)
-        assert 0 <= on_grid <= 100
-        assert 0 <= off_grid <= 100
+            assert isinstance(on_grid, int)
+            assert isinstance(off_grid, int)
+            assert 0 <= on_grid <= 100
+            assert 0 <= off_grid <= 100
 
-        print(f"\nInverter {inverter.serial_number} SOC limits:")
-        print(f"  On-grid cutoff: {on_grid}%")
-        print(f"  Off-grid cutoff: {off_grid}%")
+            print(f"\nInverter {inverter.serial_number} SOC limits:")
+            print(f"  On-grid cutoff: {on_grid}%")
+            print(f"  Off-grid cutoff: {off_grid}%")
+
+        except LuxpowerAPIError as err:
+            if "apiBlocked" in str(err):
+                pytest.skip(
+                    "SOC limits read blocked (apiBlocked) - "
+                    "account lacks permission for parameter read operations"
+                )
+            raise
 
 
 class TestQuickChargeStatusAPIEndpoint:
