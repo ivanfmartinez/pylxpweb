@@ -155,11 +155,11 @@ class TestInverterData:
         await inverter.refresh()
 
         # Should have runtime data
-        assert inverter.runtime is not None
+        assert inverter._runtime is not None
         assert inverter.has_data
 
         # Should have energy data
-        assert inverter.energy is not None
+        assert inverter._energy is not None
 
         # Check properties work
         assert inverter.power_output >= 0
@@ -215,7 +215,7 @@ class TestInverterData:
         assert len(device_info.identifiers) > 0
 
         # Firmware version should be available after refresh
-        if inverter.runtime:
+        if inverter._runtime:
             assert device_info.sw_version
 
     async def test_inverter_model_is_set_on_load(self, client: LuxpowerClient) -> None:
@@ -364,7 +364,7 @@ class TestStationAggregation:
         # Verify all inverters have data
         for inverter in station.all_inverters:
             assert inverter.has_data
-            assert inverter.runtime is not None
+            assert inverter._runtime is not None
 
 
 @pytest.mark.asyncio
@@ -379,10 +379,10 @@ class TestDataScaling:
 
         await inverter.refresh()
 
-        if inverter.runtime and hasattr(inverter.runtime, "vac1"):
+        if inverter._runtime and hasattr(inverter._runtime, "vac1"):
             # Voltages should be in reasonable ranges (not raw API values)
             # Grid voltage typically 100-300V
-            vac1 = float(inverter.runtime.vac1) / 100.0  # Apply scaling
+            vac1 = float(inverter._runtime.vac1) / 100.0  # Apply scaling
             assert 50 < vac1 < 400, f"Grid voltage {vac1}V seems incorrectly scaled"
 
     async def test_battery_voltage_scaling(self, client: LuxpowerClient) -> None:

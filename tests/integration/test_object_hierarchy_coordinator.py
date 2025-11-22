@@ -204,8 +204,8 @@ class TestCoordinatorDataUpdate:
             assert inverter.has_data, (
                 f"Inverter {inverter.serial_number} missing data after refresh"
             )
-            assert inverter.runtime is not None
-            assert inverter.energy is not None
+            assert inverter._runtime is not None
+            assert inverter._energy is not None
 
             print("  Runtime data: ✓")
             print(f"  Power: {inverter.power_output}W")
@@ -242,8 +242,8 @@ class TestCoordinatorDataUpdate:
 
         # Validate data is updated
         assert inverter.has_data
-        assert inverter.runtime is not None
-        assert inverter.energy is not None
+        assert inverter._runtime is not None
+        assert inverter._energy is not None
 
         print("✓ Runtime data loaded")
         print("✓ Energy data loaded")
@@ -278,8 +278,8 @@ class TestCoordinatorDataUpdate:
 
         # Clear data
         for inverter in station.all_inverters:
-            inverter.runtime = None
-            inverter.energy = None
+            inverter._runtime = None
+            inverter._energy = None
 
         # Time sequential refresh
         start_sequential = time.time()
@@ -592,12 +592,12 @@ class TestErrorHandling:
         # Should handle missing or present data gracefully
         # If runtime is None, power_output should be 0 (default)
         # If runtime exists, power_output can be any value
-        if inverter.runtime is None:
+        if inverter._runtime is None:
             assert inverter.power_output == 0
 
         # If energy is None, total_energy_today should be 0 (default)
         # If energy exists, total_energy_today can be any non-negative value
-        if inverter.energy is None:
+        if inverter._energy is None:
             assert inverter.total_energy_today == 0
 
         # Entities should still be generated (may have None values)
