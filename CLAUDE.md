@@ -148,6 +148,36 @@ pytest tests/unit/ --cov=pylxpweb --cov-report=term-missing
 
 ## Implementation Patterns
 
+### Property-Based API (CRITICAL)
+
+**ALL raw Pydantic models are private** - users must access data via properly-scaled properties:
+
+```python
+# ✅ CORRECT: Use properties (automatically scaled)
+await inverter.refresh()
+voltage = inverter.grid_voltage_r  # Returns 241.8V (÷10 applied)
+frequency = inverter.grid_frequency  # Returns 59.98Hz (÷100 applied)
+power = inverter.pv_total_power  # Returns 1500W (no scaling)
+
+# ❌ WRONG: Access raw data (private, not scaled)
+voltage = inverter._runtime.vacr / 10  # Private attribute, manual scaling
+```
+
+**Benefits**:
+- **Clear API**: Only ONE way to access data (via properties)
+- **Type Safety**: All properties return properly typed values (`float`, `int`, `str`, `bool`)
+- **Defensive**: All properties handle `None` gracefully with sensible defaults
+- **No Confusion**: Users can't accidentally use wrong scaling factors
+
+**Property Organization**:
+- `BaseInverter`: ~40 properties via `InverterRuntimePropertiesMixin` (PV, grid, battery, temps, etc.)
+- `MIDDevice`: ~50 properties via `MIDRuntimePropertiesMixin` (grid, UPS, loads, smart ports, etc.)
+- `Battery`: ~20 properties (voltage, current, temps, cell data, etc.)
+- `BatteryBank`: ~10 properties (aggregate bank data)
+- `ParallelGroup`: ~12 properties (today/lifetime energy data)
+
+See [Property Reference](docs/PROPERTY_REFERENCE.md) for complete list.
+
 ### Factory Pattern (Device Loading)
 ```python
 # Load all stations
@@ -156,18 +186,26 @@ stations = await Station.load_all(client)
 # Load specific station
 station = await Station.load(client, plant_id=12345)
 
-# Access devices
+# Access devices - ALL properties properly scaled
 for inverter in station.all_inverters:
     await inverter.refresh()  # Concurrent: runtime + energy + battery
 
+    # Use properties (automatically scaled)
+    print(f"PV: {inverter.pv_total_power}W")
+    print(f"Battery: {inverter.battery_soc}% @ {inverter.battery_voltage}V")
+    print(f"Grid: {inverter.grid_voltage_r}V @ {inverter.grid_frequency}Hz")
+
     # Access battery bank aggregate data
     if inverter.battery_bank:
-        print(f"Total capacity: {inverter.battery_bank.max_capacity} Ah")
+        print(f"Capacity: {inverter.battery_bank.max_capacity} Ah")
         print(f"SOC: {inverter.battery_bank.soc}%")
 
         # Access individual batteries
         for battery in inverter.battery_bank.batteries:
-            print(f"Battery {battery.battery_index + 1}: {battery.soc}%")
+            print(f"Battery {battery.battery_index + 1}:")
+            print(f"  Voltage: {battery.voltage}V")  # Properly scaled
+            print(f"  Current: {battery.current}A")  # Properly scaled
+            print(f"  SOC: {battery.soc}%")
 ```
 
 ### Concurrent Operations
@@ -178,7 +216,7 @@ await station.refresh_all_data()
 # Inverter refresh - runtime, energy, battery concurrently
 await inverter.refresh()
 
-# ParallelGroup refresh - all inverters concurrently
+# ParallelGroup refresh - all inverters + MID device + energy concurrently
 await group.refresh()
 ```
 
@@ -341,29 +379,39 @@ pylxpweb/
 - `LUXPOWER_PASSWORD` - API password
 - `LUXPOWER_BASE_URL` - API base URL
 
-## Current Implementation Status (v0.2.1)
+## Current Implementation Status (v0.2.2)
 
 ### Completed Features ✅
 - **API Coverage**: Complete endpoint coverage (auth, discovery, runtime, control)
 - **Device Hierarchy**: Station, ParallelGroup, Inverter, BatteryBank, Battery, MIDDevice
-- **Parallel Groups**: Proper detection using GridBOSS serial number
+- **Property-Based API**: ALL raw data private, ~150+ properly-scaled properties across all device types
+- **Parallel Groups**: Proper detection using GridBOSS serial number + aggregate energy data
 - **BatteryBank**: Aggregate battery data with individual battery array
 - **Control Operations**: Read/write parameters, control functions
 - **Concurrent Operations**: Station, Inverter, ParallelGroup refresh
 - **Type Safety**: mypy strict mode, Pydantic v2 models
-- **Test Coverage**: 288 tests, >81% coverage
+- **Test Coverage**: 479 tests, >85% coverage
+- **Documentation**: Comprehensive usage guide, property reference, examples
 
-### Recent Changes (2025-11-20)
-- Added BatteryBank class for aggregate battery data
-- Fixed parallel group detection (use GridBOSS serial, not station ID)
-- Added comprehensive BatteryBank unit tests (13 tests, 100% coverage)
-- Updated API documentation with complete device hierarchy
-- Documented API call patterns (discovery, data refresh, parameter sync)
-- Fixed test fixtures using `model_construct()` for Pydantic models
-- All tests passing, zero linting/type errors
+### Recent Changes (2025-11-21)
+**Major API Refactoring**:
+- Made ALL raw Pydantic models private (`_runtime`, `_energy`, etc.)
+- Added ~40 properties to `BaseInverter` via `InverterRuntimePropertiesMixin`
+- Added ~50 properties to `MIDDevice` via `MIDRuntimePropertiesMixin`
+- Added ~12 energy properties to `ParallelGroup` (today/lifetime energy data)
+- Updated all 479 tests to use private attributes
+- Created comprehensive documentation (USAGE_GUIDE.md, PROPERTY_REFERENCE.md)
+- Updated README with property-based examples
+- Zero linting/type errors, all tests passing
+
+**Benefits**:
+- Clear API: Only ONE way to access data (via properties)
+- No manual scaling required
+- Type-safe with graceful None handling
+- Eliminated confusion about which properties to use
 
 ### Known Limitations
-- **BatteryBank Entities**: Not generated for Home Assistant (design decision to avoid entity proliferation)
+- **Low-Level API**: Direct API access still returns raw scaled integers (use device objects instead)
 - **Parallel Groups**: May not be detected if no GridBOSS present (graceful degradation)
 - **Parameter Ranges**: Requires 3 separate API calls (127 register limit per call)
 
@@ -374,11 +422,13 @@ pylxpweb/
 - Status: ✅ Ready for merge (all tests passing, zero errors)
 
 ### Design Decisions & Rationale
-1. **BatteryBank as separate class**: Represents aggregate data from `getBatteryInfo` header, distinct from individual battery modules in `batteryArray`
-2. **No BatteryBank HA entities**: Aggregate data accessible via inverter sensors, avoids excessive entity count
-3. **Parallel Group detection**: Requires GridBOSS serial (deviceType == 9), graceful fallback if not found
-4. **Voltage scaling differences**: API uses different precision for aggregate (÷10) vs individual (÷100) battery data
-5. **Session injection**: Supported for HA Platinum tier compliance
+1. **Property-Based API**: ALL raw Pydantic models private, users access via properties only. Eliminates scaling confusion, provides type safety, graceful None handling.
+2. **Mixin Pattern**: Properties organized in separate mixin files (`InverterRuntimePropertiesMixin`, `MIDRuntimePropertiesMixin`) to keep code maintainable.
+3. **BatteryBank as separate class**: Represents aggregate data from `getBatteryInfo` header, distinct from individual battery modules in `batteryArray`
+4. **No BatteryBank HA entities**: Aggregate data accessible via inverter sensors, avoids excessive entity count
+5. **Parallel Group detection**: Requires GridBOSS serial (deviceType == 9), graceful fallback if not found
+6. **Voltage scaling differences**: API uses different precision for aggregate (÷10) vs individual (÷100) battery data - properties handle this automatically
+7. **Session injection**: Supported for HA Platinum tier compliance
 
 ### Important Commands
 ```bash
