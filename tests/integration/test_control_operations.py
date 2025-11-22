@@ -301,7 +301,8 @@ class TestStandbyMode:
 
     NOTE: Standby mode tests removed because:
     1. read_parameters() is deprecated
-    2. Standby state is available via inverter.get_operating_mode() (tested in test_get_operations.py)
+    2. Standby state available via inverter.get_operating_mode()
+       (tested in test_get_operations.py)
     3. Standby mode toggle is too dangerous (powers off inverter)
     """
 

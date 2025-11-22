@@ -104,9 +104,7 @@ class TestOperatingModeGetOperations:
     """Test Operating Mode GET operations (read-only, safe)."""
 
     @pytest.mark.asyncio
-    async def test_get_operating_mode(
-        self, client: LuxpowerClient, inverter: BaseInverter | None
-    ):
+    async def test_get_operating_mode(self, client: LuxpowerClient, inverter: BaseInverter | None):
         """Test getting current operating mode."""
         if not inverter:
             pytest.skip("No inverter available for testing")
@@ -124,8 +122,8 @@ class TestOperatingModeGetOperations:
             # If apiBlocked, skip test - account lacks permission for parameter read
             if "apiBlocked" in str(err):
                 pytest.skip(
-                    f"Operating mode read blocked (apiBlocked) - "
-                    f"account lacks permission for parameter read operations"
+                    "Operating mode read blocked (apiBlocked) - "
+                    "account lacks permission for parameter read operations"
                 )
             raise  # Re-raise if different error
 
