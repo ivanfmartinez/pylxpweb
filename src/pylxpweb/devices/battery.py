@@ -98,12 +98,16 @@ class Battery(BaseDevice):
         return self._data.batteryType
 
     @property
-    def battery_type_text(self) -> str | None:
+    def battery_type_text(self) -> str:
         """Get battery type display text.
 
         Returns:
-            Battery type display text, or None if not available.
+            Battery type display text. Falls back to "Lithium" if not available.
         """
+        # If batteryTypeText is empty or None, provide reasonable default
+        if not self._data.batteryTypeText:
+            # Most EG4/Luxpower batteries are Lithium
+            return "Lithium"
         return self._data.batteryTypeText
 
     @property
@@ -205,13 +209,24 @@ class Battery(BaseDevice):
         return self._data.currentFullCapacity
 
     @property
-    def capacity_percent(self) -> int | None:
+    def capacity_percent(self) -> int:
         """Get current capacity as percentage of full capacity.
 
         Returns:
-            Capacity percentage (0-100), or None if not available.
+            Capacity percentage (0-100). If not provided by API, calculates
+            from currentRemainCapacity / currentFullCapacity and rounds to
+            nearest integer.
         """
-        return self._data.currentCapacityPercent
+        # Use API value if available
+        if self._data.currentCapacityPercent is not None:
+            return self._data.currentCapacityPercent
+
+        # Calculate from remain/full capacity, rounded to nearest integer
+        if self._data.currentFullCapacity > 0:
+            return round((self._data.currentRemainCapacity / self._data.currentFullCapacity) * 100)
+
+        # Fallback to 0 if full capacity is 0
+        return 0
 
     @property
     def max_battery_charge(self) -> int | None:
@@ -319,22 +334,26 @@ class Battery(BaseDevice):
     # ========== Charge Parameters ==========
 
     @property
-    def charge_max_current(self) -> int | None:
-        """Get maximum charge current setting.
+    def charge_max_current(self) -> float | None:
+        """Get maximum charge current setting in amps.
 
         Returns:
-            Maximum charge current (raw value, needs ÷100 for amps), or None if not available.
+            Maximum charge current (÷100 for amps), or None if not available.
         """
-        return self._data.batChargeMaxCur
+        if self._data.batChargeMaxCur is None:
+            return None
+        return scale_battery_value("batChargeMaxCur", self._data.batChargeMaxCur)
 
     @property
-    def charge_voltage_ref(self) -> int | None:
-        """Get charge voltage reference setting.
+    def charge_voltage_ref(self) -> float | None:
+        """Get charge voltage reference setting in volts.
 
         Returns:
-            Charge voltage reference (raw value, needs ÷10 for volts), or None if not available.
+            Charge voltage reference (÷10 for volts), or None if not available.
         """
-        return self._data.batChargeVoltRef
+        if self._data.batChargeVoltRef is None:
+            return None
+        return scale_battery_value("batChargeVoltRef", self._data.batChargeVoltRef)
 
     # ========== Cycle Count and Firmware ==========
 

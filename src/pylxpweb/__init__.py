@@ -59,7 +59,7 @@ from .exceptions import (
 )
 from .models import OperatingMode
 
-__version__ = "0.3.3"
+__version__ = "0.3.5"
 __all__ = [
     "LuxpowerClient",
     "LuxpowerError",
