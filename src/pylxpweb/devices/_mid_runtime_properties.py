@@ -299,8 +299,7 @@ class MIDRuntimePropertiesMixin:
         if self._runtime is None:
             return 0
         return (
-            self._runtime.midboxData.gridL1ActivePower
-            + self._runtime.midboxData.gridL2ActivePower
+            self._runtime.midboxData.gridL1ActivePower + self._runtime.midboxData.gridL2ActivePower
         )
 
     # ===========================================
@@ -339,8 +338,7 @@ class MIDRuntimePropertiesMixin:
         if self._runtime is None:
             return 0
         return (
-            self._runtime.midboxData.loadL1ActivePower
-            + self._runtime.midboxData.loadL2ActivePower
+            self._runtime.midboxData.loadL1ActivePower + self._runtime.midboxData.loadL2ActivePower
         )
 
     # ===========================================
