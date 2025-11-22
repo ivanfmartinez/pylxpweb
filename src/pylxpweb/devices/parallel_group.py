@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pylxpweb import LuxpowerClient
+    from pylxpweb.models import EnergyInfo
 
     from .inverters.base import BaseInverter
     from .mid_device import MIDDevice
@@ -65,12 +66,16 @@ class ParallelGroup:
         self.inverters: list[BaseInverter] = []
         self.mid_device: MIDDevice | None = None
 
+        # Energy data (private - use properties for access)
+        self._energy: EnergyInfo | None = None
+
     async def refresh(self) -> None:
         """Refresh runtime data for all devices in group.
 
         This refreshes:
         - All inverters in the group
         - MID device if present
+        - Parallel group energy data
         """
         import asyncio
 
@@ -84,9 +89,26 @@ class ParallelGroup:
         if self.mid_device:
             tasks.append(self.mid_device.refresh())
 
+        # Fetch parallel group energy data if we have inverters
+        if self.inverters:
+            first_serial = self.inverters[0].serial_number
+            tasks.append(self._fetch_energy_data(first_serial))
+
         # Execute concurrently
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _fetch_energy_data(self, serial_number: str) -> None:
+        """Fetch parallel group energy data.
+
+        Args:
+            serial_number: Serial number of first inverter in group.
+        """
+        from contextlib import suppress
+
+        # Keep existing cached data on error
+        with suppress(Exception):
+            self._energy = await self._client.api.devices.get_parallel_energy(serial_number)
 
     async def get_combined_energy(self) -> dict[str, float]:
         """Get combined energy statistics for all inverters in group.
@@ -111,6 +133,170 @@ class ParallelGroup:
             "today_kwh": total_today,
             "lifetime_kwh": total_lifetime,
         }
+
+    # ===========================================
+    # Energy Properties - Today
+    # ===========================================
+
+    @property
+    def today_yielding(self) -> float:
+        """Get today's PV generation in kWh.
+
+        Returns:
+            Today's yielding (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("todayYielding", self._energy.todayYielding, to_kwh=True)
+
+    @property
+    def today_charging(self) -> float:
+        """Get today's battery charging energy in kWh.
+
+        Returns:
+            Today's charging (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("todayCharging", self._energy.todayCharging, to_kwh=True)
+
+    @property
+    def today_discharging(self) -> float:
+        """Get today's battery discharging energy in kWh.
+
+        Returns:
+            Today's discharging (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("todayDischarging", self._energy.todayDischarging, to_kwh=True)
+
+    @property
+    def today_import(self) -> float:
+        """Get today's grid import energy in kWh.
+
+        Returns:
+            Today's import (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("todayImport", self._energy.todayImport, to_kwh=True)
+
+    @property
+    def today_export(self) -> float:
+        """Get today's grid export energy in kWh.
+
+        Returns:
+            Today's export (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("todayExport", self._energy.todayExport, to_kwh=True)
+
+    @property
+    def today_usage(self) -> float:
+        """Get today's energy usage in kWh.
+
+        Returns:
+            Today's usage (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("todayUsage", self._energy.todayUsage, to_kwh=True)
+
+    # ===========================================
+    # Energy Properties - Total (Lifetime)
+    # ===========================================
+
+    @property
+    def total_yielding(self) -> float:
+        """Get total lifetime PV generation in kWh.
+
+        Returns:
+            Total yielding (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("totalYielding", self._energy.totalYielding, to_kwh=True)
+
+    @property
+    def total_charging(self) -> float:
+        """Get total lifetime battery charging energy in kWh.
+
+        Returns:
+            Total charging (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("totalCharging", self._energy.totalCharging, to_kwh=True)
+
+    @property
+    def total_discharging(self) -> float:
+        """Get total lifetime battery discharging energy in kWh.
+
+        Returns:
+            Total discharging (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("totalDischarging", self._energy.totalDischarging, to_kwh=True)
+
+    @property
+    def total_import(self) -> float:
+        """Get total lifetime grid import energy in kWh.
+
+        Returns:
+            Total import (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("totalImport", self._energy.totalImport, to_kwh=True)
+
+    @property
+    def total_export(self) -> float:
+        """Get total lifetime grid export energy in kWh.
+
+        Returns:
+            Total export (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("totalExport", self._energy.totalExport, to_kwh=True)
+
+    @property
+    def total_usage(self) -> float:
+        """Get total lifetime energy usage in kWh.
+
+        Returns:
+            Total usage (÷10 for kWh), or 0.0 if no data.
+        """
+        if self._energy is None:
+            return 0.0
+        from pylxpweb.constants import scale_energy_value
+
+        return scale_energy_value("totalUsage", self._energy.totalUsage, to_kwh=True)
 
     @classmethod
     async def from_api_data(

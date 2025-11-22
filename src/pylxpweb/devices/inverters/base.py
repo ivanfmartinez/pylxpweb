@@ -18,6 +18,7 @@ from pylxpweb.models import OperatingMode
 
 from ..base import BaseDevice
 from ..models import DeviceInfo, Entity
+from ._runtime_properties import InverterRuntimePropertiesMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from pylxpweb.models import EnergyInfo, InverterRuntime
 
 
-class BaseInverter(BaseDevice):
+class BaseInverter(InverterRuntimePropertiesMixin, BaseDevice):
     """Abstract base class for all inverter types.
 
     All model-specific inverter classes (FlexBOSS, 18KPV, etc.) must inherit

@@ -261,3 +261,91 @@ class TestBatteryStatus:
 
         # Sample data has lost=false
         assert battery.is_lost is False
+
+
+class TestBatteryEnhancedProperties:
+    """Test newly added Battery properties."""
+
+    def test_battery_type_properties(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test battery type identification properties."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample data has batteryType="BATT_default"
+        assert battery.battery_type == "BATT_default"
+        assert battery.battery_type_text == ""
+
+    def test_bms_model_property(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test BMS model property."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample data has batBmsModelText=""
+        assert battery.bms_model == ""
+
+    def test_last_update_time_property(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test last update time property."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample data has lastUpdateTime
+        assert battery.last_update_time == "2025-09-10 16:49:15"
+
+    def test_capacity_properties(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test capacity-related properties."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample data capacity values
+        assert battery.current_remain_capacity == 204
+        assert battery.current_full_capacity == 280
+        assert battery.capacity_percent == 73
+        assert battery.max_battery_charge == 840
+
+    def test_cell_number_properties(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test cell number properties for voltage and temperature extremes."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample data has cell numbers
+        assert battery.max_cell_temp_num == 3
+        assert battery.min_cell_temp_num == 1
+        assert battery.max_cell_voltage_num == 7
+        assert battery.min_cell_voltage_num == 1
+
+    def test_cell_temp_delta_property(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test cell temperature delta calculation."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample: max=250 (25.0C), min=240 (24.0C), delta=1.0C
+        assert battery.cell_temp_delta == pytest.approx(1.0, abs=0.1)
+
+    def test_charge_parameter_properties(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test charge parameter properties."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample data has charge parameters
+        assert battery.charge_max_current == 2000
+        assert battery.charge_voltage_ref == 560
+
+    def test_additional_metrics_properties(
+        self, mock_client: LuxpowerClient, sample_battery_module: BatteryModule
+    ) -> None:
+        """Test additional metrics properties."""
+        battery = Battery(client=mock_client, battery_data=sample_battery_module)
+
+        # Sample data has empty strings for these
+        assert battery.charge_capacity == ""
+        assert battery.discharge_capacity == ""
+        assert battery.ambient_temp == ""
+        assert battery.mos_temp == ""
+        assert battery.notice_info == ""

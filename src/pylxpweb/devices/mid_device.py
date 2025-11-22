@@ -10,9 +10,9 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from pylxpweb.constants import scale_mid_frequency, scale_mid_voltage
 from pylxpweb.exceptions import LuxpowerAPIError, LuxpowerConnectionError, LuxpowerDeviceError
 
+from ._mid_runtime_properties import MIDRuntimePropertiesMixin
 from .base import BaseDevice
 from .models import DeviceClass, DeviceInfo, Entity, StateClass
 
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from pylxpweb.models import MidboxRuntime
 
 
-class MIDDevice(BaseDevice):
+class MIDDevice(MIDRuntimePropertiesMixin, BaseDevice):
     """Represents a GridBOSS/MID device for grid management.
 
     GridBOSS devices handle:
@@ -61,104 +61,20 @@ class MIDDevice(BaseDevice):
         """
         super().__init__(client, serial_number, model)
 
-        # Runtime data
-        self.runtime: MidboxRuntime | None = None
+        # Runtime data (private - use properties for access)
+        self._runtime: MidboxRuntime | None = None
 
     async def refresh(self) -> None:
         """Refresh MID device runtime data from API."""
         try:
             runtime_data = await self._client.api.devices.get_midbox_runtime(self.serial_number)
-            self.runtime = runtime_data
+            self._runtime = runtime_data
             self._last_refresh = datetime.now()
         except (LuxpowerAPIError, LuxpowerConnectionError, LuxpowerDeviceError) as err:
             # Graceful error handling - keep existing cached data
             _LOGGER.debug("Failed to fetch MID device runtime for %s: %s", self.serial_number, err)
 
-    @property
-    def has_data(self) -> bool:
-        """Check if device has runtime data.
-
-        Returns:
-            True if runtime data is available.
-        """
-        return self.runtime is not None
-
-    @property
-    def grid_voltage(self) -> float:
-        """Get grid voltage in volts.
-
-        Returns:
-            Grid RMS voltage (scaled from gridRmsVolt ÷10), or 0.0 if no data.
-        """
-        if self.runtime is None:
-            return 0.0
-        return scale_mid_voltage(self.runtime.midboxData.gridRmsVolt)
-
-    @property
-    def ups_voltage(self) -> float:
-        """Get UPS voltage in volts.
-
-        Returns:
-            UPS RMS voltage (scaled from upsRmsVolt ÷10), or 0.0 if no data.
-        """
-        if self.runtime is None:
-            return 0.0
-        return scale_mid_voltage(self.runtime.midboxData.upsRmsVolt)
-
-    @property
-    def grid_power(self) -> int:
-        """Get total grid power in watts (L1 + L2).
-
-        Returns:
-            Total grid power, or 0 if no data.
-        """
-        if self.runtime is None:
-            return 0
-        return self.runtime.midboxData.gridL1ActivePower + self.runtime.midboxData.gridL2ActivePower
-
-    @property
-    def ups_power(self) -> int:
-        """Get total UPS power in watts (L1 + L2).
-
-        Returns:
-            Total UPS power, or 0 if no data.
-        """
-        if self.runtime is None:
-            return 0
-        return self.runtime.midboxData.upsL1ActivePower + self.runtime.midboxData.upsL2ActivePower
-
-    @property
-    def hybrid_power(self) -> int:
-        """Get hybrid power in watts.
-
-        Returns:
-            Hybrid power (combined system power), or 0 if no data.
-        """
-        if self.runtime is None:
-            return 0
-        return self.runtime.midboxData.hybridPower
-
-    @property
-    def grid_frequency(self) -> float:
-        """Get grid frequency in Hz.
-
-        Returns:
-            Grid frequency (scaled from gridFreq ÷100), or 0.0 if no data.
-        """
-        if self.runtime is None:
-            return 0.0
-        return scale_mid_frequency(self.runtime.midboxData.gridFreq)
-
-    @property
-    def firmware_version(self) -> str | None:
-        """Get firmware version.
-
-        Returns:
-            Firmware version string, or None if no data.
-        """
-        if self.runtime is None:
-            return None
-        return self.runtime.fwCode
+    # All properties are provided by MIDRuntimePropertiesMixin
 
     def to_device_info(self) -> DeviceInfo:
         """Convert to device info model.
@@ -183,7 +99,7 @@ class MIDDevice(BaseDevice):
         Note: This implementation focuses on core grid/UPS monitoring.
         Future versions will add smart loads, AC coupling, and generator sensors.
         """
-        if self.runtime is None:
+        if self._runtime is None:
             return []
 
         entities = []

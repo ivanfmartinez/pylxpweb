@@ -569,41 +569,105 @@ class BatteryModule(BaseModel):
     See: constants.BATTERY_MODULE_SCALING for complete mapping
     """
 
+    # Identification
     batteryKey: str
     batterySn: str
     batIndex: int
+    batteryType: str | None = None
+    batteryTypeText: str | None = None
+    batBmsModelText: str | None = None
+
+    # Status
     lost: bool
-    # Voltage (÷100 for volts)
+    lastUpdateTime: str | None = None
+
+    # Voltage and Current (÷100 for volts, ÷10 for amps)
     totalVoltage: int
-    # Current (÷10 for amps) **CRITICAL: Not ÷100**
     current: int
+
+    # State of Charge/Health
     soc: int
     soh: int
+
+    # Capacity
     currentRemainCapacity: int
     currentFullCapacity: int
-    # Temperatures (�10 for Celsius)
+    currentCapacityPercent: int | None = None
+    maxBatteryCharge: int | None = None
+
+    # Temperatures (÷10 for Celsius)
     batMaxCellTemp: int
     batMinCellTemp: int
-    # Cell voltages (millivolts, �1000 for volts)
+    batMaxCellNumTemp: int | None = None
+    batMinCellNumTemp: int | None = None
+
+    # Cell Voltages (÷1000 for volts)
     batMaxCellVoltage: int
     batMinCellVoltage: int
+    batMaxCellNumVolt: int | None = None
+    batMinCellNumVolt: int | None = None
+
+    # Charge Parameters
+    batChargeMaxCur: int | None = None
+    batChargeVoltRef: int | None = None
+
+    # Cycle Count and Firmware
     cycleCnt: int
     fwVersionText: str
 
+    # Additional Metrics (may be empty strings)
+    chgCapacity: str | None = None
+    disChgCapacity: str | None = None
+    ambientTemp: str | None = None
+    mosTemp: str | None = None
+    noticeInfo: str | None = None
+
 
 class BatteryInfo(BaseModel):
-    """Battery information including individual modules."""
+    """Battery information including individual modules.
+
+    This represents the aggregate battery system data from getBatteryInfo endpoint.
+    """
 
     success: bool
     serialNum: str
+
+    # Status
+    lost: bool | None = None
+    hasRuntimeData: bool | None = None
+    statusText: str | None = None
+    batStatus: str
+
+    # State of Charge
     soc: int
+
+    # Voltage (÷10 for volts at aggregate level)
     vBat: int
+    totalVoltageText: str | None = None
+
+    # Power (direct watts)
+    ppv: int | None = None  # PV power
     pCharge: int
     pDisCharge: int
-    batStatus: str
+    batPower: int | None = None  # Battery power
+    pinv: int | None = None  # Inverter power
+    prec: int | None = None  # Grid power
+    peps: int | None = None  # EPS/backup power
+
+    # Capacity (Ah)
     maxBatteryCharge: int
     currentBatteryCharge: float
+    remainCapacity: int | None = None
+    fullCapacity: int | None = None
+    capacityPercent: int | None = None
+
+    # Current
+    currentText: str | None = None
+    currentType: str | None = None  # "charge" or "discharge"
+
+    # Individual Battery Modules
     batteryArray: list[BatteryModule]
+    totalNumber: int | None = None  # Total battery count
 
 
 class BatteryListItem(BaseModel):

@@ -247,20 +247,26 @@ def apply_scale(value: int | float, scale_factor: ScaleFactor) -> float:
 voltage = apply_scale(5100, ScaleFactor.SCALE_10)  # 510.0
 ```
 
-### get_scaling_for_field()
+### _get_scaling_for_field() (Internal)
+
+**INTERNAL FUNCTION** - External users should use the convenience functions below.
 
 Get the scaling factor for a specific field and data type.
 
 ```python
-def get_scaling_for_field(
+def _get_scaling_for_field(
     field_name: str,
     data_type: Literal["runtime", "energy", "battery_bank",
                        "battery_module", "gridboss", "overview", "parameter"]
 ) -> ScaleFactor:
-    """Get the appropriate scaling factor for a field."""
+    """Get the appropriate scaling factor for a field.
 
-# Example
-scale = get_scaling_for_field("vpv1", "runtime")
+    This is an internal function. External users should use the data type-specific
+    convenience functions instead (e.g., scale_runtime_value, scale_battery_value).
+    """
+
+# Example (internal use only)
+scale = _get_scaling_for_field("vpv1", "runtime")
 voltage = apply_scale(5100, scale)  # 510.0
 ```
 

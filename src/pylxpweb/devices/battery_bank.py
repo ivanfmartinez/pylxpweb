@@ -69,6 +69,8 @@ class BatteryBank(BaseDevice):
         # Individual battery modules in this bank
         self.batteries: list[Battery] = []  # Will be Battery objects
 
+    # ========== Status Properties ==========
+
     @property
     def status(self) -> str:
         """Get battery bank charging status.
@@ -79,6 +81,35 @@ class BatteryBank(BaseDevice):
         return self.data.batStatus
 
     @property
+    def status_text(self) -> str | None:
+        """Get detailed status text.
+
+        Returns:
+            Detailed status text, or None if not available.
+        """
+        return self.data.statusText
+
+    @property
+    def is_lost(self) -> bool:
+        """Check if battery communication is lost.
+
+        Returns:
+            True if battery is not communicating, False otherwise.
+        """
+        return self.data.lost if self.data.lost is not None else False
+
+    @property
+    def has_runtime_data(self) -> bool:
+        """Check if runtime data is available.
+
+        Returns:
+            True if runtime data is available, False otherwise.
+        """
+        return self.data.hasRuntimeData if self.data.hasRuntimeData is not None else False
+
+    # ========== State of Charge ==========
+
+    @property
     def soc(self) -> int:
         """Get aggregate state of charge for battery bank.
 
@@ -86,6 +117,8 @@ class BatteryBank(BaseDevice):
             State of charge percentage (0-100).
         """
         return self.data.soc
+
+    # ========== Voltage Properties ==========
 
     @property
     def voltage(self) -> float:
@@ -95,6 +128,17 @@ class BatteryBank(BaseDevice):
             Battery voltage (scaled from vBat ÷10).
         """
         return apply_scale(self.data.vBat, ScaleFactor.SCALE_10)
+
+    @property
+    def voltage_text(self) -> str | None:
+        """Get formatted voltage text.
+
+        Returns:
+            Voltage text (e.g., "53.8V"), or None if not available.
+        """
+        return self.data.totalVoltageText
+
+    # ========== Power Properties ==========
 
     @property
     def charge_power(self) -> int:
@@ -115,6 +159,53 @@ class BatteryBank(BaseDevice):
         return self.data.pDisCharge
 
     @property
+    def battery_power(self) -> int | None:
+        """Get net battery power in watts (positive = charging, negative = discharging).
+
+        Returns:
+            Net battery power in watts, or None if not available.
+        """
+        return self.data.batPower
+
+    @property
+    def pv_power(self) -> int | None:
+        """Get PV solar power in watts.
+
+        Returns:
+            PV power in watts, or None if not available.
+        """
+        return self.data.ppv
+
+    @property
+    def inverter_power(self) -> int | None:
+        """Get inverter power in watts.
+
+        Returns:
+            Inverter power in watts, or None if not available.
+        """
+        return self.data.pinv
+
+    @property
+    def grid_power(self) -> int | None:
+        """Get grid power in watts.
+
+        Returns:
+            Grid power in watts, or None if not available.
+        """
+        return self.data.prec
+
+    @property
+    def eps_power(self) -> int | None:
+        """Get EPS/backup power in watts.
+
+        Returns:
+            EPS power in watts, or None if not available.
+        """
+        return self.data.peps
+
+    # ========== Capacity Properties ==========
+
+    @property
     def max_capacity(self) -> int:
         """Get maximum battery bank capacity in amp-hours.
 
@@ -133,12 +224,63 @@ class BatteryBank(BaseDevice):
         return self.data.currentBatteryCharge
 
     @property
+    def remain_capacity(self) -> int | None:
+        """Get remaining capacity in amp-hours.
+
+        Returns:
+            Remaining capacity in Ah, or None if not available.
+        """
+        return self.data.remainCapacity
+
+    @property
+    def full_capacity(self) -> int | None:
+        """Get full capacity in amp-hours.
+
+        Returns:
+            Full capacity in Ah, or None if not available.
+        """
+        return self.data.fullCapacity
+
+    @property
+    def capacity_percent(self) -> int | None:
+        """Get capacity percentage.
+
+        Returns:
+            Capacity percentage (0-100), or None if not available.
+        """
+        return self.data.capacityPercent
+
+    # ========== Current Properties ==========
+
+    @property
+    def current_text(self) -> str | None:
+        """Get formatted current text.
+
+        Returns:
+            Current text (e.g., "49.8A"), or None if not available.
+        """
+        return self.data.currentText
+
+    @property
+    def current_type(self) -> str | None:
+        """Get current flow direction.
+
+        Returns:
+            "charge" or "discharge", or None if not available.
+        """
+        return self.data.currentType
+
+    # ========== Battery Count ==========
+
+    @property
     def battery_count(self) -> int:
         """Get number of batteries in the bank.
 
         Returns:
             Number of battery modules.
         """
+        if self.data.totalNumber is not None:
+            return self.data.totalNumber
         return len(self.data.batteryArray)
 
     async def refresh(self) -> None:

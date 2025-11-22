@@ -254,3 +254,198 @@ class TestBatteryBankDataUpdate:
         assert battery_bank.voltage == 53.0
         assert battery_bank.charge_power == 0
         assert battery_bank.discharge_power == 1500
+
+
+class TestBatteryBankEnhancedProperties:
+    """Test newly added BatteryBank properties."""
+
+    def test_status_text_property(self, mock_client):
+        """Test status_text property returns detailed status."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Charging",
+            statusText="normal",
+            soc=85,
+            vBat=539,
+            pCharge=2500,
+            pDisCharge=0,
+            maxBatteryCharge=200,
+            currentBatteryCharge=170.0,
+            batteryArray=[],
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        assert battery_bank.status_text == "normal"
+
+    def test_is_lost_property(self, mock_client):
+        """Test is_lost property."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Idle",
+            lost=False,
+            soc=50,
+            vBat=520,
+            pCharge=0,
+            pDisCharge=0,
+            maxBatteryCharge=150,
+            currentBatteryCharge=75.0,
+            batteryArray=[],
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        assert battery_bank.is_lost is False
+
+    def test_has_runtime_data_property(self, mock_client):
+        """Test has_runtime_data property."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Charging",
+            hasRuntimeData=True,
+            soc=85,
+            vBat=539,
+            pCharge=2500,
+            pDisCharge=0,
+            maxBatteryCharge=200,
+            currentBatteryCharge=170.0,
+            batteryArray=[],
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        assert battery_bank.has_runtime_data is True
+
+    def test_voltage_text_property(self, mock_client):
+        """Test voltage_text property."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Charging",
+            totalVoltageText="53.8",
+            soc=85,
+            vBat=538,
+            pCharge=2500,
+            pDisCharge=0,
+            maxBatteryCharge=200,
+            currentBatteryCharge=170.0,
+            batteryArray=[],
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        assert battery_bank.voltage_text == "53.8"
+
+    def test_power_properties(self, mock_client):
+        """Test various power properties."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Charging",
+            soc=85,
+            vBat=538,
+            pCharge=2500,
+            pDisCharge=0,
+            batPower=2500,
+            ppv=3000,
+            pinv=500,
+            prec=0,
+            peps=0,
+            maxBatteryCharge=200,
+            currentBatteryCharge=170.0,
+            batteryArray=[],
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        assert battery_bank.battery_power == 2500
+        assert battery_bank.pv_power == 3000
+        assert battery_bank.inverter_power == 500
+        assert battery_bank.grid_power == 0
+        assert battery_bank.eps_power == 0
+
+    def test_capacity_properties_extended(self, mock_client):
+        """Test extended capacity properties."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Charging",
+            soc=85,
+            vBat=538,
+            pCharge=2500,
+            pDisCharge=0,
+            maxBatteryCharge=200,
+            currentBatteryCharge=170.0,
+            remainCapacity=618,
+            fullCapacity=840,
+            capacityPercent=74,
+            batteryArray=[],
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        assert battery_bank.remain_capacity == 618
+        assert battery_bank.full_capacity == 840
+        assert battery_bank.capacity_percent == 74
+
+    def test_current_properties(self, mock_client):
+        """Test current text and type properties."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Charging",
+            currentText="49.8",
+            currentType="charge",
+            soc=85,
+            vBat=538,
+            pCharge=2500,
+            pDisCharge=0,
+            maxBatteryCharge=200,
+            currentBatteryCharge=170.0,
+            batteryArray=[],
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        assert battery_bank.current_text == "49.8"
+        assert battery_bank.current_type == "charge"
+
+    def test_battery_count_with_total_number(self, mock_client):
+        """Test battery_count uses totalNumber when available."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Idle",
+            soc=50,
+            vBat=520,
+            pCharge=0,
+            pDisCharge=0,
+            maxBatteryCharge=150,
+            currentBatteryCharge=75.0,
+            batteryArray=[{"batteryKey": "bat1"}, {"batteryKey": "bat2"}],
+            totalNumber=3,  # totalNumber differs from array length (edge case)
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+        )
+
+        # Should prefer totalNumber when available
+        assert battery_bank.battery_count == 3

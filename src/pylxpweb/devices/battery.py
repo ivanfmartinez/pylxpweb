@@ -86,6 +86,57 @@ class Battery(BaseDevice):
         """
         self._data = value
 
+    # ========== Identification Properties ==========
+
+    @property
+    def battery_type(self) -> str | None:
+        """Get battery type identifier.
+
+        Returns:
+            Battery type string, or None if not available.
+        """
+        return self._data.batteryType
+
+    @property
+    def battery_type_text(self) -> str | None:
+        """Get battery type display text.
+
+        Returns:
+            Battery type display text, or None if not available.
+        """
+        return self._data.batteryTypeText
+
+    @property
+    def bms_model(self) -> str | None:
+        """Get BMS model information.
+
+        Returns:
+            BMS model text, or None if not available.
+        """
+        return self._data.batBmsModelText
+
+    # ========== Status Properties ==========
+
+    @property
+    def is_lost(self) -> bool:
+        """Check if battery communication is lost.
+
+        Returns:
+            True if battery is not communicating.
+        """
+        return self._data.lost
+
+    @property
+    def last_update_time(self) -> str | None:
+        """Get last update timestamp.
+
+        Returns:
+            Last update timestamp string, or None if not available.
+        """
+        return self._data.lastUpdateTime
+
+    # ========== Voltage and Current ==========
+
     @property
     def voltage(self) -> float:
         """Get battery voltage in volts.
@@ -113,6 +164,8 @@ class Battery(BaseDevice):
         """
         return self.voltage * self.current
 
+    # ========== State of Charge/Health ==========
+
     @property
     def soc(self) -> int:
         """Get battery state of charge.
@@ -130,6 +183,46 @@ class Battery(BaseDevice):
             State of health percentage (0-100).
         """
         return self._data.soh
+
+    # ========== Capacity Properties ==========
+
+    @property
+    def current_remain_capacity(self) -> int:
+        """Get current remaining capacity in amp-hours.
+
+        Returns:
+            Current remaining capacity in Ah.
+        """
+        return self._data.currentRemainCapacity
+
+    @property
+    def current_full_capacity(self) -> int:
+        """Get current full capacity in amp-hours.
+
+        Returns:
+            Current full capacity in Ah.
+        """
+        return self._data.currentFullCapacity
+
+    @property
+    def capacity_percent(self) -> int | None:
+        """Get current capacity as percentage of full capacity.
+
+        Returns:
+            Capacity percentage (0-100), or None if not available.
+        """
+        return self._data.currentCapacityPercent
+
+    @property
+    def max_battery_charge(self) -> int | None:
+        """Get maximum battery charge capacity in amp-hours.
+
+        Returns:
+            Maximum charge capacity in Ah, or None if not available.
+        """
+        return self._data.maxBatteryCharge
+
+    # ========== Temperature Properties ==========
 
     @property
     def max_cell_temp(self) -> float:
@@ -150,6 +243,35 @@ class Battery(BaseDevice):
         return scale_battery_value("batMinCellTemp", self._data.batMinCellTemp)
 
     @property
+    def max_cell_temp_num(self) -> int | None:
+        """Get cell number with maximum temperature.
+
+        Returns:
+            Cell number (0-indexed), or None if not available.
+        """
+        return self._data.batMaxCellNumTemp
+
+    @property
+    def min_cell_temp_num(self) -> int | None:
+        """Get cell number with minimum temperature.
+
+        Returns:
+            Cell number (0-indexed), or None if not available.
+        """
+        return self._data.batMinCellNumTemp
+
+    @property
+    def cell_temp_delta(self) -> float:
+        """Get cell temperature imbalance (max - min).
+
+        Returns:
+            Temperature difference between hottest and coolest cell in Celsius.
+        """
+        return self.max_cell_temp - self.min_cell_temp
+
+    # ========== Cell Voltage Properties ==========
+
+    @property
     def max_cell_voltage(self) -> float:
         """Get maximum cell voltage in volts.
 
@@ -168,6 +290,24 @@ class Battery(BaseDevice):
         return scale_battery_value("batMinCellVoltage", self._data.batMinCellVoltage)
 
     @property
+    def max_cell_voltage_num(self) -> int | None:
+        """Get cell number with maximum voltage.
+
+        Returns:
+            Cell number (0-indexed), or None if not available.
+        """
+        return self._data.batMaxCellNumVolt
+
+    @property
+    def min_cell_voltage_num(self) -> int | None:
+        """Get cell number with minimum voltage.
+
+        Returns:
+            Cell number (0-indexed), or None if not available.
+        """
+        return self._data.batMinCellNumVolt
+
+    @property
     def cell_voltage_delta(self) -> float:
         """Get cell voltage imbalance (max - min).
 
@@ -175,6 +315,28 @@ class Battery(BaseDevice):
             Voltage difference between highest and lowest cell in volts.
         """
         return self.max_cell_voltage - self.min_cell_voltage
+
+    # ========== Charge Parameters ==========
+
+    @property
+    def charge_max_current(self) -> int | None:
+        """Get maximum charge current setting.
+
+        Returns:
+            Maximum charge current (raw value, needs ÷100 for amps), or None if not available.
+        """
+        return self._data.batChargeMaxCur
+
+    @property
+    def charge_voltage_ref(self) -> int | None:
+        """Get charge voltage reference setting.
+
+        Returns:
+            Charge voltage reference (raw value, needs ÷10 for volts), or None if not available.
+        """
+        return self._data.batChargeVoltRef
+
+    # ========== Cycle Count and Firmware ==========
 
     @property
     def cycle_count(self) -> int:
@@ -194,14 +356,52 @@ class Battery(BaseDevice):
         """
         return self._data.fwVersionText
 
+    # ========== Additional Metrics ==========
+
     @property
-    def is_lost(self) -> bool:
-        """Check if battery communication is lost.
+    def charge_capacity(self) -> str | None:
+        """Get charge capacity metric.
 
         Returns:
-            True if battery is not communicating.
+            Charge capacity string, or None if not available.
         """
-        return self._data.lost
+        return self._data.chgCapacity
+
+    @property
+    def discharge_capacity(self) -> str | None:
+        """Get discharge capacity metric.
+
+        Returns:
+            Discharge capacity string, or None if not available.
+        """
+        return self._data.disChgCapacity
+
+    @property
+    def ambient_temp(self) -> str | None:
+        """Get ambient temperature.
+
+        Returns:
+            Ambient temperature string, or None if not available.
+        """
+        return self._data.ambientTemp
+
+    @property
+    def mos_temp(self) -> str | None:
+        """Get MOSFET temperature.
+
+        Returns:
+            MOSFET temperature string, or None if not available.
+        """
+        return self._data.mosTemp
+
+    @property
+    def notice_info(self) -> str | None:
+        """Get notice/warning information.
+
+        Returns:
+            Notice information string, or None if not available.
+        """
+        return self._data.noticeInfo
 
     async def refresh(self) -> None:
         """Refresh battery data.
