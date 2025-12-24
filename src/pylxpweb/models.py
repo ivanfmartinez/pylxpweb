@@ -441,16 +441,20 @@ class InverterRuntime(BaseModel):
     modelText: str | None = None
     serverTime: str
     deviceTime: str
+    deviceTimeText: str | None = None  # Formatted device time (e.g., "2025/12/24")
     # PV inputs (voltage requires �100)
     vpv1: int
     vpv2: int
     vpv3: int | None = None
+    vpv4: int | None = None  # Some models have 4 PV inputs
     remainTime: int = 0
     # PV power (watts, no scaling)
     ppv1: int
     ppv2: int
     ppv3: int | None = None
+    ppv4: int | None = None  # Some models have 4 PV inputs
     ppv: int
+    ppvpCharge: int | None = None  # PV charge power (alternate field name on some models)
     # AC voltages (�100 for volts)
     vacr: int
     vacs: int
@@ -491,14 +495,17 @@ class InverterRuntime(BaseModel):
     _12KAcCoupleInverterFlow: bool = False
     _12KAcCoupleInverterData: bool = False
     acCouplePower: int = 0
+    batteryCapacity: int | None = None  # Battery capacity in Ah (int version of batCapacity)
     # Other fields
     hasEpsOverloadRecoveryTime: bool = False
-    maxChgCurr: int
-    maxDischgCurr: int
+    # Note: These fields are optional as some models (e.g., 12000XP) don't return them
+    maxChgCurr: int = 0
+    maxDischgCurr: int = 0
     maxChgCurrValue: int | None = None
     maxDischgCurrValue: int | None = None
-    bmsCharge: bool
-    bmsDischarge: bool
+    # BMS fields - optional as some models don't support BMS communication
+    bmsCharge: bool = False
+    bmsDischarge: bool = False
     bmsForceCharge: bool = False
     # Generator
     _12KUsingGenerator: bool = False
@@ -512,6 +519,15 @@ class InverterRuntime(BaseModel):
     pEpsL1N: int = 0
     pEpsL2N: int = 0
     haspEpsLNValue: bool = False
+    # Smart Load (12000XP and similar models)
+    smartLoadInverterFlow: bool = False
+    smartLoadInverterEnable: bool = False
+    epsLoadPowerShow: bool = False
+    gridLoadPowerShow: bool = False
+    pLoadPowerShow: bool = False
+    epsLoadPower: int = 0
+    gridLoadPower: int = 0
+    smartLoadPower: int = 0
     # Directions
     directions: dict[str, str] = Field(default_factory=dict)
 
