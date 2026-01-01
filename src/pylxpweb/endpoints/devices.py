@@ -72,6 +72,48 @@ class DeviceEndpoints(BaseEndpoint):
         )
         return ParallelGroupDetailsResponse.model_validate(response)
 
+    async def sync_parallel_groups(self, plant_id: int) -> bool:
+        """Trigger automatic parallel group detection and synchronization.
+
+        This endpoint initializes/syncs parallel group data for all inverters
+        in a plant. Required when parallel group data is not available, such as:
+        - After firmware updates that reset parallel group settings
+        - When `get_parallel_group_details` returns empty/no data
+        - Initial setup of parallel inverter configurations with GridBOSS
+
+        Note:
+            This is a write operation that modifies parallel group configuration.
+            May take several seconds to complete as it communicates with all inverters.
+            Should be called once per plant, not per inverter.
+
+        Args:
+            plant_id: Plant/station ID to sync parallel data for
+
+        Returns:
+            bool: True if sync was successful, False otherwise
+
+        Example:
+            # If GridBOSS detected but no parallel groups
+            success = await client.api.devices.sync_parallel_groups(12345)
+            if success:
+                # Re-fetch parallel group details
+                groups = await client.api.devices.get_parallel_group_details(gridboss_serial)
+        """
+        await self.client._ensure_authenticated()
+
+        data = {"plantId": plant_id}
+
+        try:
+            response = await self.client._request(
+                "POST",
+                "/WManage/api/inverter/autoParallel",
+                data=data,
+            )
+            # Response should have success field
+            return bool(response.get("success", False))
+        except Exception:
+            return False
+
     async def get_devices(self, plant_id: int) -> InverterOverviewResponse:
         """Get overview/status of all devices in a plant.
 

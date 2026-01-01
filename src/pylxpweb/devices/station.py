@@ -618,14 +618,32 @@ class Station(BaseDevice):
         This method orchestrates device loading by:
         1. Getting device list from API
         2. Finding GridBOSS to query parallel group configuration
-        3. Creating ParallelGroup objects
-        4. Assigning inverters and MID devices to groups or standalone list
+        3. If GridBOSS found but no parallel groups, trigger auto-sync
+        4. Creating ParallelGroup objects
+        5. Assigning inverters and MID devices to groups or standalone list
         """
         try:
             # Get device list and parallel group configuration
             devices_response = await self._get_device_list()
             gridboss_serial = self._find_gridboss(devices_response)
             group_data = await self._get_parallel_groups(gridboss_serial)
+
+            # If GridBOSS detected but no parallel group data, trigger auto-sync
+            if gridboss_serial and (not group_data or not group_data.devices):
+                _LOGGER.info(
+                    "GridBOSS %s detected but no parallel groups found, triggering auto-sync",
+                    gridboss_serial,
+                )
+                sync_success = await self._client.api.devices.sync_parallel_groups(self.id)
+                if sync_success:
+                    _LOGGER.info("Parallel group sync successful, re-fetching group data")
+                    # Re-fetch parallel group data after sync
+                    group_data = await self._get_parallel_groups(gridboss_serial)
+                else:
+                    _LOGGER.warning(
+                        "Parallel group sync failed for station %s - GridBOSS may not appear",
+                        self.id,
+                    )
 
             # Create parallel groups and lookup dictionary
             groups_lookup = self._create_parallel_groups(group_data, devices_response)

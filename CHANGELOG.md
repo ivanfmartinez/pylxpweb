@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2025-12-31
+
+### Added
+
+- **Automatic parallel group sync** - Auto-sync parallel groups when GridBOSS detected but no parallel data exists ([eg4_web_monitor#72](https://github.com/joyfulhouse/eg4_web_monitor/issues/72)):
+  - `client.api.devices.sync_parallel_groups(plant_id)` - Trigger parallel group synchronization
+  - `Station._load_devices()` now auto-calls sync when GridBOSS found but parallel groups empty
+  - Fixes issue where GridBOSS would disappear if parallel group data wasn't pre-configured
+
 ## [0.4.1] - 2025-12-24
 
 ### Added
