@@ -104,13 +104,26 @@ class ParallelGroup:
         Args:
             serial_number: Serial number of first inverter in group.
         """
-        from contextlib import suppress
+        import logging
 
         from pylxpweb.exceptions import LuxpowerAPIError, LuxpowerConnectionError
 
-        # Keep existing cached data on error
-        with suppress(LuxpowerAPIError, LuxpowerConnectionError):
+        _logger = logging.getLogger(__name__)
+
+        try:
             self._energy = await self._client.api.devices.get_parallel_energy(serial_number)
+            _logger.debug(
+                "Parallel group %s energy data fetched: todayYielding=%s",
+                self.name,
+                self._energy.todayYielding if self._energy else None,
+            )
+        except (LuxpowerAPIError, LuxpowerConnectionError) as e:
+            # Keep existing cached data on error, but log the failure
+            _logger.warning(
+                "Failed to fetch parallel group %s energy data: %s",
+                self.name,
+                e,
+            )
 
     async def get_combined_energy(self) -> dict[str, float]:
         """Get combined energy statistics for all inverters in group.

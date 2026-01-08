@@ -234,6 +234,7 @@ class InverterRuntimeData:
             pv_total_power=float(pv1_power + pv2_power + pv3_power),
             # Battery
             battery_voltage=apply_scale(get_reg(4), ScaleFactor.SCALE_100),
+            battery_current=apply_scale(get_reg(75), ScaleFactor.SCALE_100),  # Battery current (A)
             battery_soc=get_reg(5),
             battery_charge_power=float(charge_power),
             battery_discharge_power=float(discharge_power),
@@ -264,8 +265,13 @@ class InverterRuntimeData:
             internal_temperature=float(get_reg(61)),
             radiator_temperature_1=float(get_reg(62)),
             radiator_temperature_2=float(get_reg(63)),
+            battery_control_temperature=float(get_reg(65)),
             # Status
             device_status=get_reg(0),
+            # BMS data (registers 88-90)
+            battery_soh=get_reg(88, 100),  # State of Health (%)
+            fault_code=get_reg(89),  # BMS fault code
+            warning_code=get_reg(90),  # BMS warning code
         )
 
 

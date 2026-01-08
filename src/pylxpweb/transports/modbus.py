@@ -43,6 +43,11 @@ HOLD_REGISTER_GROUPS = {
     "battery": (90, 40),  # Registers 90-129: Battery config
 }
 
+# Serial number is stored in input registers 115-119 (5 registers, 10 ASCII chars)
+# Each register contains 2 ASCII characters: low byte = char[0], high byte = char[1]
+SERIAL_NUMBER_START_REGISTER = 115
+SERIAL_NUMBER_REGISTER_COUNT = 5
+
 
 class ModbusTransport(BaseTransport):
     """Modbus TCP transport for local inverter communication.
@@ -347,42 +352,34 @@ class ModbusTransport(BaseTransport):
     async def read_runtime(self) -> InverterRuntimeData:
         """Read runtime data via Modbus input registers.
 
+        Note: Register reads are serialized (not concurrent) to prevent
+        transaction ID desynchronization issues with pymodbus and some
+        Modbus TCP gateways (e.g., Waveshare RS485-to-Ethernet adapters).
+
         Returns:
             Runtime data with all values properly scaled
 
         Raises:
             TransportReadError: If read operation fails
         """
-        # Read all input register groups concurrently
-        group_names = list(INPUT_REGISTER_GROUPS.keys())
-        tasks = [
-            self._read_input_registers(start, count)
-            for start, count in INPUT_REGISTER_GROUPS.values()
-        ]
+        # Read register groups sequentially to avoid transaction ID issues
+        # See: https://github.com/joyfulhouse/pylxpweb/issues/95
+        input_registers: dict[int, int] = {}
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Check for errors in results
-        for group_name, result in zip(group_names, results, strict=True):
-            if isinstance(result, Exception):
+        for group_name, (start, count) in INPUT_REGISTER_GROUPS.items():
+            try:
+                values = await self._read_input_registers(start, count)
+                for offset, value in enumerate(values):
+                    input_registers[start + offset] = value
+            except Exception as e:
                 _LOGGER.error(
                     "Failed to read register group '%s': %s",
                     group_name,
-                    result,
+                    e,
                 )
                 raise TransportReadError(
-                    f"Failed to read register group '{group_name}': {result}"
-                ) from result
-
-        # Combine results into single register dict
-        input_registers: dict[int, int] = {}
-        for (_group_name, (start, _count)), values in zip(
-            INPUT_REGISTER_GROUPS.items(), results, strict=True
-        ):
-            # Type narrowing: we've verified no exceptions above
-            assert isinstance(values, list)
-            for offset, value in enumerate(values):
-                input_registers[start + offset] = value
+                    f"Failed to read register group '{group_name}': {e}"
+                ) from e
 
         return InverterRuntimeData.from_modbus_registers(input_registers)
 
@@ -392,38 +389,35 @@ class ModbusTransport(BaseTransport):
         Energy data comes from the same input registers as runtime data,
         so we read the relevant groups.
 
+        Note: Register reads are serialized to prevent transaction ID issues.
+
         Returns:
             Energy data with all values in kWh
 
         Raises:
             TransportReadError: If read operation fails
         """
-        # Read energy-related register groups
+        # Read energy-related register groups sequentially
         groups_needed = ["status_energy", "advanced"]
-        group_list = [(n, s) for n, s in INPUT_REGISTER_GROUPS.items() if n in groups_needed]
-        tasks = [self._read_input_registers(start, count) for _name, (start, count) in group_list]
+        input_registers: dict[int, int] = {}
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for group_name, (start, count) in INPUT_REGISTER_GROUPS.items():
+            if group_name not in groups_needed:
+                continue
 
-        # Check for errors in results
-        for (group_name, _), result in zip(group_list, results, strict=True):
-            if isinstance(result, Exception):
+            try:
+                values = await self._read_input_registers(start, count)
+                for offset, value in enumerate(values):
+                    input_registers[start + offset] = value
+            except Exception as e:
                 _LOGGER.error(
                     "Failed to read energy register group '%s': %s",
                     group_name,
-                    result,
+                    e,
                 )
                 raise TransportReadError(
-                    f"Failed to read energy register group '{group_name}': {result}"
-                ) from result
-
-        # Combine results
-        input_registers: dict[int, int] = {}
-        for (_group_name, (start, _count)), values in zip(group_list, results, strict=True):
-            # Type narrowing: we've verified no exceptions above
-            assert isinstance(values, list)
-            for offset, value in enumerate(values):
-                input_registers[start + offset] = value
+                    f"Failed to read energy register group '{group_name}': {e}"
+                ) from e
 
         return InverterEnergyData.from_modbus_registers(input_registers)
 
@@ -555,3 +549,69 @@ class ModbusTransport(BaseTransport):
             await self._write_holding_registers(start_address, values)
 
         return True
+
+    async def read_serial_number(self) -> str:
+        """Read inverter serial number from input registers 115-119.
+
+        The serial number is stored as 10 ASCII characters across 5 registers.
+        Each register contains 2 characters: low byte = char[0], high byte = char[1].
+
+        This can be used to:
+        - Validate the user-entered serial matches the actual device
+        - Auto-discover the serial during setup
+        - Detect cable swaps in multi-inverter setups
+
+        Returns:
+            10-character serial number string (e.g., "BA12345678")
+
+        Raises:
+            TransportReadError: If read operation fails
+
+        Example:
+            >>> transport = ModbusTransport(host="192.168.1.100", serial="")
+            >>> await transport.connect()
+            >>> actual_serial = await transport.read_serial_number()
+            >>> print(f"Connected to inverter: {actual_serial}")
+        """
+        values = await self._read_input_registers(
+            SERIAL_NUMBER_START_REGISTER, SERIAL_NUMBER_REGISTER_COUNT
+        )
+
+        # Decode ASCII characters from register values
+        chars: list[str] = []
+        for value in values:
+            low_byte = value & 0xFF
+            high_byte = (value >> 8) & 0xFF
+            # Filter out non-printable characters
+            if 32 <= low_byte <= 126:
+                chars.append(chr(low_byte))
+            if 32 <= high_byte <= 126:
+                chars.append(chr(high_byte))
+
+        serial = "".join(chars)
+        _LOGGER.debug("Read serial number from Modbus: %s", serial)
+        return serial
+
+    async def validate_serial(self, expected_serial: str) -> bool:
+        """Validate that the connected inverter matches the expected serial.
+
+        Args:
+            expected_serial: The serial number the user expects to connect to
+
+        Returns:
+            True if serials match, False otherwise
+
+        Raises:
+            TransportReadError: If read operation fails
+        """
+        actual_serial = await self.read_serial_number()
+        matches = actual_serial == expected_serial
+
+        if not matches:
+            _LOGGER.warning(
+                "Serial mismatch: expected %s, got %s",
+                expected_serial,
+                actual_serial,
+            )
+
+        return matches
