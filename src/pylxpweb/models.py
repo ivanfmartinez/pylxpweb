@@ -691,7 +691,8 @@ class BatteryInfo(BaseModel):
     currentType: str | None = None  # "charge" or "discharge"
 
     # Individual Battery Modules
-    batteryArray: list[BatteryModule]
+    # Optional - API may not return this field for some configurations (e.g., no batteries)
+    batteryArray: list[BatteryModule] = []
     totalNumber: int | None = None  # Total battery count
 
 
