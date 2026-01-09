@@ -769,12 +769,13 @@ class MidboxData(BaseModel):
 
     Note: Voltages are in decivolts (÷10), currents in centiamps (÷100),
     frequency in centihertz (÷100). Power values are in watts (no scaling).
+    Energy values are in deciwatt-hours (÷10 for kWh).
     """
 
     status: int
     serverTime: str
     deviceTime: str
-    # Grid voltages (�10 for volts, e.g., 2418 = 241.8V)
+    # Grid voltages (÷10 for volts, e.g., 2418 = 241.8V)
     gridRmsVolt: int
     upsRmsVolt: int
     genRmsVolt: int
@@ -784,7 +785,7 @@ class MidboxData(BaseModel):
     upsL2RmsVolt: int
     genL1RmsVolt: int
     genL2RmsVolt: int
-    # Currents (�100 for amps)
+    # Currents (÷100 for amps)
     gridL1RmsCurr: int
     gridL2RmsCurr: int
     loadL1RmsCurr: int
@@ -808,8 +809,85 @@ class MidboxData(BaseModel):
     smartPort2Status: int
     smartPort3Status: int
     smartPort4Status: int
-    # Grid frequency (�100 for Hz)
+    # Grid frequency (÷100 for Hz)
     gridFreq: int
+
+    # ===========================================
+    # Energy Fields (÷10 for kWh)
+    # Optional - not all devices report all fields
+    # ===========================================
+
+    # UPS Energy (Today and Lifetime)
+    eUpsTodayL1: int | None = None
+    eUpsTodayL2: int | None = None
+    eUpsTotalL1: int | None = None
+    eUpsTotalL2: int | None = None
+
+    # Grid Export Energy (Today and Lifetime)
+    eToGridTodayL1: int | None = None
+    eToGridTodayL2: int | None = None
+    eToGridTotalL1: int | None = None
+    eToGridTotalL2: int | None = None
+
+    # Grid Import Energy (Today and Lifetime)
+    eToUserTodayL1: int | None = None
+    eToUserTodayL2: int | None = None
+    eToUserTotalL1: int | None = None
+    eToUserTotalL2: int | None = None
+
+    # Load Energy (Today and Lifetime)
+    eLoadTodayL1: int | None = None
+    eLoadTodayL2: int | None = None
+    eLoadTotalL1: int | None = None
+    eLoadTotalL2: int | None = None
+
+    # AC Couple 1 Energy (Today and Lifetime)
+    eACcouple1TodayL1: int | None = None
+    eACcouple1TodayL2: int | None = None
+    eACcouple1TotalL1: int | None = None
+    eACcouple1TotalL2: int | None = None
+
+    # AC Couple 2 Energy (Today and Lifetime)
+    eACcouple2TodayL1: int | None = None
+    eACcouple2TodayL2: int | None = None
+    eACcouple2TotalL1: int | None = None
+    eACcouple2TotalL2: int | None = None
+
+    # AC Couple 3 Energy (Today and Lifetime)
+    eACcouple3TodayL1: int | None = None
+    eACcouple3TodayL2: int | None = None
+    eACcouple3TotalL1: int | None = None
+    eACcouple3TotalL2: int | None = None
+
+    # AC Couple 4 Energy (Today and Lifetime)
+    eACcouple4TodayL1: int | None = None
+    eACcouple4TodayL2: int | None = None
+    eACcouple4TotalL1: int | None = None
+    eACcouple4TotalL2: int | None = None
+
+    # Smart Load 1 Energy (Today and Lifetime)
+    eSmartLoad1TodayL1: int | None = None
+    eSmartLoad1TodayL2: int | None = None
+    eSmartLoad1TotalL1: int | None = None
+    eSmartLoad1TotalL2: int | None = None
+
+    # Smart Load 2 Energy (Today and Lifetime)
+    eSmartLoad2TodayL1: int | None = None
+    eSmartLoad2TodayL2: int | None = None
+    eSmartLoad2TotalL1: int | None = None
+    eSmartLoad2TotalL2: int | None = None
+
+    # Smart Load 3 Energy (Today and Lifetime)
+    eSmartLoad3TodayL1: int | None = None
+    eSmartLoad3TodayL2: int | None = None
+    eSmartLoad3TotalL1: int | None = None
+    eSmartLoad3TotalL2: int | None = None
+
+    # Smart Load 4 Energy (Today and Lifetime)
+    eSmartLoad4TodayL1: int | None = None
+    eSmartLoad4TodayL2: int | None = None
+    eSmartLoad4TotalL1: int | None = None
+    eSmartLoad4TotalL2: int | None = None
 
 
 class MidboxRuntime(BaseModel):
