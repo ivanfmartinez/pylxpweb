@@ -28,7 +28,7 @@ These are sanitized example register maps with generic serial numbers for refere
 Real device data contributed by users (serial numbers masked):
 
 #### FlexBOSS21
-- **Files**: [`FlexBOSS21_45******59.md`](FlexBOSS21_45******59.md), [`FlexBOSS21_45******59.json`](FlexBOSS21_45******59.json)
+- **Files**: [`FlexBOSS21_45XXXXXX59.md`](FlexBOSS21_45XXXXXX59.md), [`FlexBOSS21_45XXXXXX59.json`](FlexBOSS21_45XXXXXX59.json)
 - **Device Type Code**: 10284
 - **Firmware**: FAAB-2525
 - **Dongle Version**: V2.06
@@ -37,7 +37,7 @@ Real device data contributed by users (serial numbers masked):
 - **Contributed via**: [Issue #79](https://github.com/joyfulhouse/pylxpweb/issues/79)
 
 #### GridBOSS
-- **Files**: [`GridBoss_43******85.md`](GridBoss_43******85.md), [`GridBoss_43******85.json`](GridBoss_43******85.json)
+- **Files**: [`GridBoss_43XXXXXX85.md`](GridBoss_43XXXXXX85.md), [`GridBoss_43XXXXXX85.json`](GridBoss_43XXXXXX85.json)
 - **Device Type Code**: 50
 - **Firmware**: IAAB-1600
 - **Dongle Version**: V2.06
@@ -46,18 +46,18 @@ Real device data contributed by users (serial numbers masked):
 - **Contributed via**: [Issue #79](https://github.com/joyfulhouse/pylxpweb/issues/79)
 
 #### SNA12KUS (12kPV)
-- **Files**: [`SNA12KUS_52******68.md`](SNA12KUS_52******68.md), [`SNA12KUS_52******68.json`](SNA12KUS_52******68.json)
+- **Files**: [`SNA12KUS_52XXXXXX68.md`](SNA12KUS_52XXXXXX68.md), [`SNA12KUS_52XXXXXX68.json`](SNA12KUS_52XXXXXX68.json)
 - **Device Type Code**: 54
 - **Register Ranges**: 0-274
 - **Total Parameters**: 488
 
 #### LXP-EU 12K
-- **Files**: [`LXPEU12K_43******13.md`](LXPEU12K_43******13.md), [`LXPEU12K_51******57.md`](LXPEU12K_51******57.md)
+- **Files**: [`LXPEU12K_43XXXXXX13.md`](LXPEU12K_43XXXXXX13.md), [`LXPEU12K_51XXXXXX57.md`](LXPEU12K_51XXXXXX57.md)
 - **Device Type Code**: 12
 - **Register Ranges**: 0-274
 
 > **Note**: Example register maps are sanitized with generic serial numbers.
-> Community contributions have serial numbers masked (e.g., `45******59`) for privacy.
+> Community contributions have serial numbers masked (e.g., `45XXXXXX59`) for privacy.
 > To generate register maps for your own devices, use the utilities described in the "Generating Register Maps" section below.
 
 ## Table Format
