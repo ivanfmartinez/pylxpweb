@@ -328,6 +328,149 @@ class ParallelGroup:
 
         return scale_energy_value("totalUsage", self._energy.totalUsage, to_kwh=True)
 
+    # ===========================================
+    # Aggregate Battery Properties
+    # ===========================================
+    # These properties aggregate battery data from all inverters in the group.
+    # Data is calculated from each inverter's battery_bank, not from a single API call.
+
+    @property
+    def battery_charge_power(self) -> int:
+        """Get total battery charging power across all inverters in watts.
+
+        Aggregates charge_power from all inverters' battery banks.
+
+        Returns:
+            Total charging power in watts, or 0 if no battery data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            if inverter.battery_bank:
+                total += inverter.battery_bank.charge_power or 0
+        return total
+
+    @property
+    def battery_discharge_power(self) -> int:
+        """Get total battery discharging power across all inverters in watts.
+
+        Aggregates discharge_power from all inverters' battery banks.
+
+        Returns:
+            Total discharging power in watts, or 0 if no battery data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            if inverter.battery_bank:
+                total += inverter.battery_bank.discharge_power or 0
+        return total
+
+    @property
+    def battery_power(self) -> int:
+        """Get net battery power across all inverters in watts.
+
+        Positive = charging, negative = discharging.
+        Aggregates battery_power from all inverters' battery banks.
+
+        Returns:
+            Net battery power in watts, or 0 if no battery data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            if inverter.battery_bank and inverter.battery_bank.battery_power is not None:
+                total += inverter.battery_bank.battery_power
+        return total
+
+    @property
+    def battery_soc(self) -> float:
+        """Get weighted average state of charge across all batteries.
+
+        SOC is calculated as: (total current capacity / total max capacity) * 100
+        This provides a capacity-weighted average rather than a simple average,
+        which is more accurate when batteries have different capacities.
+
+        Returns:
+            Weighted average SOC percentage (0-100), or 0.0 if no battery data.
+        """
+        total_current = 0.0
+        total_max = 0.0
+
+        for inverter in self.inverters:
+            if inverter.battery_bank:
+                current = inverter.battery_bank.current_capacity or 0
+                max_cap = inverter.battery_bank.max_capacity or 0
+                total_current += current
+                total_max += max_cap
+
+        if total_max > 0:
+            return round((total_current / total_max) * 100, 1)
+        return 0.0
+
+    @property
+    def battery_max_capacity(self) -> int:
+        """Get total maximum battery capacity across all inverters in Ah.
+
+        Aggregates max_capacity from all inverters' battery banks.
+
+        Returns:
+            Total maximum capacity in Ah, or 0 if no battery data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            if inverter.battery_bank:
+                total += inverter.battery_bank.max_capacity or 0
+        return total
+
+    @property
+    def battery_current_capacity(self) -> float:
+        """Get total current battery capacity across all inverters in Ah.
+
+        Aggregates current_capacity from all inverters' battery banks.
+
+        Returns:
+            Total current capacity in Ah, or 0.0 if no battery data.
+        """
+        total = 0.0
+        for inverter in self.inverters:
+            if inverter.battery_bank:
+                total += inverter.battery_bank.current_capacity or 0
+        return round(total, 1)
+
+    @property
+    def battery_voltage(self) -> float | None:
+        """Get average battery voltage across all inverters.
+
+        Returns the average voltage from all battery banks. Returns None
+        if no battery data is available.
+
+        Returns:
+            Average battery voltage in volts, or None if no battery data.
+        """
+        voltages = []
+        for inverter in self.inverters:
+            if inverter.battery_bank:
+                voltage = inverter.battery_bank.voltage
+                if voltage and voltage > 0:
+                    voltages.append(voltage)
+
+        if voltages:
+            return round(sum(voltages) / len(voltages), 1)
+        return None
+
+    @property
+    def battery_count(self) -> int:
+        """Get total number of batteries across all inverters.
+
+        Aggregates battery_count from all inverters' battery banks.
+
+        Returns:
+            Total number of battery modules, or 0 if no battery data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            if inverter.battery_bank:
+                total += inverter.battery_bank.battery_count or 0
+        return total
+
     @classmethod
     async def from_api_data(
         cls,
