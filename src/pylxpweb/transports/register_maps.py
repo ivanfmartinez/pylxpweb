@@ -191,6 +191,145 @@ class RuntimeRegisterMap:
     inverter_on_time: RegisterField | None = None  # hours (32-bit)
     ac_input_type: RegisterField | None = None  # type code
 
+    # -------------------------------------------------------------------------
+    # Parallel Configuration (reg 113)
+    # Packed format: bits 0-1 = master/slave, bits 2-3 = phase, bits 8-15 = number
+    # -------------------------------------------------------------------------
+    parallel_config: RegisterField | None = None  # packed parallel status
+
+
+@dataclass(frozen=True)
+class HoldingRegisterField:
+    """Definition of a writable holding register field.
+
+    Extends RegisterField with min/max validation and write support.
+    """
+
+    address: int
+    bit_width: Literal[16, 32] = 16
+    scale_factor: ScaleFactor = ScaleFactor.SCALE_NONE
+    signed: bool = False
+    min_value: float | None = None  # Minimum allowed value (after scaling)
+    max_value: float | None = None  # Maximum allowed value (after scaling)
+
+
+@dataclass(frozen=True)
+class HoldingRegisterMap:
+    """Register map for writable inverter parameters (holding registers).
+
+    These are configuration parameters that can be read and written via Modbus.
+    Based on poldim's EG4-Inverter-Modbus implementation.
+
+    Source: https://github.com/poldim/EG4-Inverter-Modbus
+    """
+
+    # -------------------------------------------------------------------------
+    # System Information (read-only holding registers)
+    # -------------------------------------------------------------------------
+    com_version: HoldingRegisterField | None = None  # reg 9
+    controller_version: HoldingRegisterField | None = None  # reg 10
+
+    # -------------------------------------------------------------------------
+    # PV Configuration
+    # -------------------------------------------------------------------------
+    pv_start_voltage: HoldingRegisterField | None = None  # reg 22, 0.1V, 90-500V
+    pv_input_model: HoldingRegisterField | None = None  # reg 20, select 0-7
+
+    # -------------------------------------------------------------------------
+    # Grid Connection Timing
+    # -------------------------------------------------------------------------
+    grid_connection_wait_time: HoldingRegisterField | None = None  # reg 23, 30-600s
+    reconnection_wait_time: HoldingRegisterField | None = None  # reg 24, 0-900s
+
+    # -------------------------------------------------------------------------
+    # Power Percentages
+    # -------------------------------------------------------------------------
+    charge_power_percent: HoldingRegisterField | None = None  # reg 64, 0-100%
+    discharge_power_percent: HoldingRegisterField | None = None  # reg 65, 0-100%
+    ac_charge_power_percent: HoldingRegisterField | None = None  # reg 66, 0-100%
+    ac_charge_soc_limit: HoldingRegisterField | None = None  # reg 67, 0-100%
+
+    # -------------------------------------------------------------------------
+    # Inverter Output Configuration
+    # -------------------------------------------------------------------------
+    inverter_output_voltage: HoldingRegisterField | None = None  # reg 90, select
+    inverter_output_frequency: HoldingRegisterField | None = None  # reg 91, select
+
+    # -------------------------------------------------------------------------
+    # Battery Voltage Settings
+    # -------------------------------------------------------------------------
+    charge_voltage_ref: HoldingRegisterField | None = None  # reg 99, 0.1V, 50-59V
+    discharge_cutoff_voltage: HoldingRegisterField | None = None  # reg 100, 0.1V, 40-50V
+    float_charge_voltage: HoldingRegisterField | None = None  # reg 144, 0.1V, 50-56V
+    equalization_voltage: HoldingRegisterField | None = None  # reg 149, 0.1V, 50-59V
+    battery_nominal_voltage: HoldingRegisterField | None = None  # reg 148, 0.1V, 40-59V
+
+    # -------------------------------------------------------------------------
+    # Battery Current Settings
+    # -------------------------------------------------------------------------
+    charge_current: HoldingRegisterField | None = None  # reg 101, 0-140A
+    discharge_current: HoldingRegisterField | None = None  # reg 102, 0-140A
+    ac_charge_battery_current: HoldingRegisterField | None = None  # reg 168, 0-140A
+
+    # -------------------------------------------------------------------------
+    # Battery Capacity & Equalization
+    # -------------------------------------------------------------------------
+    battery_capacity: HoldingRegisterField | None = None  # reg 147, 0-10000Ah
+    equalization_interval: HoldingRegisterField | None = None  # reg 150, 0-365 days
+    equalization_time: HoldingRegisterField | None = None  # reg 151, 0-24 hours
+
+    # -------------------------------------------------------------------------
+    # SOC Limits
+    # -------------------------------------------------------------------------
+    eod_soc: HoldingRegisterField | None = None  # reg 105, 10-90%
+    soc_low_limit_discharge: HoldingRegisterField | None = None  # reg 125, 0-100%
+    battery_low_soc: HoldingRegisterField | None = None  # reg 164, 0-90%
+    battery_low_back_soc: HoldingRegisterField | None = None  # reg 165, 20-100%
+    battery_low_to_utility_soc: HoldingRegisterField | None = None  # reg 167, 0-100%
+
+    # -------------------------------------------------------------------------
+    # AC Charge Settings
+    # -------------------------------------------------------------------------
+    ac_charge_start_voltage: HoldingRegisterField | None = None  # reg 158, 0.1V
+    ac_charge_end_voltage: HoldingRegisterField | None = None  # reg 159, 0.1V
+    ac_charge_start_soc: HoldingRegisterField | None = None  # reg 160, 0-90%
+    ac_charge_end_soc: HoldingRegisterField | None = None  # reg 161, 20-100%
+
+    # -------------------------------------------------------------------------
+    # Battery Low Voltage Settings
+    # -------------------------------------------------------------------------
+    battery_low_voltage: HoldingRegisterField | None = None  # reg 162, 0.1V
+    battery_low_back_voltage: HoldingRegisterField | None = None  # reg 163, 0.1V
+    battery_low_to_utility_voltage: HoldingRegisterField | None = None  # reg 166, 0.1V
+    ongrid_eod_voltage: HoldingRegisterField | None = None  # reg 169, 0.1V
+
+    # -------------------------------------------------------------------------
+    # Power Settings
+    # -------------------------------------------------------------------------
+    max_backflow_power_percent: HoldingRegisterField | None = None  # reg 103, 0-100%
+    ptouser_start_discharge: HoldingRegisterField | None = None  # reg 116, 50-10000W
+    voltage_start_derating: HoldingRegisterField | None = None  # reg 118, 0.1V
+    power_offset_wct: HoldingRegisterField | None = None  # reg 119, -1000 to 1000W
+    max_grid_input_power: HoldingRegisterField | None = None  # reg 176, W
+
+    # -------------------------------------------------------------------------
+    # Generator Settings
+    # -------------------------------------------------------------------------
+    gen_rated_power: HoldingRegisterField | None = None  # reg 177, W
+    gen_charge_start_voltage: HoldingRegisterField | None = None  # reg 194, 0.1V
+    gen_charge_end_voltage: HoldingRegisterField | None = None  # reg 195, 0.1V
+    gen_charge_start_soc: HoldingRegisterField | None = None  # reg 196, 0-90%
+    gen_charge_end_soc: HoldingRegisterField | None = None  # reg 197, 20-100%
+    max_gen_charge_battery_current: HoldingRegisterField | None = None  # reg 198, 0-60A
+
+    # -------------------------------------------------------------------------
+    # System Configuration
+    # -------------------------------------------------------------------------
+    system_type: HoldingRegisterField | None = None  # reg 112, parallel config
+    output_priority: HoldingRegisterField | None = None  # reg 145, select
+    line_mode: HoldingRegisterField | None = None  # reg 146, select
+    language: HoldingRegisterField | None = None  # reg 16, select
+
 
 @dataclass(frozen=True)
 class EnergyRegisterMap:
@@ -355,6 +494,11 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     # Inverter operational
     inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE),  # hours (regs 69-70)
     ac_input_type=RegisterField(77, 16, ScaleFactor.SCALE_NONE),  # type code
+    # Parallel configuration (reg 113)
+    # bits 0-1: master/slave (0=no parallel, 1=master, 2=slave, 3=3-phase master)
+    # bits 2-3: phase (0=R, 1=S, 2=T)
+    # bits 8-15: parallel number (unit ID in parallel system)
+    parallel_config=RegisterField(113, 16, ScaleFactor.SCALE_NONE),
 )
 
 PV_SERIES_ENERGY_MAP = EnergyRegisterMap(
@@ -465,6 +609,7 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
     temperature_t5=RegisterField(112, 16, ScaleFactor.SCALE_10),  # 0.1°C
     inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE),
     ac_input_type=RegisterField(77, 16, ScaleFactor.SCALE_NONE),
+    parallel_config=RegisterField(113, 16, ScaleFactor.SCALE_NONE),
 )
 
 LXP_EU_ENERGY_MAP = EnergyRegisterMap(
@@ -496,6 +641,172 @@ LXP_EU_ENERGY_MAP = EnergyRegisterMap(
     generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),
     generator_energy_total=RegisterField(125, 32, ScaleFactor.SCALE_10),
 )
+
+
+# =============================================================================
+# PV SERIES HOLDING REGISTER MAP (Writable Parameters)
+# =============================================================================
+# Source: poldim's EG4-Inverter-Modbus and EG4-18KPV-12LV Modbus Protocol
+# https://github.com/poldim/EG4-Inverter-Modbus
+
+PV_SERIES_HOLDING_MAP = HoldingRegisterMap(
+    # System Information (read-only)
+    com_version=HoldingRegisterField(9, 16, ScaleFactor.SCALE_NONE),
+    controller_version=HoldingRegisterField(10, 16, ScaleFactor.SCALE_NONE),
+    # PV Configuration
+    pv_start_voltage=HoldingRegisterField(
+        22, 16, ScaleFactor.SCALE_10, min_value=90.0, max_value=500.0
+    ),
+    pv_input_model=HoldingRegisterField(20, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=7),
+    # Grid Connection Timing
+    grid_connection_wait_time=HoldingRegisterField(
+        23, 16, ScaleFactor.SCALE_NONE, min_value=30, max_value=600
+    ),
+    reconnection_wait_time=HoldingRegisterField(
+        24, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=900
+    ),
+    # Power Percentages
+    charge_power_percent=HoldingRegisterField(
+        64, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=100
+    ),
+    discharge_power_percent=HoldingRegisterField(
+        65, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=100
+    ),
+    ac_charge_power_percent=HoldingRegisterField(
+        66, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=100
+    ),
+    ac_charge_soc_limit=HoldingRegisterField(
+        67, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=100
+    ),
+    # Inverter Output Configuration
+    inverter_output_voltage=HoldingRegisterField(
+        90, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=3
+    ),  # 0=230, 1=240, 2=277, 3=208
+    inverter_output_frequency=HoldingRegisterField(
+        91, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=1
+    ),  # 0=50Hz, 1=60Hz
+    # Battery Voltage Settings
+    charge_voltage_ref=HoldingRegisterField(
+        99, 16, ScaleFactor.SCALE_10, min_value=50.0, max_value=59.0
+    ),
+    discharge_cutoff_voltage=HoldingRegisterField(
+        100, 16, ScaleFactor.SCALE_10, min_value=40.0, max_value=50.0
+    ),
+    float_charge_voltage=HoldingRegisterField(
+        144, 16, ScaleFactor.SCALE_10, min_value=50.0, max_value=56.0
+    ),
+    equalization_voltage=HoldingRegisterField(
+        149, 16, ScaleFactor.SCALE_10, min_value=50.0, max_value=59.0
+    ),
+    battery_nominal_voltage=HoldingRegisterField(
+        148, 16, ScaleFactor.SCALE_10, min_value=40.0, max_value=59.0
+    ),
+    # Battery Current Settings
+    charge_current=HoldingRegisterField(
+        101, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=140
+    ),
+    discharge_current=HoldingRegisterField(
+        102, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=140
+    ),
+    ac_charge_battery_current=HoldingRegisterField(
+        168, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=140
+    ),
+    # Battery Capacity & Equalization
+    battery_capacity=HoldingRegisterField(
+        147, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=10000
+    ),
+    equalization_interval=HoldingRegisterField(
+        150, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=365
+    ),
+    equalization_time=HoldingRegisterField(
+        151, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=24
+    ),
+    # SOC Limits
+    eod_soc=HoldingRegisterField(105, 16, ScaleFactor.SCALE_NONE, min_value=10, max_value=90),
+    soc_low_limit_discharge=HoldingRegisterField(
+        125, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=100
+    ),
+    battery_low_soc=HoldingRegisterField(
+        164, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=90
+    ),
+    battery_low_back_soc=HoldingRegisterField(
+        165, 16, ScaleFactor.SCALE_NONE, min_value=20, max_value=100
+    ),
+    battery_low_to_utility_soc=HoldingRegisterField(
+        167, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=100
+    ),
+    # AC Charge Settings
+    ac_charge_start_voltage=HoldingRegisterField(
+        158, 16, ScaleFactor.SCALE_10, min_value=38.4, max_value=52.0
+    ),
+    ac_charge_end_voltage=HoldingRegisterField(
+        159, 16, ScaleFactor.SCALE_10, min_value=48.0, max_value=59.0
+    ),
+    ac_charge_start_soc=HoldingRegisterField(
+        160, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=90
+    ),
+    ac_charge_end_soc=HoldingRegisterField(
+        161, 16, ScaleFactor.SCALE_NONE, min_value=20, max_value=100
+    ),
+    # Battery Low Voltage Settings
+    battery_low_voltage=HoldingRegisterField(
+        162, 16, ScaleFactor.SCALE_10, min_value=40.0, max_value=50.0
+    ),
+    battery_low_back_voltage=HoldingRegisterField(
+        163, 16, ScaleFactor.SCALE_10, min_value=42.0, max_value=52.0
+    ),
+    battery_low_to_utility_voltage=HoldingRegisterField(
+        166, 16, ScaleFactor.SCALE_10, min_value=44.4, max_value=51.4
+    ),
+    ongrid_eod_voltage=HoldingRegisterField(
+        169, 16, ScaleFactor.SCALE_10, min_value=40.0, max_value=56.0
+    ),
+    # Power Settings
+    max_backflow_power_percent=HoldingRegisterField(
+        103, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=100
+    ),
+    ptouser_start_discharge=HoldingRegisterField(
+        116, 16, ScaleFactor.SCALE_NONE, min_value=50, max_value=10000
+    ),
+    voltage_start_derating=HoldingRegisterField(118, 16, ScaleFactor.SCALE_10),
+    power_offset_wct=HoldingRegisterField(
+        119, 16, ScaleFactor.SCALE_NONE, signed=True, min_value=-1000, max_value=1000
+    ),
+    max_grid_input_power=HoldingRegisterField(176, 16, ScaleFactor.SCALE_NONE),
+    # Generator Settings
+    gen_rated_power=HoldingRegisterField(177, 16, ScaleFactor.SCALE_NONE),
+    gen_charge_start_voltage=HoldingRegisterField(
+        194, 16, ScaleFactor.SCALE_10, min_value=38.4, max_value=52.0
+    ),
+    gen_charge_end_voltage=HoldingRegisterField(
+        195, 16, ScaleFactor.SCALE_10, min_value=48.0, max_value=59.0
+    ),
+    gen_charge_start_soc=HoldingRegisterField(
+        196, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=90
+    ),
+    gen_charge_end_soc=HoldingRegisterField(
+        197, 16, ScaleFactor.SCALE_NONE, min_value=20, max_value=100
+    ),
+    max_gen_charge_battery_current=HoldingRegisterField(
+        198, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=60
+    ),
+    # System Configuration
+    system_type=HoldingRegisterField(
+        112, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=3
+    ),  # 0=No Parallel, 1=Master, 2=Slave, 3=3-Phase Master
+    output_priority=HoldingRegisterField(
+        145, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=2
+    ),  # 0=Battery, 1=PV, 2=AC
+    line_mode=HoldingRegisterField(
+        146, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=2
+    ),  # 0=APL, 1=UPS, 2=GEN
+    language=HoldingRegisterField(
+        16, 16, ScaleFactor.SCALE_NONE, min_value=0, max_value=1
+    ),  # 0=English, 1=German
+)
+
+# LXP_EU uses same holding register layout as PV_SERIES
+LXP_EU_HOLDING_MAP = PV_SERIES_HOLDING_MAP
 
 
 # =============================================================================
@@ -568,14 +879,48 @@ def get_energy_map(family: InverterFamily | None = None) -> EnergyRegisterMap:
     return family_maps.get(family, PV_SERIES_ENERGY_MAP)
 
 
+def _get_family_holding_maps() -> dict[InverterFamily, HoldingRegisterMap]:
+    """Get mapping from InverterFamily to HoldingRegisterMap."""
+    from pylxpweb.devices.inverters._features import InverterFamily
+
+    return {
+        InverterFamily.PV_SERIES: PV_SERIES_HOLDING_MAP,
+        InverterFamily.LXP_EU: LXP_EU_HOLDING_MAP,
+        InverterFamily.SNA: PV_SERIES_HOLDING_MAP,
+        InverterFamily.LXP_LV: LXP_EU_HOLDING_MAP,
+        InverterFamily.UNKNOWN: PV_SERIES_HOLDING_MAP,
+    }
+
+
+def get_holding_map(family: InverterFamily | None = None) -> HoldingRegisterMap:
+    """Get the holding (writable) register map for an inverter family.
+
+    Args:
+        family: InverterFamily enum value, or None for default (PV_SERIES)
+
+    Returns:
+        HoldingRegisterMap for the specified family
+    """
+    if family is None:
+        return PV_SERIES_HOLDING_MAP
+
+    family_maps = _get_family_holding_maps()
+    return family_maps.get(family, PV_SERIES_HOLDING_MAP)
+
+
 __all__ = [
     "RegisterField",
+    "HoldingRegisterField",
     "RuntimeRegisterMap",
     "EnergyRegisterMap",
     "PV_SERIES_RUNTIME_MAP",
     "PV_SERIES_ENERGY_MAP",
     "LXP_EU_RUNTIME_MAP",
     "LXP_EU_ENERGY_MAP",
+    "HoldingRegisterMap",
+    "PV_SERIES_HOLDING_MAP",
+    "LXP_EU_HOLDING_MAP",
     "get_runtime_map",
     "get_energy_map",
+    "get_holding_map",
 ]

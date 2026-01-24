@@ -229,6 +229,13 @@ class InverterRuntimeData:
     inverter_on_time: int = 0  # hours (total on time)
     ac_input_type: int = 0  # AC input type code
 
+    # -------------------------------------------------------------------------
+    # Parallel Configuration (decoded from register 113)
+    # -------------------------------------------------------------------------
+    parallel_master_slave: int = 0  # 0=no parallel, 1=master, 2=slave, 3=3-phase master
+    parallel_phase: int = 0  # 0=R, 1=S, 2=T
+    parallel_number: int = 0  # unit ID in parallel system (0-255)
+
     def __post_init__(self) -> None:
         """Validate and clamp percentage values."""
         self.battery_soc = _clamp_percentage(self.battery_soc, "battery_soc")
@@ -468,6 +475,18 @@ class InverterRuntimeData:
             # Inverter operational
             inverter_on_time=_read_register_field(input_registers, register_map.inverter_on_time),
             ac_input_type=_read_register_field(input_registers, register_map.ac_input_type),
+            # Parallel configuration (decoded from register 113)
+            # bits 0-1: master/slave, bits 2-3: phase, bits 8-15: number
+            parallel_master_slave=(
+                _read_register_field(input_registers, register_map.parallel_config) & 0x03
+            ),
+            parallel_phase=(
+                _read_register_field(input_registers, register_map.parallel_config) >> 2
+            )
+            & 0x03,
+            parallel_number=(
+                _read_register_field(input_registers, register_map.parallel_config) >> 8
+            ),
         )
 
 

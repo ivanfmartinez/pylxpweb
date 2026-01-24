@@ -765,3 +765,216 @@ class TestExtendedSensorsDataParsing:
 
         assert result.generator_energy_today == pytest.approx(5.0, rel=0.01)
         assert result.generator_energy_total == pytest.approx(100.0, rel=0.01)
+
+
+class TestHoldingRegisterMap:
+    """Tests for HoldingRegisterMap and writable parameter definitions."""
+
+    def test_pv_series_holding_map_exists(self) -> None:
+        """Test that PV_SERIES_HOLDING_MAP is defined."""
+        from pylxpweb.transports.register_maps import PV_SERIES_HOLDING_MAP
+
+        assert PV_SERIES_HOLDING_MAP is not None
+
+    def test_holding_map_power_percentages(self) -> None:
+        """Test power percentage holding registers."""
+        from pylxpweb.transports.register_maps import PV_SERIES_HOLDING_MAP
+
+        # Charge power percent at reg 64
+        assert PV_SERIES_HOLDING_MAP.charge_power_percent is not None
+        assert PV_SERIES_HOLDING_MAP.charge_power_percent.address == 64
+        assert PV_SERIES_HOLDING_MAP.charge_power_percent.min_value == 0
+        assert PV_SERIES_HOLDING_MAP.charge_power_percent.max_value == 100
+
+        # Discharge power percent at reg 65
+        assert PV_SERIES_HOLDING_MAP.discharge_power_percent is not None
+        assert PV_SERIES_HOLDING_MAP.discharge_power_percent.address == 65
+        assert PV_SERIES_HOLDING_MAP.discharge_power_percent.min_value == 0
+        assert PV_SERIES_HOLDING_MAP.discharge_power_percent.max_value == 100
+
+    def test_holding_map_battery_voltage_settings(self) -> None:
+        """Test battery voltage holding registers with scaling."""
+        from pylxpweb.constants.scaling import ScaleFactor
+        from pylxpweb.transports.register_maps import PV_SERIES_HOLDING_MAP
+
+        # Charge voltage ref at reg 99 with 0.1V scaling
+        assert PV_SERIES_HOLDING_MAP.charge_voltage_ref is not None
+        assert PV_SERIES_HOLDING_MAP.charge_voltage_ref.address == 99
+        assert PV_SERIES_HOLDING_MAP.charge_voltage_ref.scale_factor == ScaleFactor.SCALE_10
+        assert PV_SERIES_HOLDING_MAP.charge_voltage_ref.min_value == 50.0
+        assert PV_SERIES_HOLDING_MAP.charge_voltage_ref.max_value == 59.0
+
+    def test_holding_map_battery_currents(self) -> None:
+        """Test battery current holding registers."""
+        from pylxpweb.transports.register_maps import PV_SERIES_HOLDING_MAP
+
+        # Charge current at reg 101
+        assert PV_SERIES_HOLDING_MAP.charge_current is not None
+        assert PV_SERIES_HOLDING_MAP.charge_current.address == 101
+        assert PV_SERIES_HOLDING_MAP.charge_current.min_value == 0
+        assert PV_SERIES_HOLDING_MAP.charge_current.max_value == 140
+
+        # Discharge current at reg 102
+        assert PV_SERIES_HOLDING_MAP.discharge_current is not None
+        assert PV_SERIES_HOLDING_MAP.discharge_current.address == 102
+
+    def test_holding_map_soc_limits(self) -> None:
+        """Test SOC limit holding registers."""
+        from pylxpweb.transports.register_maps import PV_SERIES_HOLDING_MAP
+
+        # EOD SOC at reg 105
+        assert PV_SERIES_HOLDING_MAP.eod_soc is not None
+        assert PV_SERIES_HOLDING_MAP.eod_soc.address == 105
+        assert PV_SERIES_HOLDING_MAP.eod_soc.min_value == 10
+        assert PV_SERIES_HOLDING_MAP.eod_soc.max_value == 90
+
+        # AC charge SOC limit at reg 67
+        assert PV_SERIES_HOLDING_MAP.ac_charge_soc_limit is not None
+        assert PV_SERIES_HOLDING_MAP.ac_charge_soc_limit.address == 67
+
+    def test_holding_map_generator_settings(self) -> None:
+        """Test generator holding registers."""
+        from pylxpweb.transports.register_maps import PV_SERIES_HOLDING_MAP
+
+        # Gen rated power at reg 177
+        assert PV_SERIES_HOLDING_MAP.gen_rated_power is not None
+        assert PV_SERIES_HOLDING_MAP.gen_rated_power.address == 177
+
+        # Gen charge start SOC at reg 196
+        assert PV_SERIES_HOLDING_MAP.gen_charge_start_soc is not None
+        assert PV_SERIES_HOLDING_MAP.gen_charge_start_soc.address == 196
+        assert PV_SERIES_HOLDING_MAP.gen_charge_start_soc.min_value == 0
+        assert PV_SERIES_HOLDING_MAP.gen_charge_start_soc.max_value == 90
+
+    def test_holding_map_system_type(self) -> None:
+        """Test system type (parallel config) holding register."""
+        from pylxpweb.transports.register_maps import PV_SERIES_HOLDING_MAP
+
+        # System type at reg 112
+        assert PV_SERIES_HOLDING_MAP.system_type is not None
+        assert PV_SERIES_HOLDING_MAP.system_type.address == 112
+        assert PV_SERIES_HOLDING_MAP.system_type.min_value == 0
+        assert PV_SERIES_HOLDING_MAP.system_type.max_value == 3
+
+    def test_get_holding_map_function(self) -> None:
+        """Test get_holding_map lookup function."""
+        from pylxpweb.devices.inverters._features import InverterFamily
+        from pylxpweb.transports.register_maps import (
+            PV_SERIES_HOLDING_MAP,
+            get_holding_map,
+        )
+
+        # Default returns PV_SERIES
+        assert get_holding_map() is PV_SERIES_HOLDING_MAP
+        assert get_holding_map(None) is PV_SERIES_HOLDING_MAP
+
+        # PV_SERIES family
+        assert get_holding_map(InverterFamily.PV_SERIES) is PV_SERIES_HOLDING_MAP
+
+        # SNA uses same as PV_SERIES
+        assert get_holding_map(InverterFamily.SNA) is PV_SERIES_HOLDING_MAP
+
+    def test_lxp_eu_uses_same_holding_map(self) -> None:
+        """Test that LXP_EU uses same holding map as PV_SERIES."""
+        from pylxpweb.transports.register_maps import (
+            LXP_EU_HOLDING_MAP,
+            PV_SERIES_HOLDING_MAP,
+        )
+
+        assert LXP_EU_HOLDING_MAP is PV_SERIES_HOLDING_MAP
+
+
+class TestParallelConfiguration:
+    """Tests for parallel configuration parsing from register 113."""
+
+    def test_parallel_config_register_defined(self) -> None:
+        """Test that parallel_config is defined in runtime maps."""
+        assert PV_SERIES_RUNTIME_MAP.parallel_config is not None
+        assert PV_SERIES_RUNTIME_MAP.parallel_config.address == 113
+        assert PV_SERIES_RUNTIME_MAP.parallel_config.bit_width == 16
+
+    def test_parallel_config_no_parallel(self) -> None:
+        """Test parsing parallel config when not in parallel mode."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        # Register 113 = 0x0000: no parallel, phase R, unit 0
+        registers = {113: 0x0000}
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.parallel_master_slave == 0  # No parallel
+        assert result.parallel_phase == 0  # Phase R
+        assert result.parallel_number == 0  # Unit 0
+
+    def test_parallel_config_master(self) -> None:
+        """Test parsing parallel config as master."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        # Register 113 = 0x0101: master, phase R, unit 1
+        # bits 0-1 = 1 (master), bits 2-3 = 0 (phase R), bits 8-15 = 1 (unit 1)
+        registers = {113: 0x0101}
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.parallel_master_slave == 1  # Master
+        assert result.parallel_phase == 0  # Phase R
+        assert result.parallel_number == 1  # Unit 1
+
+    def test_parallel_config_slave(self) -> None:
+        """Test parsing parallel config as slave."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        # Register 113 = 0x0202: slave, phase R, unit 2
+        # bits 0-1 = 2 (slave), bits 2-3 = 0 (phase R), bits 8-15 = 2 (unit 2)
+        registers = {113: 0x0202}
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.parallel_master_slave == 2  # Slave
+        assert result.parallel_phase == 0  # Phase R
+        assert result.parallel_number == 2  # Unit 2
+
+    def test_parallel_config_three_phase_master(self) -> None:
+        """Test parsing parallel config as 3-phase master."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        # Register 113 = 0x0103: 3-phase master, phase R, unit 1
+        # bits 0-1 = 3 (3-phase master), bits 2-3 = 0 (phase R), bits 8-15 = 1 (unit 1)
+        registers = {113: 0x0103}
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.parallel_master_slave == 3  # 3-phase master
+        assert result.parallel_phase == 0  # Phase R
+        assert result.parallel_number == 1  # Unit 1
+
+    def test_parallel_config_phase_s(self) -> None:
+        """Test parsing parallel config with phase S."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        # Register 113 = 0x0205: slave, phase S, unit 2
+        # bits 0-1 = 1 (slave from 0x01 masked), but we have 0x05 = 0101
+        # bits 0-1 = 1 (master), bits 2-3 = 1 (phase S), bits 8-15 = 2 (unit 2)
+        # 0x0205 = 0000 0010 0000 0101
+        registers = {113: 0x0205}
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.parallel_master_slave == 1  # bits 0-1 = 01 = master
+        assert result.parallel_phase == 1  # bits 2-3 = 01 = phase S
+        assert result.parallel_number == 2  # bits 8-15 = 2
+
+    def test_parallel_config_phase_t(self) -> None:
+        """Test parsing parallel config with phase T."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        # Register 113 with phase T (bits 2-3 = 2)
+        # 0x0309 = 0000 0011 0000 1001
+        # bits 0-1 = 01 (master), bits 2-3 = 10 (phase T), bits 8-15 = 3 (unit 3)
+        registers = {113: 0x0309}
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.parallel_master_slave == 1  # bits 0-1 = 01 = master
+        assert result.parallel_phase == 2  # bits 2-3 = 10 = phase T
+        assert result.parallel_number == 3  # bits 8-15 = 3
