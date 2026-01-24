@@ -1,7 +1,7 @@
 """Transport layer abstraction for pylxpweb.
 
 This module provides transport-agnostic communication with inverters,
-supporting both cloud HTTP API and local Modbus TCP connections.
+supporting cloud HTTP API, local Modbus TCP, and WiFi dongle connections.
 
 Usage:
     # HTTP Transport (cloud API) - using factory function
@@ -12,12 +12,23 @@ Usage:
         await transport.connect()
         runtime = await transport.read_runtime()
 
-    # Modbus Transport (local) - using factory function
+    # Modbus Transport (RS485-to-Ethernet adapter) - using factory function
     from pylxpweb.transports import create_modbus_transport
 
     transport = create_modbus_transport(
         host="192.168.1.100",
         serial="CE12345678",
+    )
+    async with transport:
+        runtime = await transport.read_runtime()
+
+    # WiFi Dongle Transport (no additional hardware) - using factory function
+    from pylxpweb.transports import create_dongle_transport
+
+    transport = create_dongle_transport(
+        host="192.168.1.100",
+        dongle_serial="BA12345678",
+        inverter_serial="CE12345678",
     )
     async with transport:
         runtime = await transport.read_runtime()  # Same interface!
@@ -26,6 +37,7 @@ Usage:
 from __future__ import annotations
 
 from .capabilities import (
+    DONGLE_CAPABILITIES,
     HTTP_CAPABILITIES,
     MODBUS_CAPABILITIES,
     TransportCapabilities,
@@ -36,6 +48,7 @@ from .data import (
     InverterEnergyData,
     InverterRuntimeData,
 )
+from .dongle import DongleTransport
 from .exceptions import (
     TransportConnectionError,
     TransportError,
@@ -44,7 +57,7 @@ from .exceptions import (
     TransportWriteError,
     UnsupportedOperationError,
 )
-from .factory import create_http_transport, create_modbus_transport
+from .factory import create_dongle_transport, create_http_transport, create_modbus_transport
 from .http import HTTPTransport
 from .modbus import ModbusTransport
 from .protocol import BaseTransport, InverterTransport
@@ -64,16 +77,19 @@ __all__ = [
     # Factory functions (recommended)
     "create_http_transport",
     "create_modbus_transport",
+    "create_dongle_transport",
     # Protocol
     "InverterTransport",
     "BaseTransport",
     # Transport implementations
     "HTTPTransport",
     "ModbusTransport",
+    "DongleTransport",
     # Capabilities
     "TransportCapabilities",
     "HTTP_CAPABILITIES",
     "MODBUS_CAPABILITIES",
+    "DONGLE_CAPABILITIES",
     # Data models
     "InverterRuntimeData",
     "InverterEnergyData",

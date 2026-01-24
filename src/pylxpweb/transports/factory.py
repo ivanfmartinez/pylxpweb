@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .dongle import DongleTransport
 from .http import HTTPTransport
 from .modbus import ModbusTransport
 
@@ -144,7 +145,81 @@ def create_modbus_transport(
     )
 
 
+def create_dongle_transport(
+    host: str,
+    dongle_serial: str,
+    inverter_serial: str,
+    *,
+    port: int = 8000,
+    timeout: float = 10.0,
+    inverter_family: InverterFamily | None = None,
+) -> DongleTransport:
+    """Create a WiFi dongle transport for local network communication.
+
+    This allows direct communication with the inverter via the WiFi dongle's
+    TCP interface (port 8000) without requiring cloud connectivity or
+    additional hardware (no RS485-to-Ethernet adapter needed).
+
+    IMPORTANT: Single-Client Limitation
+    ------------------------------------
+    The WiFi dongle supports only ONE concurrent TCP connection.
+    Running multiple clients (e.g., Home Assistant + Solar Assistant) causes
+    connection failures and data loss.
+
+    Ensure only ONE integration/script connects to each dongle at a time.
+    Disable other integrations before using this transport.
+
+    IMPORTANT: Firmware Compatibility
+    ---------------------------------
+    Recent firmware updates may block port 8000 access for security.
+    If connection fails, check if your dongle firmware has been updated.
+    Older firmware versions (BA dongles) typically work reliably.
+
+    Args:
+        host: WiFi dongle IP address or hostname
+        dongle_serial: 10-character dongle serial number (e.g., "BA12345678")
+            This can be found in your router's DHCP client list, on the
+            dongle label, or as the dongle's WiFi AP SSID.
+        inverter_serial: 10-character inverter serial number (e.g., "CE12345678")
+        port: TCP port (default: 8000)
+        timeout: Operation timeout in seconds (default: 10.0)
+        inverter_family: Inverter model family for correct register mapping.
+            If None, defaults to PV_SERIES (EG4-18KPV) for backward
+            compatibility.
+
+    Returns:
+        DongleTransport instance ready for use
+
+    Example:
+        transport = create_dongle_transport(
+            host="192.168.1.100",
+            dongle_serial="BA12345678",
+            inverter_serial="CE12345678",
+        )
+
+        async with transport:
+            runtime = await transport.read_runtime()
+            print(f"PV Power: {runtime.pv_total_power}W")
+
+    Note:
+        Unlike Modbus TCP transport, the dongle transport:
+        - Does NOT require pymodbus (uses pure asyncio sockets)
+        - Does NOT require additional hardware (RS485-to-Ethernet adapter)
+        - Uses the proprietary LuxPower/EG4 protocol on port 8000
+        - Requires both dongle AND inverter serial numbers for authentication
+    """
+    return DongleTransport(
+        host=host,
+        dongle_serial=dongle_serial,
+        inverter_serial=inverter_serial,
+        port=port,
+        timeout=timeout,
+        inverter_family=inverter_family,
+    )
+
+
 __all__ = [
     "create_http_transport",
     "create_modbus_transport",
+    "create_dongle_transport",
 ]

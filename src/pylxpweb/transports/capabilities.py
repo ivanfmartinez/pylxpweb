@@ -99,3 +99,26 @@ MODBUS_CAPABILITIES = TransportCapabilities(
     requires_authentication=False,
     is_local=True,
 )
+
+# Dongle capabilities are identical to Modbus (same register access)
+# The dongle is just a different transport mechanism for the same data
+DONGLE_CAPABILITIES = TransportCapabilities(
+    # Core access - all supported (same as Modbus)
+    can_read_runtime=True,
+    can_read_energy=True,
+    can_read_battery=True,
+    can_read_parameters=True,
+    can_write_parameters=True,
+    # Cloud features - not available
+    can_discover_devices=False,
+    can_read_history=False,
+    can_read_analytics=False,
+    can_trigger_firmware_update=False,
+    can_read_parallel_group_energy=False,
+    # Performance - no rate limiting (local network via WiFi)
+    min_poll_interval_seconds=1.0,
+    supports_concurrent_reads=False,  # Single TCP connection to dongle
+    # Connection
+    requires_authentication=False,  # Dongle serial acts as auth
+    is_local=True,
+)
