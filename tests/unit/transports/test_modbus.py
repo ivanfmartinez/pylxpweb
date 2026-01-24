@@ -130,7 +130,17 @@ class TestModbusTransport:
 
     @pytest.mark.asyncio
     async def test_read_runtime_success(self) -> None:
-        """Test successful runtime read via Modbus."""
+        """Test successful runtime read via Modbus.
+
+        Uses the corrected PV_SERIES register layout:
+        - PV power at regs 7-9 (16-bit)
+        - Charge/discharge at regs 10-11 (16-bit)
+        - Grid voltages at regs 12-14
+        - Grid frequency at reg 15
+        - Inverter power at reg 16
+        - EPS power at reg 24
+        - Load power at reg 27
+        """
         transport = ModbusTransport(
             host="192.168.1.100",
             serial="CE12345678",
@@ -141,47 +151,39 @@ class TestModbusTransport:
             mock_client.connect = AsyncMock(return_value=True)
             mock_client.close = MagicMock()
 
-            # Mock register read response - needs enough registers for the read
+            # Mock register read response with correct PV_SERIES layout
             mock_response = MagicMock()
             mock_response.isError.return_value = False
-            # 128 registers for runtime data
+            # 128 registers for runtime data - using new layout
             mock_response.registers = [
                 0,  # 0: Status
-                5100,  # 1: PV1 voltage (510V)
+                5100,  # 1: PV1 voltage (×10 = 510V)
                 5050,  # 2: PV2 voltage
                 0,  # 3: PV3 voltage
-                5300,  # 4: Battery voltage (×100 = 53V)
-                85,  # 5: SOC
-                0,
-                1000,  # 6-7: PV1 power
-                0,
-                1500,  # 8-9: PV2 power
-                0,
-                0,  # 10-11: PV3 power
-                0,
-                500,  # 12-13: Charge power
-                0,
-                0,  # 14-15: Discharge power
-                2410,  # 16: Grid voltage R (×10)
-                2415,  # 17: Grid voltage S
-                2420,  # 18: Grid voltage T
-                5998,  # 19: Grid frequency (×100 = 59.98Hz)
-                0,
-                2300,  # 20-21: Inverter power
-                0,
-                100,  # 22-23: Grid power
-                0,
-                0,  # 24-25: padding
-                2400,  # 26: EPS voltage R
-                2405,  # 27: EPS voltage S
-                2410,  # 28: EPS voltage T
-                5999,  # 29: EPS frequency
-                0,
-                300,  # 30-31: EPS power
-                1,  # 32: EPS status
-                200,  # 33: Power to grid
-                0,
-                1500,  # 34-35: Load power
+                530,  # 4: Battery voltage (×10 = 53V)
+                (100 << 8) | 85,  # 5: SOC=85 (low), SOH=100 (high)
+                0,  # 6: (unused in new layout)
+                1000,  # 7: PV1 power (16-bit)
+                1500,  # 8: PV2 power (16-bit)
+                0,  # 9: PV3 power (16-bit)
+                500,  # 10: Charge power (16-bit)
+                0,  # 11: Discharge power (16-bit)
+                2410,  # 12: Grid voltage R (×10)
+                2415,  # 13: Grid voltage S
+                2420,  # 14: Grid voltage T
+                5998,  # 15: Grid frequency (×100 = 59.98Hz)
+                2300,  # 16: Inverter power (16-bit)
+                100,  # 17: Grid power/AC charge (16-bit)
+                50,  # 18: IinvRMS (×100 = 0.5A)
+                990,  # 19: Power factor (×1000 = 0.99)
+                2400,  # 20: EPS voltage R
+                2405,  # 21: EPS voltage S
+                2410,  # 22: EPS voltage T
+                5999,  # 23: EPS frequency
+                300,  # 24: EPS power (16-bit)
+                1,  # 25: EPS status
+                200,  # 26: Power to grid (16-bit)
+                1500,  # 27: Load power (16-bit)
             ] + [0] * 100  # Fill remaining registers
 
             mock_client.read_input_registers = AsyncMock(return_value=mock_response)
@@ -193,6 +195,8 @@ class TestModbusTransport:
             assert runtime.pv1_voltage == pytest.approx(510.0, rel=0.01)
             assert runtime.battery_soc == 85
             assert runtime.grid_frequency == pytest.approx(59.98, rel=0.01)
+            assert runtime.pv1_power == 1000.0
+            assert runtime.load_power == 1500.0
 
     @pytest.mark.asyncio
     async def test_manual_connect_disconnect(self) -> None:

@@ -148,6 +148,49 @@ class RuntimeRegisterMap:
     bms_fault_code: RegisterField | None = None
     bms_warning_code: RegisterField | None = None
 
+    # -------------------------------------------------------------------------
+    # Extended Sensors - Inverter RMS Current & Power Factor
+    # -------------------------------------------------------------------------
+    inverter_rms_current: RegisterField | None = None  # A (scale 0.01)
+    inverter_apparent_power: RegisterField | None = None  # VA
+
+    # -------------------------------------------------------------------------
+    # Generator Input (if connected)
+    # -------------------------------------------------------------------------
+    generator_voltage: RegisterField | None = None  # V (scale 0.1)
+    generator_frequency: RegisterField | None = None  # Hz (scale 0.01)
+    generator_power: RegisterField | None = None  # W
+
+    # -------------------------------------------------------------------------
+    # BMS Limits and Cell Data
+    # -------------------------------------------------------------------------
+    bms_charge_current_limit: RegisterField | None = None  # A
+    bms_discharge_current_limit: RegisterField | None = None  # A
+    bms_charge_voltage_ref: RegisterField | None = None  # V (scale 0.1)
+    bms_discharge_cutoff: RegisterField | None = None  # V (scale 0.1)
+    bms_max_cell_voltage: RegisterField | None = None  # mV
+    bms_min_cell_voltage: RegisterField | None = None  # mV
+    bms_max_cell_temperature: RegisterField | None = None  # °C
+    bms_min_cell_temperature: RegisterField | None = None  # °C
+    bms_cycle_count: RegisterField | None = None  # count
+    battery_parallel_num: RegisterField | None = None  # count
+    battery_capacity_ah: RegisterField | None = None  # Ah
+
+    # -------------------------------------------------------------------------
+    # Additional Temperatures
+    # -------------------------------------------------------------------------
+    temperature_t1: RegisterField | None = None  # °C
+    temperature_t2: RegisterField | None = None  # °C
+    temperature_t3: RegisterField | None = None  # °C
+    temperature_t4: RegisterField | None = None  # °C
+    temperature_t5: RegisterField | None = None  # °C
+
+    # -------------------------------------------------------------------------
+    # Inverter Operational
+    # -------------------------------------------------------------------------
+    inverter_on_time: RegisterField | None = None  # hours (32-bit)
+    ac_input_type: RegisterField | None = None  # type code
+
 
 @dataclass(frozen=True)
 class EnergyRegisterMap:
@@ -193,50 +236,86 @@ class EnergyRegisterMap:
     pv2_energy_total: RegisterField | None = None
     pv3_energy_total: RegisterField | None = None
 
+    # -------------------------------------------------------------------------
+    # Generator Energy (if connected)
+    # -------------------------------------------------------------------------
+    generator_energy_today: RegisterField | None = None  # kWh (scale 0.1)
+    generator_energy_total: RegisterField | None = None  # kWh (32-bit, scale 0.1)
+
 
 # =============================================================================
-# PV SERIES REGISTER MAP (EG4-18KPV)
+# PV SERIES REGISTER MAP (EG4-18KPV / FlexBOSS21)
 # =============================================================================
 # Source: EG4-18KPV-12LV Modbus Protocol specification
 # Source: eg4-modbus-monitor project (https://github.com/galets/eg4-modbus-monitor)
+# Source: EG4-Inverter-Modbus project (https://github.com/poldim/EG4-Inverter-Modbus)
+#
+# CRITICAL: Power values are 16-bit SINGLE registers, NOT 32-bit pairs!
+# This was the root cause of "skewed watts" - the old implementation combined
+# two adjacent registers incorrectly.
+#
+# Register layout for EG4-18KPV (validated against galets/poldim):
+#   Reg 0:     State (status code)
+#   Reg 1-3:   Vpv1/2/3 (V, scale=0.1)
+#   Reg 4:     Vbat (V, scale=0.1)
+#   Reg 5:     SOC/SOH packed (LSB=SOC%, MSB=SOH%)
+#   Reg 7-9:   Ppv1/2/3 (W, 16-bit, no scale)
+#   Reg 10:    Pcharge (W, 16-bit)
+#   Reg 11:    Pdischarge (W, 16-bit)
+#   Reg 12-14: Grid voltages L1-L2, L2-L3, L3-L1 (V, scale=0.1)
+#   Reg 15:    Fac - Grid frequency (Hz, scale=0.01)
+#   Reg 16:    Pinv - Inverter output power (W, 16-bit)
+#   Reg 17:    Prec - AC charge power / Grid power (W, 16-bit)
+#   Reg 18:    IinvRMS - Inverter RMS current (A, scale=0.01)
+#   Reg 19:    PF - Power factor (scale=0.001)
+#   Reg 20-22: Inverter output voltages L1-L2, L2-L3, L3-L1 (V, scale=0.1)
+#   Reg 23:    Inverter frequency (Hz, scale=0.01)
+#   Reg 24:    Peps - EPS output power (W, 16-bit)
+#   Reg 25:    Seps - EPS apparent power (VA, 16-bit)
+#   Reg 26:    Ptogrid - Power exported to grid (W, 16-bit)
+#   Reg 27:    Ptouser - Load power / Power from grid (W, 16-bit)
+#   Reg 38-39: Bus voltages (V, scale=0.1)
+#   Reg 60-61: Fault code (32-bit)
+#   Reg 62-63: Warning code (32-bit)
+#   Reg 64-67: Temperatures (°C, signed)
 
 PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     # Status
     device_status=RegisterField(0, 16, ScaleFactor.SCALE_NONE),
-    # PV Input - voltages at regs 1-3, power as 32-bit pairs at regs 6-11
+    # PV Input - voltages at regs 1-3, power as 16-bit at regs 7-9
     pv1_voltage=RegisterField(1, 16, ScaleFactor.SCALE_10),
     pv2_voltage=RegisterField(2, 16, ScaleFactor.SCALE_10),
     pv3_voltage=RegisterField(3, 16, ScaleFactor.SCALE_10),
-    pv1_power=RegisterField(6, 32, ScaleFactor.SCALE_NONE),  # Regs 6-7
-    pv2_power=RegisterField(8, 32, ScaleFactor.SCALE_NONE),  # Regs 8-9
-    pv3_power=RegisterField(10, 32, ScaleFactor.SCALE_NONE),  # Regs 10-11
-    # Battery
-    battery_voltage=RegisterField(4, 16, ScaleFactor.SCALE_100),
+    pv1_power=RegisterField(7, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 7
+    pv2_power=RegisterField(8, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 8
+    pv3_power=RegisterField(9, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 9
+    # Battery - Vbat at reg 4 with scale 0.1
+    battery_voltage=RegisterField(4, 16, ScaleFactor.SCALE_10),  # galets: scale=0.1
     battery_current=RegisterField(75, 16, ScaleFactor.SCALE_100, signed=True),  # Reg 75
     soc_soh_packed=RegisterField(5, 16, ScaleFactor.SCALE_NONE),  # SOC=low, SOH=high
-    charge_power=RegisterField(12, 32, ScaleFactor.SCALE_NONE),  # Regs 12-13
-    discharge_power=RegisterField(14, 32, ScaleFactor.SCALE_NONE),  # Regs 14-15
-    # Grid
-    grid_voltage_r=RegisterField(16, 16, ScaleFactor.SCALE_10),
-    grid_voltage_s=RegisterField(17, 16, ScaleFactor.SCALE_10),
-    grid_voltage_t=RegisterField(18, 16, ScaleFactor.SCALE_10),
-    grid_frequency=RegisterField(19, 16, ScaleFactor.SCALE_100),
-    inverter_power=RegisterField(20, 32, ScaleFactor.SCALE_NONE),  # Regs 20-21
-    grid_power=RegisterField(22, 32, ScaleFactor.SCALE_NONE),  # Regs 22-23
-    power_factor=RegisterField(24, 32, ScaleFactor.SCALE_1000),  # Regs 24-25
-    # EPS
-    eps_voltage_r=RegisterField(26, 16, ScaleFactor.SCALE_10),
-    eps_voltage_s=RegisterField(27, 16, ScaleFactor.SCALE_10),
-    eps_voltage_t=RegisterField(28, 16, ScaleFactor.SCALE_10),
-    eps_frequency=RegisterField(29, 16, ScaleFactor.SCALE_100),
-    eps_power=RegisterField(30, 32, ScaleFactor.SCALE_NONE),  # Regs 30-31
-    eps_status=RegisterField(32, 16, ScaleFactor.SCALE_NONE),
-    power_to_grid=RegisterField(33, 16, ScaleFactor.SCALE_NONE),
+    charge_power=RegisterField(10, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 10
+    discharge_power=RegisterField(11, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 11
+    # Grid - voltages at regs 12-14, frequency at reg 15
+    grid_voltage_r=RegisterField(12, 16, ScaleFactor.SCALE_10),  # L1-L2
+    grid_voltage_s=RegisterField(13, 16, ScaleFactor.SCALE_10),  # L2-L3
+    grid_voltage_t=RegisterField(14, 16, ScaleFactor.SCALE_10),  # L3-L1
+    grid_frequency=RegisterField(15, 16, ScaleFactor.SCALE_100),
+    inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 16
+    grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # AC charge/Prec at reg 17
+    power_factor=RegisterField(19, 16, ScaleFactor.SCALE_1000),  # 16-bit at reg 19
+    # EPS - voltages at regs 20-22, frequency at reg 23, power at reg 24
+    eps_voltage_r=RegisterField(20, 16, ScaleFactor.SCALE_10),  # L1-L2
+    eps_voltage_s=RegisterField(21, 16, ScaleFactor.SCALE_10),  # L2-L3
+    eps_voltage_t=RegisterField(22, 16, ScaleFactor.SCALE_10),  # L3-L1
+    eps_frequency=RegisterField(23, 16, ScaleFactor.SCALE_100),
+    eps_power=RegisterField(24, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 24
+    eps_status=RegisterField(25, 16, ScaleFactor.SCALE_NONE),  # Seps at reg 25
+    power_to_grid=RegisterField(26, 16, ScaleFactor.SCALE_NONE),  # Ptogrid at reg 26
     # Load
-    load_power=RegisterField(34, 32, ScaleFactor.SCALE_NONE),  # Regs 34-35
-    # Internal
-    bus_voltage_1=RegisterField(43, 16, ScaleFactor.SCALE_10),
-    bus_voltage_2=RegisterField(44, 16, ScaleFactor.SCALE_10),
+    load_power=RegisterField(27, 16, ScaleFactor.SCALE_NONE),  # Ptouser at reg 27
+    # Internal - bus voltages at regs 38-39
+    bus_voltage_1=RegisterField(38, 16, ScaleFactor.SCALE_10),
+    bus_voltage_2=RegisterField(39, 16, ScaleFactor.SCALE_10),
     # Temperatures
     internal_temperature=RegisterField(64, 16, ScaleFactor.SCALE_NONE, signed=True),
     radiator_temperature_1=RegisterField(65, 16, ScaleFactor.SCALE_NONE),
@@ -247,34 +326,65 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE),  # Regs 62-63
     bms_fault_code=RegisterField(99, 16, ScaleFactor.SCALE_NONE),
     bms_warning_code=RegisterField(100, 16, ScaleFactor.SCALE_NONE),
+    # Extended sensors - Inverter RMS Current
+    inverter_rms_current=RegisterField(18, 16, ScaleFactor.SCALE_100),  # 0.01A resolution
+    inverter_apparent_power=RegisterField(25, 16, ScaleFactor.SCALE_NONE),  # VA (Seps)
+    # Generator input (regs 121-125)
+    generator_voltage=RegisterField(121, 16, ScaleFactor.SCALE_10),  # V
+    generator_frequency=RegisterField(122, 16, ScaleFactor.SCALE_100),  # Hz
+    generator_power=RegisterField(123, 16, ScaleFactor.SCALE_NONE),  # W
+    # BMS limits and cell data (regs 81-106)
+    # Per Yippy's LuxPower docs: 81-82 use 0.01A scale, 103-104 use 0.1°C scale (signed)
+    bms_charge_current_limit=RegisterField(81, 16, ScaleFactor.SCALE_100),  # 0.01A
+    bms_discharge_current_limit=RegisterField(82, 16, ScaleFactor.SCALE_100),  # 0.01A
+    bms_charge_voltage_ref=RegisterField(83, 16, ScaleFactor.SCALE_10),  # 0.1V
+    bms_discharge_cutoff=RegisterField(84, 16, ScaleFactor.SCALE_10),  # 0.1V
+    bms_max_cell_voltage=RegisterField(101, 16, ScaleFactor.SCALE_NONE),  # mV (0.001V)
+    bms_min_cell_voltage=RegisterField(102, 16, ScaleFactor.SCALE_NONE),  # mV (0.001V)
+    bms_max_cell_temperature=RegisterField(103, 16, ScaleFactor.SCALE_10, signed=True),  # 0.1°C
+    bms_min_cell_temperature=RegisterField(104, 16, ScaleFactor.SCALE_10, signed=True),  # 0.1°C
+    bms_cycle_count=RegisterField(106, 16, ScaleFactor.SCALE_NONE),  # count
+    battery_parallel_num=RegisterField(96, 16, ScaleFactor.SCALE_NONE),  # count
+    battery_capacity_ah=RegisterField(97, 16, ScaleFactor.SCALE_NONE),  # Ah
+    # Additional temperatures (regs 108-112) - 0.1°C scale per Yippy's docs
+    temperature_t1=RegisterField(108, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t2=RegisterField(109, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t3=RegisterField(110, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t4=RegisterField(111, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t5=RegisterField(112, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    # Inverter operational
+    inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE),  # hours (regs 69-70)
+    ac_input_type=RegisterField(77, 16, ScaleFactor.SCALE_NONE),  # type code
 )
 
 PV_SERIES_ENERGY_MAP = EnergyRegisterMap(
-    # Daily energy - 32-bit pairs
-    inverter_energy_today=RegisterField(45, 32, ScaleFactor.SCALE_10),  # Regs 45-46
-    grid_import_today=RegisterField(47, 32, ScaleFactor.SCALE_10),  # Regs 47-48
-    charge_energy_today=RegisterField(49, 32, ScaleFactor.SCALE_10),  # Regs 49-50
-    discharge_energy_today=RegisterField(51, 32, ScaleFactor.SCALE_10),  # Regs 51-52
-    eps_energy_today=RegisterField(53, 32, ScaleFactor.SCALE_10),  # Regs 53-54
-    grid_export_today=RegisterField(55, 32, ScaleFactor.SCALE_10),  # Regs 55-56
-    load_energy_today=RegisterField(57, 32, ScaleFactor.SCALE_10),  # Regs 57-58
-    # Per-PV string energy not available via Modbus (regs 91-102 are BMS data)
-    pv1_energy_today=None,
-    pv2_energy_today=None,
-    pv3_energy_today=None,
-    # Lifetime energy - single registers (value * 1000 for Wh)
-    # Note: These are in kWh, need special handling
-    inverter_energy_total=RegisterField(36, 16, ScaleFactor.SCALE_NONE),
-    grid_import_total=RegisterField(37, 16, ScaleFactor.SCALE_NONE),
-    charge_energy_total=RegisterField(38, 16, ScaleFactor.SCALE_NONE),
-    discharge_energy_total=RegisterField(39, 16, ScaleFactor.SCALE_NONE),
-    eps_energy_total=RegisterField(40, 16, ScaleFactor.SCALE_NONE),
-    grid_export_total=RegisterField(41, 16, ScaleFactor.SCALE_NONE),
-    load_energy_total=RegisterField(42, 16, ScaleFactor.SCALE_NONE),
-    # Per-PV string lifetime energy not available via Modbus (regs 91-96 are BMS status)
-    pv1_energy_total=None,
-    pv2_energy_total=None,
-    pv3_energy_total=None,
+    # Daily energy - 16-bit single registers, scale 0.1 kWh
+    # Source: galets/eg4-modbus-monitor registers-18kpv.yaml
+    pv1_energy_today=RegisterField(28, 16, ScaleFactor.SCALE_10),  # Epv1_day
+    pv2_energy_today=RegisterField(29, 16, ScaleFactor.SCALE_10),  # Epv2_day
+    pv3_energy_today=RegisterField(30, 16, ScaleFactor.SCALE_10),  # Epv3_day
+    inverter_energy_today=RegisterField(31, 16, ScaleFactor.SCALE_10),  # Einv_day
+    grid_import_today=RegisterField(32, 16, ScaleFactor.SCALE_10),  # Erec_day (AC charge)
+    charge_energy_today=RegisterField(33, 16, ScaleFactor.SCALE_10),  # Echg_day
+    discharge_energy_today=RegisterField(34, 16, ScaleFactor.SCALE_10),  # Edischg_day
+    eps_energy_today=RegisterField(35, 16, ScaleFactor.SCALE_10),  # Eeps_day
+    grid_export_today=RegisterField(36, 16, ScaleFactor.SCALE_10),  # Etogrid_day
+    load_energy_today=RegisterField(37, 16, ScaleFactor.SCALE_10),  # Etouser_day
+    # Lifetime energy - 32-bit pairs, scale 0.1 kWh
+    # Source: galets/eg4-modbus-monitor registers-18kpv.yaml
+    pv1_energy_total=RegisterField(40, 32, ScaleFactor.SCALE_10),  # Epv1_all (regs 40-41)
+    pv2_energy_total=RegisterField(42, 32, ScaleFactor.SCALE_10),  # Epv2_all (regs 42-43)
+    pv3_energy_total=RegisterField(44, 32, ScaleFactor.SCALE_10),  # Epv3_all (regs 44-45)
+    inverter_energy_total=RegisterField(46, 32, ScaleFactor.SCALE_10),  # Einv_all (regs 46-47)
+    grid_import_total=RegisterField(48, 32, ScaleFactor.SCALE_10),  # Erec_all (regs 48-49)
+    charge_energy_total=RegisterField(50, 32, ScaleFactor.SCALE_10),  # Echg_all (regs 50-51)
+    discharge_energy_total=RegisterField(52, 32, ScaleFactor.SCALE_10),  # Edischg_all (52-53)
+    eps_energy_total=RegisterField(54, 32, ScaleFactor.SCALE_10),  # Eeps_all (regs 54-55)
+    grid_export_total=RegisterField(56, 32, ScaleFactor.SCALE_10),  # Etogrid_all (regs 56-57)
+    load_energy_total=RegisterField(58, 32, ScaleFactor.SCALE_10),  # Etouser_all (regs 58-59)
+    # Generator energy (regs 124-126)
+    generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),  # kWh
+    generator_energy_total=RegisterField(125, 32, ScaleFactor.SCALE_10),  # kWh (regs 125-126)
 )
 
 
@@ -331,6 +441,30 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
     inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE),
     bms_fault_code=RegisterField(99, 16, ScaleFactor.SCALE_NONE),
     bms_warning_code=RegisterField(100, 16, ScaleFactor.SCALE_NONE),
+    # Extended sensors - same as PV_SERIES
+    inverter_rms_current=RegisterField(18, 16, ScaleFactor.SCALE_100),
+    inverter_apparent_power=RegisterField(25, 16, ScaleFactor.SCALE_NONE),
+    generator_voltage=RegisterField(121, 16, ScaleFactor.SCALE_10),
+    generator_frequency=RegisterField(122, 16, ScaleFactor.SCALE_100),
+    generator_power=RegisterField(123, 16, ScaleFactor.SCALE_NONE),
+    bms_charge_current_limit=RegisterField(81, 16, ScaleFactor.SCALE_100),  # 0.01A
+    bms_discharge_current_limit=RegisterField(82, 16, ScaleFactor.SCALE_100),  # 0.01A
+    bms_charge_voltage_ref=RegisterField(83, 16, ScaleFactor.SCALE_10),  # 0.1V
+    bms_discharge_cutoff=RegisterField(84, 16, ScaleFactor.SCALE_10),  # 0.1V
+    bms_max_cell_voltage=RegisterField(101, 16, ScaleFactor.SCALE_NONE),  # mV
+    bms_min_cell_voltage=RegisterField(102, 16, ScaleFactor.SCALE_NONE),  # mV
+    bms_max_cell_temperature=RegisterField(103, 16, ScaleFactor.SCALE_10, signed=True),  # 0.1°C
+    bms_min_cell_temperature=RegisterField(104, 16, ScaleFactor.SCALE_10, signed=True),  # 0.1°C
+    bms_cycle_count=RegisterField(106, 16, ScaleFactor.SCALE_NONE),
+    battery_parallel_num=RegisterField(96, 16, ScaleFactor.SCALE_NONE),
+    battery_capacity_ah=RegisterField(97, 16, ScaleFactor.SCALE_NONE),
+    temperature_t1=RegisterField(108, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t2=RegisterField(109, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t3=RegisterField(110, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t4=RegisterField(111, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    temperature_t5=RegisterField(112, 16, ScaleFactor.SCALE_10),  # 0.1°C
+    inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE),
+    ac_input_type=RegisterField(77, 16, ScaleFactor.SCALE_NONE),
 )
 
 LXP_EU_ENERGY_MAP = EnergyRegisterMap(
@@ -358,6 +492,9 @@ LXP_EU_ENERGY_MAP = EnergyRegisterMap(
     pv1_energy_total=None,
     pv2_energy_total=None,
     pv3_energy_total=None,
+    # Generator energy - same as PV_SERIES
+    generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),
+    generator_energy_total=RegisterField(125, 32, ScaleFactor.SCALE_10),
 )
 
 

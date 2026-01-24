@@ -186,6 +186,49 @@ class InverterRuntimeData:
     fault_code: int = 0  # Fault code
     warning_code: int = 0  # Warning code
 
+    # -------------------------------------------------------------------------
+    # Extended Sensors - Inverter RMS Current & Power
+    # -------------------------------------------------------------------------
+    inverter_rms_current: float = 0.0  # A (Inverter RMS current)
+    inverter_apparent_power: float = 0.0  # VA (Inverter apparent power)
+
+    # -------------------------------------------------------------------------
+    # Generator Input (if connected)
+    # -------------------------------------------------------------------------
+    generator_voltage: float = 0.0  # V
+    generator_frequency: float = 0.0  # Hz
+    generator_power: float = 0.0  # W
+
+    # -------------------------------------------------------------------------
+    # BMS Limits and Cell Data
+    # -------------------------------------------------------------------------
+    bms_charge_current_limit: float = 0.0  # A (Max charge current from BMS)
+    bms_discharge_current_limit: float = 0.0  # A (Max discharge current from BMS)
+    bms_charge_voltage_ref: float = 0.0  # V (BMS charge voltage reference)
+    bms_discharge_cutoff: float = 0.0  # V (BMS discharge cutoff voltage)
+    bms_max_cell_voltage: float = 0.0  # V (Highest cell voltage)
+    bms_min_cell_voltage: float = 0.0  # V (Lowest cell voltage)
+    bms_max_cell_temperature: float = 0.0  # °C (Highest cell temp)
+    bms_min_cell_temperature: float = 0.0  # °C (Lowest cell temp)
+    bms_cycle_count: int = 0  # Charge/discharge cycle count
+    battery_parallel_num: int = 0  # Number of parallel battery units
+    battery_capacity_ah: float = 0.0  # Ah (Battery capacity)
+
+    # -------------------------------------------------------------------------
+    # Additional Temperatures
+    # -------------------------------------------------------------------------
+    temperature_t1: float = 0.0  # °C
+    temperature_t2: float = 0.0  # °C
+    temperature_t3: float = 0.0  # °C
+    temperature_t4: float = 0.0  # °C
+    temperature_t5: float = 0.0  # °C
+
+    # -------------------------------------------------------------------------
+    # Inverter Operational
+    # -------------------------------------------------------------------------
+    inverter_on_time: int = 0  # hours (total on time)
+    ac_input_type: int = 0  # AC input type code
+
     def __post_init__(self) -> None:
         """Validate and clamp percentage values."""
         self.battery_soc = _clamp_percentage(self.battery_soc, "battery_soc")
@@ -366,6 +409,65 @@ class InverterRuntimeData:
             device_status=_read_register_field(input_registers, register_map.device_status),
             fault_code=fault_code,
             warning_code=warning_code,
+            # Extended sensors - Inverter RMS Current & Power
+            inverter_rms_current=_read_and_scale_field(
+                input_registers, register_map.inverter_rms_current
+            ),
+            inverter_apparent_power=_read_and_scale_field(
+                input_registers, register_map.inverter_apparent_power
+            ),
+            # Generator input
+            generator_voltage=_read_and_scale_field(
+                input_registers, register_map.generator_voltage
+            ),
+            generator_frequency=_read_and_scale_field(
+                input_registers, register_map.generator_frequency
+            ),
+            generator_power=_read_and_scale_field(input_registers, register_map.generator_power),
+            # BMS limits and cell data
+            bms_charge_current_limit=_read_and_scale_field(
+                input_registers, register_map.bms_charge_current_limit
+            ),
+            bms_discharge_current_limit=_read_and_scale_field(
+                input_registers, register_map.bms_discharge_current_limit
+            ),
+            bms_charge_voltage_ref=_read_and_scale_field(
+                input_registers, register_map.bms_charge_voltage_ref
+            ),
+            bms_discharge_cutoff=_read_and_scale_field(
+                input_registers, register_map.bms_discharge_cutoff
+            ),
+            # BMS cell voltages - convert from mV to V
+            bms_max_cell_voltage=_read_and_scale_field(
+                input_registers, register_map.bms_max_cell_voltage
+            )
+            / 1000.0,
+            bms_min_cell_voltage=_read_and_scale_field(
+                input_registers, register_map.bms_min_cell_voltage
+            )
+            / 1000.0,
+            bms_max_cell_temperature=_read_and_scale_field(
+                input_registers, register_map.bms_max_cell_temperature
+            ),
+            bms_min_cell_temperature=_read_and_scale_field(
+                input_registers, register_map.bms_min_cell_temperature
+            ),
+            bms_cycle_count=_read_register_field(input_registers, register_map.bms_cycle_count),
+            battery_parallel_num=_read_register_field(
+                input_registers, register_map.battery_parallel_num
+            ),
+            battery_capacity_ah=_read_and_scale_field(
+                input_registers, register_map.battery_capacity_ah
+            ),
+            # Additional temperatures
+            temperature_t1=_read_and_scale_field(input_registers, register_map.temperature_t1),
+            temperature_t2=_read_and_scale_field(input_registers, register_map.temperature_t2),
+            temperature_t3=_read_and_scale_field(input_registers, register_map.temperature_t3),
+            temperature_t4=_read_and_scale_field(input_registers, register_map.temperature_t4),
+            temperature_t5=_read_and_scale_field(input_registers, register_map.temperature_t5),
+            # Inverter operational
+            inverter_on_time=_read_register_field(input_registers, register_map.inverter_on_time),
+            ac_input_type=_read_register_field(input_registers, register_map.ac_input_type),
         )
 
 
@@ -406,6 +508,10 @@ class InverterEnergyData:
     # Inverter output energy
     inverter_energy_today: float = 0.0
     inverter_energy_total: float = 0.0
+
+    # Generator energy (if connected)
+    generator_energy_today: float = 0.0  # kWh
+    generator_energy_total: float = 0.0  # kWh
 
     @classmethod
     def from_http_response(cls, energy: EnergyInfo) -> InverterEnergyData:
@@ -468,42 +574,39 @@ class InverterEnergyData:
 
         def read_energy_field(
             field_def: RegisterField | None,
-            is_lifetime_kwh: bool = False,
         ) -> float:
-            """Read an energy field and convert to kWh.
+            """Read an energy field and return value in kWh.
 
             Args:
                 field_def: RegisterField for the energy value
-                is_lifetime_kwh: If True, the raw value is in kWh (multiply by 1000
-                    before applying scale to get Wh, then divide by 1000 for kWh)
 
             Returns:
                 Energy value in kWh
+
+            Note:
+                According to galets/eg4-modbus-monitor, energy register values
+                are in 0.1 kWh units (not 0.1 Wh as previously assumed).
+                After applying the scale factor (typically SCALE_10 = divide by 10),
+                the result is directly in kWh.
             """
             if field_def is None:
                 return 0.0
 
             raw_value = _read_register_field(input_registers, field_def)
 
-            if is_lifetime_kwh:
-                # PV_SERIES lifetime registers are in kWh directly (single register)
-                # No scaling needed, just return as float
-                return float(raw_value)
-
-            # Normal energy values are in 0.1 Wh, convert to kWh
-            # raw / scale_factor = Wh, then / 1000 = kWh
+            # Apply scale factor - result is in kWh directly
+            # Energy values are in 0.1 kWh (scale=0.1), so raw/10 = kWh
             from pylxpweb.constants.scaling import apply_scale
 
-            wh_value = apply_scale(raw_value, field_def.scale_factor)
-            return wh_value / 1000.0
+            return apply_scale(raw_value, field_def.scale_factor)
 
-        # Check if lifetime energy uses single-register kWh format (PV_SERIES)
-        # or 32-bit 0.1 Wh format (LXP_EU)
-        lifetime_is_kwh = (
-            register_map.inverter_energy_total is not None
-            and register_map.inverter_energy_total.bit_width == 16
-            and register_map.inverter_energy_total.scale_factor.value == 1
-        )
+        # Calculate total PV energy from per-string values
+        pv1_today = read_energy_field(register_map.pv1_energy_today)
+        pv2_today = read_energy_field(register_map.pv2_energy_today)
+        pv3_today = read_energy_field(register_map.pv3_energy_today)
+        pv1_total = read_energy_field(register_map.pv1_energy_total)
+        pv2_total = read_energy_field(register_map.pv2_energy_total)
+        pv3_total = read_energy_field(register_map.pv3_energy_total)
 
         return cls(
             timestamp=datetime.now(),
@@ -515,34 +618,25 @@ class InverterEnergyData:
             eps_energy_today=read_energy_field(register_map.eps_energy_today),
             grid_export_today=read_energy_field(register_map.grid_export_today),
             load_energy_today=read_energy_field(register_map.load_energy_today),
-            pv1_energy_today=read_energy_field(register_map.pv1_energy_today),
-            pv2_energy_today=read_energy_field(register_map.pv2_energy_today),
-            pv3_energy_today=read_energy_field(register_map.pv3_energy_today),
+            pv1_energy_today=pv1_today,
+            pv2_energy_today=pv2_today,
+            pv3_energy_today=pv3_today,
+            pv_energy_today=pv1_today + pv2_today + pv3_today,
             # Lifetime energy
-            inverter_energy_total=read_energy_field(
-                register_map.inverter_energy_total, is_lifetime_kwh=lifetime_is_kwh
-            ),
-            grid_import_total=read_energy_field(
-                register_map.grid_import_total, is_lifetime_kwh=lifetime_is_kwh
-            ),
-            charge_energy_total=read_energy_field(
-                register_map.charge_energy_total, is_lifetime_kwh=lifetime_is_kwh
-            ),
-            discharge_energy_total=read_energy_field(
-                register_map.discharge_energy_total, is_lifetime_kwh=lifetime_is_kwh
-            ),
-            eps_energy_total=read_energy_field(
-                register_map.eps_energy_total, is_lifetime_kwh=lifetime_is_kwh
-            ),
-            grid_export_total=read_energy_field(
-                register_map.grid_export_total, is_lifetime_kwh=lifetime_is_kwh
-            ),
-            load_energy_total=read_energy_field(
-                register_map.load_energy_total, is_lifetime_kwh=lifetime_is_kwh
-            ),
-            pv1_energy_total=read_energy_field(register_map.pv1_energy_total),
-            pv2_energy_total=read_energy_field(register_map.pv2_energy_total),
-            pv3_energy_total=read_energy_field(register_map.pv3_energy_total),
+            inverter_energy_total=read_energy_field(register_map.inverter_energy_total),
+            grid_import_total=read_energy_field(register_map.grid_import_total),
+            charge_energy_total=read_energy_field(register_map.charge_energy_total),
+            discharge_energy_total=read_energy_field(register_map.discharge_energy_total),
+            eps_energy_total=read_energy_field(register_map.eps_energy_total),
+            grid_export_total=read_energy_field(register_map.grid_export_total),
+            load_energy_total=read_energy_field(register_map.load_energy_total),
+            pv1_energy_total=pv1_total,
+            pv2_energy_total=pv2_total,
+            pv3_energy_total=pv3_total,
+            pv_energy_total=pv1_total + pv2_total + pv3_total,
+            # Generator energy
+            generator_energy_today=read_energy_field(register_map.generator_energy_today),
+            generator_energy_total=read_energy_field(register_map.generator_energy_total),
         )
 
 

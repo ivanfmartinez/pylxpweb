@@ -1,4 +1,13 @@
-"""Tests for model-specific Modbus register maps."""
+"""Tests for model-specific Modbus register maps.
+
+Register mappings validated against:
+- galets/eg4-modbus-monitor (registers-18kpv.yaml)
+- poldim/EG4-Inverter-Modbus (const.py)
+
+Key finding: PV_SERIES uses 16-bit power values at specific registers,
+NOT 32-bit pairs as previously assumed. This matches the validated
+implementations.
+"""
 
 from __future__ import annotations
 
@@ -62,24 +71,29 @@ class TestRegisterField:
 
 
 class TestRuntimeRegisterMap:
-    """Tests for RuntimeRegisterMap dataclass."""
+    """Tests for RuntimeRegisterMap dataclass.
 
-    def test_pv_series_map_pv_power_32bit(self) -> None:
-        """Test PV_SERIES uses 32-bit power values."""
+    Based on validated implementations from galets/poldim:
+    - PV_SERIES (18kPV): 16-bit power at regs 7-9, 10-11, 16, 24, 27
+    - LXP_EU (12K): 16-bit power at same addresses but different offsets
+    """
+
+    def test_pv_series_map_pv_power_16bit(self) -> None:
+        """Test PV_SERIES uses 16-bit power values (validated from galets/poldim)."""
         assert PV_SERIES_RUNTIME_MAP.pv1_power is not None
-        assert PV_SERIES_RUNTIME_MAP.pv1_power.bit_width == 32
-        assert PV_SERIES_RUNTIME_MAP.pv1_power.address == 6
+        assert PV_SERIES_RUNTIME_MAP.pv1_power.bit_width == 16
+        assert PV_SERIES_RUNTIME_MAP.pv1_power.address == 7
 
         assert PV_SERIES_RUNTIME_MAP.pv2_power is not None
-        assert PV_SERIES_RUNTIME_MAP.pv2_power.bit_width == 32
+        assert PV_SERIES_RUNTIME_MAP.pv2_power.bit_width == 16
         assert PV_SERIES_RUNTIME_MAP.pv2_power.address == 8
 
         assert PV_SERIES_RUNTIME_MAP.pv3_power is not None
-        assert PV_SERIES_RUNTIME_MAP.pv3_power.bit_width == 32
-        assert PV_SERIES_RUNTIME_MAP.pv3_power.address == 10
+        assert PV_SERIES_RUNTIME_MAP.pv3_power.bit_width == 16
+        assert PV_SERIES_RUNTIME_MAP.pv3_power.address == 9
 
     def test_lxp_eu_map_pv_power_16bit(self) -> None:
-        """Test LXP_EU uses 16-bit power values at different addresses."""
+        """Test LXP_EU uses 16-bit power values at same addresses."""
         assert LXP_EU_RUNTIME_MAP.pv1_power is not None
         assert LXP_EU_RUNTIME_MAP.pv1_power.bit_width == 16
         assert LXP_EU_RUNTIME_MAP.pv1_power.address == 7
@@ -93,66 +107,66 @@ class TestRuntimeRegisterMap:
         assert LXP_EU_RUNTIME_MAP.pv3_power.address == 9
 
     def test_pv_series_grid_voltage_addresses(self) -> None:
-        """Test PV_SERIES grid voltage register addresses."""
+        """Test PV_SERIES grid voltage register addresses (validated)."""
         assert PV_SERIES_RUNTIME_MAP.grid_voltage_r is not None
-        assert PV_SERIES_RUNTIME_MAP.grid_voltage_r.address == 16
+        assert PV_SERIES_RUNTIME_MAP.grid_voltage_r.address == 12
 
         assert PV_SERIES_RUNTIME_MAP.grid_frequency is not None
-        assert PV_SERIES_RUNTIME_MAP.grid_frequency.address == 19
+        assert PV_SERIES_RUNTIME_MAP.grid_frequency.address == 15
 
-    def test_lxp_eu_grid_voltage_offset(self) -> None:
-        """Test LXP_EU grid voltage has 4-register offset from PV_SERIES."""
+    def test_lxp_eu_grid_voltage_same(self) -> None:
+        """Test LXP_EU grid voltage same addresses as PV_SERIES."""
         assert LXP_EU_RUNTIME_MAP.grid_voltage_r is not None
-        assert LXP_EU_RUNTIME_MAP.grid_voltage_r.address == 12  # Was 16
+        assert LXP_EU_RUNTIME_MAP.grid_voltage_r.address == 12
 
         assert LXP_EU_RUNTIME_MAP.grid_frequency is not None
-        assert LXP_EU_RUNTIME_MAP.grid_frequency.address == 15  # Was 19
+        assert LXP_EU_RUNTIME_MAP.grid_frequency.address == 15
 
     def test_pv_series_eps_addresses(self) -> None:
-        """Test PV_SERIES EPS register addresses."""
+        """Test PV_SERIES EPS register addresses (validated)."""
         assert PV_SERIES_RUNTIME_MAP.eps_voltage_r is not None
-        assert PV_SERIES_RUNTIME_MAP.eps_voltage_r.address == 26
+        assert PV_SERIES_RUNTIME_MAP.eps_voltage_r.address == 20
 
         assert PV_SERIES_RUNTIME_MAP.eps_power is not None
-        assert PV_SERIES_RUNTIME_MAP.eps_power.address == 30
-        assert PV_SERIES_RUNTIME_MAP.eps_power.bit_width == 32
+        assert PV_SERIES_RUNTIME_MAP.eps_power.address == 24
+        assert PV_SERIES_RUNTIME_MAP.eps_power.bit_width == 16
 
-    def test_lxp_eu_eps_offset(self) -> None:
-        """Test LXP_EU EPS register offset and 16-bit power."""
+    def test_lxp_eu_eps_addresses(self) -> None:
+        """Test LXP_EU EPS register addresses."""
         assert LXP_EU_RUNTIME_MAP.eps_voltage_r is not None
-        assert LXP_EU_RUNTIME_MAP.eps_voltage_r.address == 20  # Was 26
+        assert LXP_EU_RUNTIME_MAP.eps_voltage_r.address == 20
 
         assert LXP_EU_RUNTIME_MAP.eps_power is not None
-        assert LXP_EU_RUNTIME_MAP.eps_power.address == 24  # Was 30
-        assert LXP_EU_RUNTIME_MAP.eps_power.bit_width == 16  # Was 32
+        assert LXP_EU_RUNTIME_MAP.eps_power.address == 24
+        assert LXP_EU_RUNTIME_MAP.eps_power.bit_width == 16
 
-    def test_pv_series_load_power_32bit(self) -> None:
-        """Test PV_SERIES load power is 32-bit."""
+    def test_pv_series_load_power_16bit(self) -> None:
+        """Test PV_SERIES load power is 16-bit at reg 27 (validated)."""
         assert PV_SERIES_RUNTIME_MAP.load_power is not None
-        assert PV_SERIES_RUNTIME_MAP.load_power.address == 34
-        assert PV_SERIES_RUNTIME_MAP.load_power.bit_width == 32
+        assert PV_SERIES_RUNTIME_MAP.load_power.address == 27
+        assert PV_SERIES_RUNTIME_MAP.load_power.bit_width == 16
 
     def test_lxp_eu_load_power_16bit(self) -> None:
-        """Test LXP_EU load power is 16-bit at different address."""
+        """Test LXP_EU load power is 16-bit at reg 27."""
         assert LXP_EU_RUNTIME_MAP.load_power is not None
-        assert LXP_EU_RUNTIME_MAP.load_power.address == 27  # Was 34
-        assert LXP_EU_RUNTIME_MAP.load_power.bit_width == 16  # Was 32
+        assert LXP_EU_RUNTIME_MAP.load_power.address == 27
+        assert LXP_EU_RUNTIME_MAP.load_power.bit_width == 16
 
     def test_pv_series_bus_voltage_addresses(self) -> None:
-        """Test PV_SERIES bus voltage addresses."""
+        """Test PV_SERIES bus voltage addresses (validated: regs 38-39)."""
         assert PV_SERIES_RUNTIME_MAP.bus_voltage_1 is not None
-        assert PV_SERIES_RUNTIME_MAP.bus_voltage_1.address == 43
+        assert PV_SERIES_RUNTIME_MAP.bus_voltage_1.address == 38
 
         assert PV_SERIES_RUNTIME_MAP.bus_voltage_2 is not None
-        assert PV_SERIES_RUNTIME_MAP.bus_voltage_2.address == 44
+        assert PV_SERIES_RUNTIME_MAP.bus_voltage_2.address == 39
 
-    def test_lxp_eu_bus_voltage_offset(self) -> None:
-        """Test LXP_EU bus voltage offset."""
+    def test_lxp_eu_bus_voltage_same(self) -> None:
+        """Test LXP_EU bus voltage same addresses."""
         assert LXP_EU_RUNTIME_MAP.bus_voltage_1 is not None
-        assert LXP_EU_RUNTIME_MAP.bus_voltage_1.address == 38  # Was 43
+        assert LXP_EU_RUNTIME_MAP.bus_voltage_1.address == 38
 
         assert LXP_EU_RUNTIME_MAP.bus_voltage_2 is not None
-        assert LXP_EU_RUNTIME_MAP.bus_voltage_2.address == 39  # Was 44
+        assert LXP_EU_RUNTIME_MAP.bus_voltage_2.address == 39
 
     def test_temperature_addresses_same(self) -> None:
         """Test temperature registers are same for both families."""
@@ -166,14 +180,14 @@ class TestRuntimeRegisterMap:
         assert PV_SERIES_RUNTIME_MAP.internal_temperature.address == 64
 
     def test_voltage_scaling(self) -> None:
-        """Test voltage fields have correct scaling."""
+        """Test voltage fields have correct scaling (validated)."""
         # Grid voltages should be SCALE_10
         assert PV_SERIES_RUNTIME_MAP.grid_voltage_r is not None
         assert PV_SERIES_RUNTIME_MAP.grid_voltage_r.scale_factor == ScaleFactor.SCALE_10
 
-        # Battery voltage should be SCALE_100
+        # Battery voltage should be SCALE_10 (galets: Vbat scale=0.1)
         assert PV_SERIES_RUNTIME_MAP.battery_voltage is not None
-        assert PV_SERIES_RUNTIME_MAP.battery_voltage.scale_factor == ScaleFactor.SCALE_100
+        assert PV_SERIES_RUNTIME_MAP.battery_voltage.scale_factor == ScaleFactor.SCALE_10
 
         # Frequency should be SCALE_100
         assert PV_SERIES_RUNTIME_MAP.grid_frequency is not None
@@ -181,13 +195,18 @@ class TestRuntimeRegisterMap:
 
 
 class TestEnergyRegisterMap:
-    """Tests for EnergyRegisterMap dataclass."""
+    """Tests for EnergyRegisterMap dataclass.
 
-    def test_pv_series_daily_energy_32bit(self) -> None:
-        """Test PV_SERIES daily energy uses 32-bit register pairs."""
+    Based on galets/eg4-modbus-monitor:
+    - Daily energy: 16-bit at regs 28-37, scale 0.1 kWh
+    - Lifetime energy: 32-bit pairs at regs 40-59, scale 0.1 kWh
+    """
+
+    def test_pv_series_daily_energy_16bit(self) -> None:
+        """Test PV_SERIES daily energy uses 16-bit registers (validated)."""
         assert PV_SERIES_ENERGY_MAP.inverter_energy_today is not None
-        assert PV_SERIES_ENERGY_MAP.inverter_energy_today.bit_width == 32
-        assert PV_SERIES_ENERGY_MAP.inverter_energy_today.address == 45
+        assert PV_SERIES_ENERGY_MAP.inverter_energy_today.bit_width == 16
+        assert PV_SERIES_ENERGY_MAP.inverter_energy_today.address == 31
 
     def test_lxp_eu_daily_energy_16bit(self) -> None:
         """Test LXP_EU daily energy uses 16-bit registers."""
@@ -195,44 +214,52 @@ class TestEnergyRegisterMap:
         assert LXP_EU_ENERGY_MAP.inverter_energy_today.bit_width == 16
         assert LXP_EU_ENERGY_MAP.inverter_energy_today.address == 28
 
-    def test_pv_series_lifetime_energy_format(self) -> None:
-        """Test PV_SERIES lifetime energy uses single-register kWh format."""
+    def test_pv_series_lifetime_energy_32bit(self) -> None:
+        """Test PV_SERIES lifetime energy uses 32-bit pairs (validated)."""
         assert PV_SERIES_ENERGY_MAP.inverter_energy_total is not None
-        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.bit_width == 16
-        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.address == 36
-        # Single-register lifetime values are in kWh directly (SCALE_NONE)
-        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.scale_factor == ScaleFactor.SCALE_NONE
+        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.bit_width == 32
+        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.address == 46
+        # Scale 0.1 = SCALE_10
+        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.scale_factor == ScaleFactor.SCALE_10
 
     def test_lxp_eu_lifetime_energy_32bit(self) -> None:
-        """Test LXP_EU lifetime energy uses 32-bit 0.1 Wh format."""
+        """Test LXP_EU lifetime energy uses 32-bit 0.1 kWh format."""
         assert LXP_EU_ENERGY_MAP.inverter_energy_total is not None
         assert LXP_EU_ENERGY_MAP.inverter_energy_total.bit_width == 32
         assert LXP_EU_ENERGY_MAP.inverter_energy_total.address == 40
         assert LXP_EU_ENERGY_MAP.inverter_energy_total.scale_factor == ScaleFactor.SCALE_10
 
-    def test_no_per_pv_energy_via_modbus(self) -> None:
-        """Test neither map has per-PV string energy (not available via Modbus).
+    def test_pv_series_per_pv_energy_available(self) -> None:
+        """Test PV_SERIES has per-PV string energy (validated from galets).
 
-        Per-PV string power is available (registers 6-11), but per-PV string
-        energy counters are not exposed via Modbus. Only aggregate energy is
-        available (registers 36-58).
+        galets/eg4-modbus-monitor shows:
+        - Epv1_day at reg 28, Epv2_day at 29, Epv3_day at 30
+        - Epv1_all at regs 40-41, Epv2_all at 42-43, Epv3_all at 44-45
         """
-        # LXP_EU has no per-PV string energy
+        # Daily per-PV energy
+        assert PV_SERIES_ENERGY_MAP.pv1_energy_today is not None
+        assert PV_SERIES_ENERGY_MAP.pv1_energy_today.address == 28
+        assert PV_SERIES_ENERGY_MAP.pv2_energy_today is not None
+        assert PV_SERIES_ENERGY_MAP.pv2_energy_today.address == 29
+        assert PV_SERIES_ENERGY_MAP.pv3_energy_today is not None
+        assert PV_SERIES_ENERGY_MAP.pv3_energy_today.address == 30
+
+        # Lifetime per-PV energy
+        assert PV_SERIES_ENERGY_MAP.pv1_energy_total is not None
+        assert PV_SERIES_ENERGY_MAP.pv1_energy_total.address == 40
+        assert PV_SERIES_ENERGY_MAP.pv2_energy_total is not None
+        assert PV_SERIES_ENERGY_MAP.pv2_energy_total.address == 42
+        assert PV_SERIES_ENERGY_MAP.pv3_energy_total is not None
+        assert PV_SERIES_ENERGY_MAP.pv3_energy_total.address == 44
+
+    def test_lxp_eu_no_per_pv_energy(self) -> None:
+        """Test LXP_EU has no per-PV string energy (different register layout)."""
         assert LXP_EU_ENERGY_MAP.pv1_energy_today is None
         assert LXP_EU_ENERGY_MAP.pv2_energy_today is None
         assert LXP_EU_ENERGY_MAP.pv3_energy_today is None
         assert LXP_EU_ENERGY_MAP.pv1_energy_total is None
         assert LXP_EU_ENERGY_MAP.pv2_energy_total is None
         assert LXP_EU_ENERGY_MAP.pv3_energy_total is None
-
-        # PV_SERIES also has no per-PV string energy via Modbus
-        # (registers 91-102 are BMS data, not energy)
-        assert PV_SERIES_ENERGY_MAP.pv1_energy_today is None
-        assert PV_SERIES_ENERGY_MAP.pv2_energy_today is None
-        assert PV_SERIES_ENERGY_MAP.pv3_energy_today is None
-        assert PV_SERIES_ENERGY_MAP.pv1_energy_total is None
-        assert PV_SERIES_ENERGY_MAP.pv2_energy_total is None
-        assert PV_SERIES_ENERGY_MAP.pv3_energy_total is None
 
 
 class TestGetRegisterMap:
@@ -288,23 +315,27 @@ class TestRegisterMapIntegration:
     """Integration tests for register maps with data parsing."""
 
     def test_pv_series_runtime_data_parsing(self) -> None:
-        """Test PV_SERIES register map produces correct runtime data."""
+        """Test PV_SERIES register map produces correct runtime data.
+
+        Uses validated register layout from galets/poldim:
+        - PV power: 16-bit at regs 7-9
+        - Grid voltage: 16-bit at reg 12
+        - Grid frequency: 16-bit at reg 15
+        """
         from pylxpweb.transports.data import InverterRuntimeData
 
-        # Sample registers for PV_SERIES (32-bit power values)
+        # Sample registers for PV_SERIES (16-bit power values)
         registers = {
             0: 1,  # Device status
-            1: 4100,  # PV1 voltage (410.0V)
-            2: 4200,  # PV2 voltage (420.0V)
+            1: 4100,  # PV1 voltage (×10 = 410.0V)
+            2: 4200,  # PV2 voltage (×10 = 420.0V)
             3: 0,  # PV3 voltage
-            4: 5300,  # Battery voltage (53.00V)
-            5: 0x6428,  # SOC=40, SOH=100 packed
-            6: 0,  # PV1 power high word
-            7: 3000,  # PV1 power low word (3000W)
-            8: 0,  # PV2 power high word
-            9: 2500,  # PV2 power low word (2500W)
-            16: 2410,  # Grid voltage R (241.0V)
-            19: 5998,  # Grid frequency (59.98Hz)
+            4: 530,  # Battery voltage (×10 = 53.0V)
+            5: (100 << 8) | 40,  # SOC=40, SOH=100 packed
+            7: 3000,  # PV1 power (16-bit, 3000W)
+            8: 2500,  # PV2 power (16-bit, 2500W)
+            12: 2410,  # Grid voltage R (×10 = 241.0V)
+            15: 5998,  # Grid frequency (×100 = 59.98Hz)
         }
 
         result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
@@ -323,16 +354,16 @@ class TestRegisterMapIntegration:
         """Test LXP_EU register map produces correct runtime data."""
         from pylxpweb.transports.data import InverterRuntimeData
 
-        # Sample registers for LXP_EU (16-bit power values at offset addresses)
+        # Sample registers for LXP_EU (16-bit power values)
         registers = {
             0: 1,  # Device status
             1: 3800,  # PV1 voltage (380.0V)
             4: 5100,  # Battery voltage (51.00V)
-            5: 0x6432,  # SOC=50, SOH=100 packed
+            5: (100 << 8) | 50,  # SOC=50, SOH=100 packed
             7: 4000,  # PV1 power (4000W) - 16-bit at reg 7
             8: 3500,  # PV2 power (3500W) - 16-bit at reg 8
-            12: 2300,  # Grid voltage R (230.0V) - offset from 16
-            15: 5000,  # Grid frequency (50.00Hz) - offset from 19
+            12: 2300,  # Grid voltage R (230.0V)
+            15: 5000,  # Grid frequency (50.00Hz)
         }
 
         result = InverterRuntimeData.from_modbus_registers(registers, LXP_EU_RUNTIME_MAP)
@@ -347,34 +378,37 @@ class TestRegisterMapIntegration:
         assert result.grid_frequency == 50.0
 
     def test_pv_series_energy_data_parsing(self) -> None:
-        """Test PV_SERIES energy register map parsing."""
+        """Test PV_SERIES energy register map parsing (validated layout)."""
         from pylxpweb.transports.data import InverterEnergyData
 
         # Sample registers for PV_SERIES energy
+        # Daily energy: 16-bit at regs 28-37, scale 0.1 kWh
+        # Lifetime energy: 32-bit pairs at regs 40-59, scale 0.1 kWh
         registers = {
-            36: 1500,  # Inverter energy total (1500 kWh)
-            45: 0,  # Inverter energy today high
-            46: 150000,  # Inverter energy today low (15.0 kWh after scaling)
+            31: 184,  # Inverter energy today (18.4 kWh after scaling)
+            46: 0,  # Inverter energy total high word
+            47: 50000,  # Inverter energy total low word (5000.0 kWh)
         }
 
         result = InverterEnergyData.from_modbus_registers(registers, PV_SERIES_ENERGY_MAP)
 
-        # Lifetime is in kWh directly for PV_SERIES
-        assert result.inverter_energy_total == 1500.0
-        # Daily is in 0.1 Wh, converted to kWh
-        assert result.inverter_energy_today == 15.0
+        # Daily: raw / 10 = kWh
+        assert result.inverter_energy_today == pytest.approx(18.4, rel=0.01)
+        # Lifetime: 32-bit combined / 10 = kWh
+        assert result.inverter_energy_total == pytest.approx(5000.0, rel=0.01)
 
     def test_backward_compatibility_no_register_map(self) -> None:
         """Test from_modbus_registers works without register_map arg."""
         from pylxpweb.transports.data import InverterRuntimeData
 
         # Should use PV_SERIES_RUNTIME_MAP by default
+        # With new layout: grid voltage at reg 12, not 16
         registers = {
             0: 1,
             1: 4100,  # PV1 voltage
-            4: 5300,  # Battery voltage
-            5: 0x6428,  # SOC/SOH
-            16: 2410,  # Grid voltage R at PV_SERIES location
+            4: 530,  # Battery voltage (×10 = 53.0V with new SCALE_10)
+            5: (100 << 8) | 40,  # SOC/SOH
+            12: 2410,  # Grid voltage R at PV_SERIES location (new: reg 12)
         }
 
         result = InverterRuntimeData.from_modbus_registers(registers)
@@ -471,3 +505,263 @@ class TestEnergyDataEdgeCases:
         assert result.discharge_energy_today == 0.0
         assert result.inverter_energy_today == 0.0
         assert result.inverter_energy_total == 0.0
+
+
+class TestExtendedSensors:
+    """Tests for extended sensors (generator, BMS limits, additional temps).
+
+    Based on poldim/EG4-Inverter-Modbus register definitions.
+    """
+
+    def test_pv_series_generator_registers(self) -> None:
+        """Test PV_SERIES has generator input registers."""
+        assert PV_SERIES_RUNTIME_MAP.generator_voltage is not None
+        assert PV_SERIES_RUNTIME_MAP.generator_voltage.address == 121
+        assert PV_SERIES_RUNTIME_MAP.generator_voltage.scale_factor == ScaleFactor.SCALE_10
+
+        assert PV_SERIES_RUNTIME_MAP.generator_frequency is not None
+        assert PV_SERIES_RUNTIME_MAP.generator_frequency.address == 122
+        assert PV_SERIES_RUNTIME_MAP.generator_frequency.scale_factor == ScaleFactor.SCALE_100
+
+        assert PV_SERIES_RUNTIME_MAP.generator_power is not None
+        assert PV_SERIES_RUNTIME_MAP.generator_power.address == 123
+
+    def test_lxp_eu_generator_registers(self) -> None:
+        """Test LXP_EU has generator input registers."""
+        assert LXP_EU_RUNTIME_MAP.generator_voltage is not None
+        assert LXP_EU_RUNTIME_MAP.generator_voltage.address == 121
+
+        assert LXP_EU_RUNTIME_MAP.generator_frequency is not None
+        assert LXP_EU_RUNTIME_MAP.generator_frequency.address == 122
+
+        assert LXP_EU_RUNTIME_MAP.generator_power is not None
+        assert LXP_EU_RUNTIME_MAP.generator_power.address == 123
+
+    def test_pv_series_bms_limits(self) -> None:
+        """Test PV_SERIES has BMS limit registers."""
+        assert PV_SERIES_RUNTIME_MAP.bms_charge_current_limit is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_charge_current_limit.address == 81
+
+        assert PV_SERIES_RUNTIME_MAP.bms_discharge_current_limit is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_discharge_current_limit.address == 82
+
+        assert PV_SERIES_RUNTIME_MAP.bms_charge_voltage_ref is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_charge_voltage_ref.address == 83
+        assert PV_SERIES_RUNTIME_MAP.bms_charge_voltage_ref.scale_factor == ScaleFactor.SCALE_10
+
+        assert PV_SERIES_RUNTIME_MAP.bms_discharge_cutoff is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_discharge_cutoff.address == 84
+        assert PV_SERIES_RUNTIME_MAP.bms_discharge_cutoff.scale_factor == ScaleFactor.SCALE_10
+
+    def test_pv_series_bms_cell_data(self) -> None:
+        """Test PV_SERIES has BMS cell voltage/temperature registers."""
+        assert PV_SERIES_RUNTIME_MAP.bms_max_cell_voltage is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_max_cell_voltage.address == 101
+
+        assert PV_SERIES_RUNTIME_MAP.bms_min_cell_voltage is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_min_cell_voltage.address == 102
+
+        assert PV_SERIES_RUNTIME_MAP.bms_max_cell_temperature is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_max_cell_temperature.address == 103
+
+        assert PV_SERIES_RUNTIME_MAP.bms_min_cell_temperature is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_min_cell_temperature.address == 104
+
+        assert PV_SERIES_RUNTIME_MAP.bms_cycle_count is not None
+        assert PV_SERIES_RUNTIME_MAP.bms_cycle_count.address == 106
+
+    def test_pv_series_battery_info(self) -> None:
+        """Test PV_SERIES has battery info registers."""
+        assert PV_SERIES_RUNTIME_MAP.battery_parallel_num is not None
+        assert PV_SERIES_RUNTIME_MAP.battery_parallel_num.address == 96
+
+        assert PV_SERIES_RUNTIME_MAP.battery_capacity_ah is not None
+        assert PV_SERIES_RUNTIME_MAP.battery_capacity_ah.address == 97
+
+    def test_pv_series_additional_temperatures(self) -> None:
+        """Test PV_SERIES has additional temperature registers."""
+        assert PV_SERIES_RUNTIME_MAP.temperature_t1 is not None
+        assert PV_SERIES_RUNTIME_MAP.temperature_t1.address == 108
+
+        assert PV_SERIES_RUNTIME_MAP.temperature_t2 is not None
+        assert PV_SERIES_RUNTIME_MAP.temperature_t2.address == 109
+
+        assert PV_SERIES_RUNTIME_MAP.temperature_t3 is not None
+        assert PV_SERIES_RUNTIME_MAP.temperature_t3.address == 110
+
+        assert PV_SERIES_RUNTIME_MAP.temperature_t4 is not None
+        assert PV_SERIES_RUNTIME_MAP.temperature_t4.address == 111
+
+        assert PV_SERIES_RUNTIME_MAP.temperature_t5 is not None
+        assert PV_SERIES_RUNTIME_MAP.temperature_t5.address == 112
+
+    def test_pv_series_inverter_operational(self) -> None:
+        """Test PV_SERIES has inverter operational registers."""
+        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current is not None
+        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current.address == 18
+        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current.scale_factor == ScaleFactor.SCALE_100
+
+        assert PV_SERIES_RUNTIME_MAP.inverter_apparent_power is not None
+        assert PV_SERIES_RUNTIME_MAP.inverter_apparent_power.address == 25
+
+        assert PV_SERIES_RUNTIME_MAP.inverter_on_time is not None
+        assert PV_SERIES_RUNTIME_MAP.inverter_on_time.address == 69
+        assert PV_SERIES_RUNTIME_MAP.inverter_on_time.bit_width == 32
+
+        assert PV_SERIES_RUNTIME_MAP.ac_input_type is not None
+        assert PV_SERIES_RUNTIME_MAP.ac_input_type.address == 77
+
+    def test_pv_series_generator_energy(self) -> None:
+        """Test PV_SERIES has generator energy registers."""
+        assert PV_SERIES_ENERGY_MAP.generator_energy_today is not None
+        assert PV_SERIES_ENERGY_MAP.generator_energy_today.address == 124
+        assert PV_SERIES_ENERGY_MAP.generator_energy_today.bit_width == 16
+
+        assert PV_SERIES_ENERGY_MAP.generator_energy_total is not None
+        assert PV_SERIES_ENERGY_MAP.generator_energy_total.address == 125
+        assert PV_SERIES_ENERGY_MAP.generator_energy_total.bit_width == 32
+
+    def test_lxp_eu_generator_energy(self) -> None:
+        """Test LXP_EU has generator energy registers."""
+        assert LXP_EU_ENERGY_MAP.generator_energy_today is not None
+        assert LXP_EU_ENERGY_MAP.generator_energy_today.address == 124
+
+        assert LXP_EU_ENERGY_MAP.generator_energy_total is not None
+        assert LXP_EU_ENERGY_MAP.generator_energy_total.address == 125
+
+
+class TestExtendedSensorsDataParsing:
+    """Tests for parsing extended sensor data from registers."""
+
+    def test_generator_data_parsing(self) -> None:
+        """Test generator sensor data parsing."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        registers = {
+            121: 2400,  # Generator voltage (×10 = 240.0V)
+            122: 6000,  # Generator frequency (×100 = 60.00Hz)
+            123: 5000,  # Generator power (5000W)
+        }
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.generator_voltage == 240.0
+        assert result.generator_frequency == 60.0
+        assert result.generator_power == 5000.0
+
+    def test_bms_limits_parsing(self) -> None:
+        """Test BMS limit sensor data parsing.
+
+        Per Yippy's docs: BMS current limits use 0.01A scale (SCALE_100).
+        """
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        registers = {
+            81: 10000,  # BMS charge current limit (×100 = 100.0A)
+            82: 10000,  # BMS discharge current limit (×100 = 100.0A)
+            83: 560,  # BMS charge voltage ref (×10 = 56.0V)
+            84: 480,  # BMS discharge cutoff (×10 = 48.0V)
+        }
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.bms_charge_current_limit == 100.0
+        assert result.bms_discharge_current_limit == 100.0
+        assert result.bms_charge_voltage_ref == 56.0
+        assert result.bms_discharge_cutoff == 48.0
+
+    def test_bms_cell_data_parsing(self) -> None:
+        """Test BMS cell voltage/temperature data parsing.
+
+        Per Yippy's docs:
+        - Cell voltages are in millivolts (0.001V), converted to V in data.py
+        - Cell temperatures use 0.1°C scale (SCALE_10), signed
+        """
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        registers = {
+            101: 3450,  # BMS max cell voltage (3450 mV = 3.450V)
+            102: 3320,  # BMS min cell voltage (3320 mV = 3.320V)
+            103: 280,  # BMS max cell temperature (×10 = 28.0°C)
+            104: 250,  # BMS min cell temperature (×10 = 25.0°C)
+            106: 150,  # BMS cycle count
+        }
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.bms_max_cell_voltage == pytest.approx(3.450, rel=0.01)
+        assert result.bms_min_cell_voltage == pytest.approx(3.320, rel=0.01)
+        assert result.bms_max_cell_temperature == 28.0
+        assert result.bms_min_cell_temperature == 25.0
+        assert result.bms_cycle_count == 150
+
+    def test_battery_info_parsing(self) -> None:
+        """Test battery info data parsing."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        registers = {
+            96: 4,  # Battery parallel number (4 batteries)
+            97: 100,  # Battery capacity (100Ah)
+        }
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.battery_parallel_num == 4
+        assert result.battery_capacity_ah == 100.0
+
+    def test_additional_temperatures_parsing(self) -> None:
+        """Test additional temperature sensor data parsing.
+
+        Per Yippy's docs: T1-T5 use 0.1°C scale (SCALE_10).
+        """
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        registers = {
+            108: 300,  # T1 (×10 = 30.0°C)
+            109: 320,  # T2 (×10 = 32.0°C)
+            110: 350,  # T3 (×10 = 35.0°C)
+            111: 280,  # T4 (×10 = 28.0°C)
+            112: 260,  # T5 (×10 = 26.0°C)
+        }
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.temperature_t1 == 30.0
+        assert result.temperature_t2 == 32.0
+        assert result.temperature_t3 == 35.0
+        assert result.temperature_t4 == 28.0
+        assert result.temperature_t5 == 26.0
+
+    def test_inverter_operational_parsing(self) -> None:
+        """Test inverter operational data parsing."""
+        from pylxpweb.transports.data import InverterRuntimeData
+
+        registers = {
+            18: 500,  # Inverter RMS current (×100 = 5.00A)
+            25: 1000,  # Inverter apparent power (1000VA)
+            69: 0,  # Inverter on time high word
+            70: 1000,  # Inverter on time low word (1000 hours)
+            77: 1,  # AC input type
+        }
+
+        result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
+
+        assert result.inverter_rms_current == 5.0
+        assert result.inverter_apparent_power == 1000.0
+        assert result.inverter_on_time == 1000
+        assert result.ac_input_type == 1
+
+    def test_generator_energy_parsing(self) -> None:
+        """Test generator energy data parsing."""
+        from pylxpweb.transports.data import InverterEnergyData
+
+        registers = {
+            124: 50,  # Generator energy today (×10 = 5.0 kWh)
+            125: 0,  # Generator energy total high word
+            126: 1000,  # Generator energy total low word (100.0 kWh)
+        }
+
+        result = InverterEnergyData.from_modbus_registers(registers, PV_SERIES_ENERGY_MAP)
+
+        assert result.generator_energy_today == pytest.approx(5.0, rel=0.01)
+        assert result.generator_energy_total == pytest.approx(100.0, rel=0.01)

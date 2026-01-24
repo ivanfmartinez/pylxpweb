@@ -81,49 +81,56 @@ class TestInverterRuntimeData:
         assert data.bus_voltage_1 == 37.0
 
     def test_from_modbus_registers(self) -> None:
-        """Test conversion from Modbus registers."""
-        # Simulate input registers
+        """Test conversion from Modbus registers.
+
+        Register layout based on validated implementations:
+        - galets/eg4-modbus-monitor (registers-18kpv.yaml)
+        - poldim/EG4-Inverter-Modbus (const.py)
+
+        Key differences from old layout:
+        - Power values are 16-bit SINGLE registers, not 32-bit pairs
+        - PV power at regs 7-9 (not 6-11)
+        - Grid voltages at regs 12-14 (not 16-18)
+        - Bus voltages at regs 38-39 (not 43-44)
+        """
+        # Simulate input registers using correct PV_SERIES layout
         input_regs: dict[int, int] = {
             0: 0,  # Status
-            1: 5100,  # PV1 voltage (×10)
-            2: 5050,  # PV2 voltage
+            1: 5100,  # PV1 voltage (×10 = 510.0V)
+            2: 5050,  # PV2 voltage (×10 = 505.0V)
             3: 0,  # PV3 voltage
-            4: 5300,  # Battery voltage (×100)
-            5: 85,  # SOC
-            6: 0,  # PV1 power high
-            7: 1000,  # PV1 power low
-            8: 0,  # PV2 power high
-            9: 1500,  # PV2 power low
-            10: 0,  # PV3 power high
-            11: 0,  # PV3 power low
-            12: 0,  # Charge power high
-            13: 500,  # Charge power low
-            14: 0,  # Discharge power high
-            15: 0,  # Discharge power low
-            16: 2410,  # Grid voltage R
-            17: 2415,  # Grid voltage S
-            18: 2420,  # Grid voltage T
-            19: 5998,  # Grid frequency (×100)
-            20: 0,  # Inverter power high
-            21: 2300,  # Inverter power low
-            22: 0,  # Grid power high
-            23: 100,  # Grid power low
-            26: 2400,  # EPS voltage R
-            27: 2405,  # EPS voltage S
-            28: 2410,  # EPS voltage T
-            29: 5999,  # EPS frequency
-            30: 0,  # EPS power high
-            31: 300,  # EPS power low
-            32: 1,  # EPS status
-            33: 200,  # Power to grid
-            34: 0,  # Load power high
-            35: 1500,  # Load power low
-            43: 3700,  # Bus voltage 1
-            44: 3650,  # Bus voltage 2
-            61: 35,  # Internal temp
-            62: 40,  # Radiator temp 1
-            63: 38,  # Radiator temp 2
-            64: 25,  # Battery temp
+            4: 530,  # Battery voltage (×10 = 53.0V)
+            5: (100 << 8) | 85,  # SOC=85 (low byte), SOH=100 (high byte)
+            7: 1000,  # PV1 power (16-bit, W)
+            8: 1500,  # PV2 power (16-bit, W)
+            9: 0,  # PV3 power
+            10: 500,  # Charge power (16-bit, W)
+            11: 0,  # Discharge power (16-bit, W)
+            12: 2410,  # Grid voltage R (×10 = 241.0V)
+            13: 2415,  # Grid voltage S
+            14: 2420,  # Grid voltage T
+            15: 5998,  # Grid frequency (×100 = 59.98Hz)
+            16: 2300,  # Inverter power (16-bit, W)
+            17: 100,  # Grid power/AC charge (16-bit, W)
+            19: 990,  # Power factor (×1000 = 0.99)
+            20: 2400,  # EPS voltage R
+            21: 2405,  # EPS voltage S
+            22: 2410,  # EPS voltage T
+            23: 5999,  # EPS frequency
+            24: 300,  # EPS power (16-bit, W)
+            25: 1,  # EPS status
+            26: 200,  # Power to grid (16-bit, W)
+            27: 1500,  # Load power (16-bit, W)
+            38: 3700,  # Bus voltage 1 (×10 = 370.0V)
+            39: 3650,  # Bus voltage 2
+            64: 25,  # Internal temp (°C, signed)
+            65: 40,  # Radiator temp 1
+            66: 38,  # Radiator temp 2
+            67: 25,  # Battery temp
+            60: 0,  # Fault code high
+            61: 35,  # Fault code low
+            62: 0,  # Warning code high
+            63: 38,  # Warning code low (creates 32-bit warning: 38)
         }
 
         data = InverterRuntimeData.from_modbus_registers(input_regs)
@@ -134,8 +141,12 @@ class TestInverterRuntimeData:
         assert data.pv_total_power == 2500.0
         assert data.battery_voltage == 53.0
         assert data.battery_soc == 85
+        assert data.battery_soh == 100
         assert data.grid_frequency == 59.98
         assert data.load_power == 1500.0
+        assert data.bus_voltage_1 == 370.0
+        assert data.internal_temperature == 25.0
+        assert data.fault_code == 35  # From regs 60-61 (32-bit)
 
 
 class TestInverterEnergyData:
@@ -179,50 +190,79 @@ class TestInverterEnergyData:
         assert data.grid_export_total == 2500.0
 
     def test_from_modbus_registers(self) -> None:
-        """Test conversion from Modbus registers."""
+        """Test conversion from Modbus registers.
+
+        Energy register layout based on galets/eg4-modbus-monitor:
+        - Daily energy: 16-bit registers 28-37, scale 0.1 kWh
+        - Lifetime energy: 32-bit pairs at registers 40-59, scale 0.1 kWh
+
+        After apply_scale(raw, SCALE_10), result is directly in kWh.
+        """
         input_regs: dict[int, int] = {
-            36: 5000,  # Inverter energy total (kWh)
-            37: 1500,  # Grid import total
-            38: 1000,  # Charge total
-            39: 800,  # Discharge total
-            40: 200,  # EPS total
-            41: 2500,  # Grid export total
-            42: 4000,  # Load total
-            45: 0,  # Inverter today high
-            46: 184,  # Inverter today low (0.1 Wh)
-            47: 0,  # Grid import today high
-            48: 100,  # Grid import today low
-            49: 0,  # Charge today high
-            50: 50,  # Charge today low
-            51: 0,  # Discharge today high
-            52: 30,  # Discharge today low
-            53: 0,  # EPS today high
-            54: 10,  # EPS today low
-            55: 0,  # Grid export today high
-            56: 150,  # Grid export today low
-            57: 0,  # Load today high
-            58: 200,  # Load today low
-            91: 0,
-            92: 1000,  # PV1 total
-            93: 0,
-            94: 800,  # PV2 total
-            95: 0,
-            96: 500,  # PV3 total
-            97: 0,
-            98: 100,  # PV1 today
-            99: 0,
-            100: 80,  # PV2 today
-            101: 0,
-            102: 4,  # PV3 today
+            # Daily energy - 16-bit, scale 0.1 kWh
+            28: 100,  # PV1 today (10.0 kWh)
+            29: 80,  # PV2 today (8.0 kWh)
+            30: 4,  # PV3 today (0.4 kWh)
+            31: 184,  # Inverter today (18.4 kWh)
+            32: 100,  # Grid import today (10.0 kWh)
+            33: 50,  # Charge today (5.0 kWh)
+            34: 30,  # Discharge today (3.0 kWh)
+            35: 10,  # EPS today (1.0 kWh)
+            36: 150,  # Grid export today (15.0 kWh)
+            37: 200,  # Load today (20.0 kWh)
+            # Lifetime energy - 32-bit pairs, scale 0.1 kWh
+            # High word at address N, low word at address N+1
+            40: 0,  # PV1 total high
+            41: 10000,  # PV1 total low (1000.0 kWh)
+            42: 0,  # PV2 total high
+            43: 8000,  # PV2 total low (800.0 kWh)
+            44: 0,  # PV3 total high
+            45: 5000,  # PV3 total low (500.0 kWh)
+            46: 0,  # Inverter total high
+            47: 50000,  # Inverter total low (5000.0 kWh)
+            48: 0,  # Grid import total high
+            49: 15000,  # Grid import total low (1500.0 kWh)
+            50: 0,  # Charge total high
+            51: 10000,  # Charge total low (1000.0 kWh)
+            52: 0,  # Discharge total high
+            53: 8000,  # Discharge total low (800.0 kWh)
+            54: 0,  # EPS total high
+            55: 2000,  # EPS total low (200.0 kWh)
+            56: 0,  # Grid export total high
+            57: 25000,  # Grid export total low (2500.0 kWh)
+            58: 0,  # Load total high
+            59: 40000,  # Load total low (4000.0 kWh)
         }
 
         data = InverterEnergyData.from_modbus_registers(input_regs)
 
-        # Today values are scaled from 0.1 Wh to kWh
-        # 184 * 0.1 Wh = 18.4 Wh = 0.0184 kWh
-        assert data.inverter_energy_today == pytest.approx(0.0184, rel=0.01)
-        # 100 * 0.1 Wh = 10 Wh = 0.01 kWh
-        assert data.grid_import_today == pytest.approx(0.01, rel=0.01)
+        # Daily values: raw / 10 = kWh
+        assert data.inverter_energy_today == pytest.approx(18.4, rel=0.01)
+        assert data.grid_import_today == pytest.approx(10.0, rel=0.01)
+        assert data.charge_energy_today == pytest.approx(5.0, rel=0.01)
+        assert data.discharge_energy_today == pytest.approx(3.0, rel=0.01)
+        assert data.grid_export_today == pytest.approx(15.0, rel=0.01)
+        assert data.load_energy_today == pytest.approx(20.0, rel=0.01)
+
+        # Per-PV daily values
+        assert data.pv1_energy_today == pytest.approx(10.0, rel=0.01)
+        assert data.pv2_energy_today == pytest.approx(8.0, rel=0.01)
+        assert data.pv3_energy_today == pytest.approx(0.4, rel=0.01)
+        assert data.pv_energy_today == pytest.approx(18.4, rel=0.01)  # Sum
+
+        # Lifetime values: 32-bit combined, then / 10 = kWh
+        assert data.inverter_energy_total == pytest.approx(5000.0, rel=0.01)
+        assert data.grid_import_total == pytest.approx(1500.0, rel=0.01)
+        assert data.charge_energy_total == pytest.approx(1000.0, rel=0.01)
+        assert data.discharge_energy_total == pytest.approx(800.0, rel=0.01)
+        assert data.grid_export_total == pytest.approx(2500.0, rel=0.01)
+        assert data.load_energy_total == pytest.approx(4000.0, rel=0.01)
+
+        # Per-PV lifetime values
+        assert data.pv1_energy_total == pytest.approx(1000.0, rel=0.01)
+        assert data.pv2_energy_total == pytest.approx(800.0, rel=0.01)
+        assert data.pv3_energy_total == pytest.approx(500.0, rel=0.01)
+        assert data.pv_energy_total == pytest.approx(2300.0, rel=0.01)  # Sum
 
 
 class TestBatteryData:
