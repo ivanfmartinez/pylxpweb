@@ -594,9 +594,9 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
     radiator_temperature_1=RegisterField(65, 16, ScaleFactor.SCALE_NONE),
     radiator_temperature_2=RegisterField(66, 16, ScaleFactor.SCALE_NONE),
     battery_temperature=RegisterField(67, 16, ScaleFactor.SCALE_NONE),
-    # Fault/Warning codes - same as PV_SERIES
-    inverter_fault_code=RegisterField(60, 32, ScaleFactor.SCALE_NONE),
-    inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE),
+    # Fault/Warning codes - 32-bit little-endian (L/H word pairs)
+    inverter_fault_code=RegisterField(60, 32, ScaleFactor.SCALE_NONE, little_endian=True),
+    inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE, little_endian=True),
     bms_fault_code=RegisterField(99, 16, ScaleFactor.SCALE_NONE),
     bms_warning_code=RegisterField(100, 16, ScaleFactor.SCALE_NONE),
     # Extended sensors - same as PV_SERIES
@@ -621,7 +621,7 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
     temperature_t3=RegisterField(110, 16, ScaleFactor.SCALE_10),  # 0.1°C
     temperature_t4=RegisterField(111, 16, ScaleFactor.SCALE_10),  # 0.1°C
     temperature_t5=RegisterField(112, 16, ScaleFactor.SCALE_10),  # 0.1°C
-    inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE),
+    inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE, little_endian=True),
     ac_input_type=RegisterField(77, 16, ScaleFactor.SCALE_NONE),
     parallel_config=RegisterField(113, 16, ScaleFactor.SCALE_NONE),
 )
