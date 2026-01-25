@@ -598,6 +598,10 @@ class DongleTransport(BaseTransport):
                 values = await self._read_input_registers(start, count)
                 for offset, value in enumerate(values):
                     input_registers[start + offset] = value
+                # Delay between register groups to prevent dongle overload
+                # The dongle has limited processing power and can reset connection
+                # if requests come too fast
+                await asyncio.sleep(0.2)
             except Exception as e:
                 _LOGGER.error(
                     "Failed to read register group '%s': %s",
@@ -630,6 +634,10 @@ class DongleTransport(BaseTransport):
                 values = await self._read_input_registers(start, count)
                 for offset, value in enumerate(values):
                     input_registers[start + offset] = value
+                # Delay between register groups to prevent dongle overload
+                # The dongle has limited processing power and can reset connection
+                # if requests come too fast
+                await asyncio.sleep(0.2)
             except Exception as e:
                 _LOGGER.error(
                     "Failed to read energy register group '%s': %s",
