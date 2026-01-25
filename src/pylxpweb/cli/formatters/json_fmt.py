@@ -179,7 +179,7 @@ class JSONFormatter:
         if not self._sanitize:
             return params
 
-        result = {}
+        result: dict[str, str | int] = {}
         for key, value in params.items():
             if key in ("password", "dongle_serial"):
                 result[key] = "***"
