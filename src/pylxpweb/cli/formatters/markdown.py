@@ -12,6 +12,7 @@ from pylxpweb.cli.collectors.base import (
     ComparisonResult,
     RegisterMismatch,
 )
+from pylxpweb.cli.utils.sanitize import sanitize_serial
 
 from .base import DiagnosticData
 
@@ -302,9 +303,7 @@ class MarkdownFormatter:
 
     def _sanitize_serial(self, serial: str) -> str:
         """Mask serial number if sanitization is enabled."""
-        if not self._sanitize or not serial or len(serial) < 4:
-            return serial
-        return f"{serial[:2]}{'*' * (len(serial) - 4)}{serial[-2:]}"
+        return sanitize_serial(serial, enabled=self._sanitize)
 
     def _sanitize_param(self, key: str, value: str | int) -> str:
         """Sanitize a connection parameter value."""

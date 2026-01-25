@@ -71,7 +71,7 @@ The tool generates a ZIP archive containing:
 
 ### Privacy & Sanitization
 
-**By default, serial numbers are masked** (e.g., `CE******78`) in all output files.
+**By default, serial numbers are masked** with realistic-looking replacement characters in all output files (e.g., `CE12345678` becomes `CE7B3KHN78`).
 
 To include full serial numbers:
 

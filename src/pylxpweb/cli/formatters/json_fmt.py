@@ -11,6 +11,7 @@ from datetime import datetime
 
 from pylxpweb import __version__
 from pylxpweb.cli.collectors.base import CollectionResult, ComparisonResult
+from pylxpweb.cli.utils.sanitize import sanitize_serial, sanitize_username
 
 from .base import DiagnosticData
 
@@ -170,9 +171,7 @@ class JSONFormatter:
 
     def _sanitize_serial(self, serial: str) -> str:
         """Mask serial number if sanitization is enabled."""
-        if not self._sanitize or not serial or len(serial) < 4:
-            return serial
-        return f"{serial[:2]}{'*' * (len(serial) - 4)}{serial[-2:]}"
+        return sanitize_serial(serial, enabled=self._sanitize)
 
     def _sanitize_params(self, params: dict[str, str | int]) -> dict[str, str | int]:
         """Sanitize connection parameters."""
@@ -184,18 +183,12 @@ class JSONFormatter:
             if key in ("password", "dongle_serial"):
                 result[key] = "***"
             elif key == "username":
-                result[key] = self._sanitize_username(str(value))
+                result[key] = sanitize_username(str(value), enabled=self._sanitize)
             elif "serial" in key.lower():
                 result[key] = self._sanitize_serial(str(value))
             else:
                 result[key] = value
         return result
-
-    def _sanitize_username(self, username: str) -> str:
-        """Mask username if sanitization is enabled."""
-        if not self._sanitize or len(username) <= 5:
-            return "***"
-        return f"{username[:3]}***{username[-2:]}"
 
     def _json_serializer(self, obj: object) -> str:
         """Custom JSON serializer for unsupported types."""

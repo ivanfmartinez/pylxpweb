@@ -819,8 +819,12 @@ class BatteryBankData:
         min_cell_voltage = _read_and_scale_field(input_registers, register_map.bms_min_cell_voltage)
 
         # Cell temperature data from register map (0.1°C -> °C via SCALE_10 in map)
-        max_cell_temp = _read_and_scale_field(input_registers, register_map.bms_max_cell_temperature)
-        min_cell_temp = _read_and_scale_field(input_registers, register_map.bms_min_cell_temperature)
+        max_cell_temp = _read_and_scale_field(
+            input_registers, register_map.bms_max_cell_temperature
+        )
+        min_cell_temp = _read_and_scale_field(
+            input_registers, register_map.bms_min_cell_temperature
+        )
 
         # Cycle count from register map
         cycle_count = _read_register_field(input_registers, register_map.bms_cycle_count)

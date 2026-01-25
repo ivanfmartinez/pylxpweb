@@ -10,6 +10,7 @@ from .prompts import (
     prompt_serial,
     prompt_transport,
 )
+from .sanitize import sanitize_serial, sanitize_username
 from .serial_detect import detect_serial_from_registers, parse_firmware_version
 
 __all__ = [
@@ -27,4 +28,7 @@ __all__ = [
     # Serial detection
     "detect_serial_from_registers",
     "parse_firmware_version",
+    # Sanitization
+    "sanitize_serial",
+    "sanitize_username",
 ]

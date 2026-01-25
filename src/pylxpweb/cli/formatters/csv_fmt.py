@@ -10,6 +10,7 @@ import csv
 import io
 
 from pylxpweb.cli.collectors.base import CollectionResult
+from pylxpweb.cli.utils.sanitize import sanitize_serial
 
 from .base import DiagnosticData
 
@@ -145,6 +146,4 @@ class CSVFormatter:
 
     def _sanitize_serial(self, serial: str) -> str:
         """Mask serial number if sanitization is enabled."""
-        if not self._sanitize or not serial or len(serial) < 4:
-            return serial
-        return f"{serial[:2]}{'*' * (len(serial) - 4)}{serial[-2:]}"
+        return sanitize_serial(serial, enabled=self._sanitize)

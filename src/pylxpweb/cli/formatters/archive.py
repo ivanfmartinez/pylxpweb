@@ -10,6 +10,8 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+from pylxpweb.cli.utils.sanitize import sanitize_serial
+
 from .base import DiagnosticData, OutputFormat
 from .binary import BinaryFormatter
 from .csv_fmt import CSVFormatter
@@ -199,9 +201,7 @@ class ArchiveCreator:
 
     def _sanitize_serial(self, serial: str) -> str:
         """Mask serial number if sanitization is enabled."""
-        if not self._sanitize or not serial or len(serial) < 4:
-            return serial
-        return f"{serial[:2]}{'*' * (len(serial) - 4)}{serial[-2:]}"
+        return sanitize_serial(serial, enabled=self._sanitize)
 
 
 def generate_filename(serial: str, sanitize: bool = True) -> str:
@@ -212,13 +212,8 @@ def generate_filename(serial: str, sanitize: bool = True) -> str:
         sanitize: Whether to mask serial in filename
 
     Returns:
-        Filename like "modbus_diag_CE****78_20260125_143022.zip"
+        Filename like "modbus_diag_CE7B3KHN78_20260125_143022.zip"
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    if sanitize and serial and len(serial) >= 4:
-        serial_part = f"{serial[:2]}{'*' * (len(serial) - 4)}{serial[-2:]}"
-    else:
-        serial_part = serial or "unknown"
-
+    serial_part = sanitize_serial(serial, enabled=sanitize) if serial else "unknown"
     return f"modbus_diag_{serial_part}_{timestamp}.zip"

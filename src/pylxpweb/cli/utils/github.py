@@ -9,6 +9,7 @@ import shlex
 from pathlib import Path
 
 from pylxpweb.cli.formatters.base import DiagnosticData
+from pylxpweb.cli.utils.sanitize import sanitize_serial as _sanitize_serial_impl
 
 
 def generate_issue_body(
@@ -266,6 +267,4 @@ Issue Body (copy below this line):
 
 def _sanitize_serial(serial: str, sanitize: bool) -> str:
     """Mask serial number if sanitization is enabled."""
-    if not sanitize or not serial or len(serial) < 4:
-        return serial
-    return f"{serial[:2]}{'*' * (len(serial) - 4)}{serial[-2:]}"
+    return _sanitize_serial_impl(serial, enabled=sanitize)
