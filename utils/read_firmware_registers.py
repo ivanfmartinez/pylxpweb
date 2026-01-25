@@ -66,7 +66,7 @@ async def main(host: str, serial: str) -> None:
         if 9 in regs and 10 in regs:
             v1 = regs[9]
             v2 = regs[10]
-            print(f"\nRegisters 9-10 (suspected v1/v2):")
+            print("\nRegisters 9-10 (suspected v1/v2):")
             print(f"  Reg 9:  {v1} (0x{v1:04X}) → as hex version: {v1:02X}")
             print(f"  Reg 10: {v2} (0x{v2:04X}) → as hex version: {v2:02X}")
             print(f"  Combined: {v1:02X}{v2:02X}")
@@ -74,7 +74,7 @@ async def main(host: str, serial: str) -> None:
         # Check register 19 (device type code)
         if 19 in regs:
             dt = regs[19]
-            print(f"\nRegister 19 (HOLD_DEVICE_TYPE_CODE):")
+            print("\nRegister 19 (HOLD_DEVICE_TYPE_CODE):")
             print(f"  Value: {dt} (0x{dt:04X})")
 
         # Look for values that might be the prefix

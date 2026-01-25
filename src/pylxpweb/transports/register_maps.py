@@ -620,34 +620,36 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
 )
 
 LXP_EU_ENERGY_MAP = EnergyRegisterMap(
-    # Daily energy - 16-bit singles (regs 28-37 per LXP-EU spec)
-    inverter_energy_today=RegisterField(28, 16, ScaleFactor.SCALE_10),
-    grid_import_today=RegisterField(29, 16, ScaleFactor.SCALE_10),
-    charge_energy_today=RegisterField(30, 16, ScaleFactor.SCALE_10),
-    discharge_energy_today=RegisterField(31, 16, ScaleFactor.SCALE_10),
-    eps_energy_today=RegisterField(32, 16, ScaleFactor.SCALE_10),
-    grid_export_today=RegisterField(33, 16, ScaleFactor.SCALE_10),
-    load_energy_today=RegisterField(34, 16, ScaleFactor.SCALE_10),
-    # Per-PV string daily energy not available in same locations
-    pv1_energy_today=None,
-    pv2_energy_today=None,
-    pv3_energy_today=None,
-    # Lifetime energy - 16-bit single registers (per empirical testing)
-    # NOTE: Documentation claims 32-bit pairs, but actual testing shows 16-bit.
-    inverter_energy_total=RegisterField(40, 16, ScaleFactor.SCALE_10),
-    grid_import_total=RegisterField(42, 16, ScaleFactor.SCALE_10),
-    charge_energy_total=RegisterField(44, 16, ScaleFactor.SCALE_10),
-    discharge_energy_total=RegisterField(46, 16, ScaleFactor.SCALE_10),
-    eps_energy_total=RegisterField(48, 16, ScaleFactor.SCALE_10),
-    grid_export_total=RegisterField(50, 16, ScaleFactor.SCALE_10),
-    load_energy_total=RegisterField(52, 16, ScaleFactor.SCALE_10),
-    # Per-PV string lifetime energy not available
-    pv1_energy_total=None,
-    pv2_energy_total=None,
-    pv3_energy_total=None,
+    # Daily energy - same as PV_SERIES per luxpower-ha-integration
+    # Source: https://github.com/ant0nkr/luxpower-ha-integration/blob/main/custom_components/lxp_modbus/constants/input_registers.py
+    pv1_energy_today=RegisterField(28, 16, ScaleFactor.SCALE_10),  # I_EPV1_DAY
+    pv2_energy_today=RegisterField(29, 16, ScaleFactor.SCALE_10),  # I_EPV2_DAY
+    pv3_energy_today=RegisterField(30, 16, ScaleFactor.SCALE_10),  # I_EPV3_DAY
+    inverter_energy_today=RegisterField(31, 16, ScaleFactor.SCALE_10),  # I_EINV_DAY
+    # NOTE: Swapped grid_import and load_energy to match HTTP API naming convention.
+    # HTTP API 'todayImport' = Modbus 'Etouser' (reg 37), not 'Erec' (reg 32).
+    grid_import_today=RegisterField(37, 16, ScaleFactor.SCALE_10),  # I_ETOUSER_DAY
+    charge_energy_today=RegisterField(33, 16, ScaleFactor.SCALE_10),  # I_ECHG_DAY
+    discharge_energy_today=RegisterField(34, 16, ScaleFactor.SCALE_10),  # I_EDISCHG_DAY
+    eps_energy_today=RegisterField(35, 16, ScaleFactor.SCALE_10),  # I_EEPS_DAY
+    grid_export_today=RegisterField(36, 16, ScaleFactor.SCALE_10),  # I_ETOGRID_DAY
+    load_energy_today=RegisterField(32, 16, ScaleFactor.SCALE_10),  # I_EREC_DAY (AC charge)
+    # Lifetime energy - 32-bit pairs per luxpower-ha-integration
+    # NOTE: Previous implementation incorrectly used 16-bit. LuxPower uses 32-bit pairs.
+    pv1_energy_total=RegisterField(40, 32, ScaleFactor.SCALE_10),  # I_EPV1_ALL_L/H
+    pv2_energy_total=RegisterField(42, 32, ScaleFactor.SCALE_10),  # I_EPV2_ALL_L/H
+    pv3_energy_total=RegisterField(44, 32, ScaleFactor.SCALE_10),  # I_EPV3_ALL_L/H
+    inverter_energy_total=RegisterField(46, 32, ScaleFactor.SCALE_10),  # I_EINV_ALL_L/H
+    # Swapped to match HTTP API (see daily energy note above)
+    grid_import_total=RegisterField(58, 32, ScaleFactor.SCALE_10),  # I_ETOUSER_ALL_L/H
+    charge_energy_total=RegisterField(50, 32, ScaleFactor.SCALE_10),  # I_ECHG_ALL_L/H
+    discharge_energy_total=RegisterField(52, 32, ScaleFactor.SCALE_10),  # I_EDISCHG_ALL_L/H
+    eps_energy_total=RegisterField(54, 32, ScaleFactor.SCALE_10),  # I_EEPS_ALL_L/H
+    grid_export_total=RegisterField(56, 32, ScaleFactor.SCALE_10),  # I_ETOGRID_ALL_L/H
+    load_energy_total=RegisterField(48, 32, ScaleFactor.SCALE_10),  # I_EREC_ALL_L/H (AC charge)
     # Generator energy
-    generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),
-    generator_energy_total=RegisterField(125, 16, ScaleFactor.SCALE_10),
+    generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),  # I_EGEN_DAY
+    generator_energy_total=RegisterField(125, 32, ScaleFactor.SCALE_10),  # I_EGEN_ALL_L/H
 )
 
 

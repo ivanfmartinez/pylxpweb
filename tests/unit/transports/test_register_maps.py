@@ -209,10 +209,13 @@ class TestEnergyRegisterMap:
         assert PV_SERIES_ENERGY_MAP.inverter_energy_today.address == 31
 
     def test_lxp_eu_daily_energy_16bit(self) -> None:
-        """Test LXP_EU daily energy uses 16-bit registers."""
+        """Test LXP_EU daily energy uses 16-bit registers (same layout as PV_SERIES).
+
+        Source: luxpower-ha-integration constants confirm same register layout.
+        """
         assert LXP_EU_ENERGY_MAP.inverter_energy_today is not None
         assert LXP_EU_ENERGY_MAP.inverter_energy_today.bit_width == 16
-        assert LXP_EU_ENERGY_MAP.inverter_energy_today.address == 28
+        assert LXP_EU_ENERGY_MAP.inverter_energy_today.address == 31  # Same as PV_SERIES
 
     def test_pv_series_lifetime_energy_16bit(self) -> None:
         """Test PV_SERIES lifetime energy uses 16-bit registers (empirically validated).
@@ -226,11 +229,14 @@ class TestEnergyRegisterMap:
         # Scale 0.1 = SCALE_10
         assert PV_SERIES_ENERGY_MAP.inverter_energy_total.scale_factor == ScaleFactor.SCALE_10
 
-    def test_lxp_eu_lifetime_energy_16bit(self) -> None:
-        """Test LXP_EU lifetime energy uses 16-bit 0.1 kWh format."""
+    def test_lxp_eu_lifetime_energy_32bit(self) -> None:
+        """Test LXP_EU lifetime energy uses 32-bit pairs per luxpower-ha-integration.
+
+        Source: luxpower-ha-integration uses 32-bit pairs (L/H registers).
+        """
         assert LXP_EU_ENERGY_MAP.inverter_energy_total is not None
-        assert LXP_EU_ENERGY_MAP.inverter_energy_total.bit_width == 16
-        assert LXP_EU_ENERGY_MAP.inverter_energy_total.address == 40
+        assert LXP_EU_ENERGY_MAP.inverter_energy_total.bit_width == 32  # 32-bit pairs
+        assert LXP_EU_ENERGY_MAP.inverter_energy_total.address == 46  # Same as PV_SERIES
         assert LXP_EU_ENERGY_MAP.inverter_energy_total.scale_factor == ScaleFactor.SCALE_10
 
     def test_pv_series_per_pv_energy_available(self) -> None:
@@ -256,14 +262,27 @@ class TestEnergyRegisterMap:
         assert PV_SERIES_ENERGY_MAP.pv3_energy_total is not None
         assert PV_SERIES_ENERGY_MAP.pv3_energy_total.address == 44
 
-    def test_lxp_eu_no_per_pv_energy(self) -> None:
-        """Test LXP_EU has no per-PV string energy (different register layout)."""
-        assert LXP_EU_ENERGY_MAP.pv1_energy_today is None
-        assert LXP_EU_ENERGY_MAP.pv2_energy_today is None
-        assert LXP_EU_ENERGY_MAP.pv3_energy_today is None
-        assert LXP_EU_ENERGY_MAP.pv1_energy_total is None
-        assert LXP_EU_ENERGY_MAP.pv2_energy_total is None
-        assert LXP_EU_ENERGY_MAP.pv3_energy_total is None
+    def test_lxp_eu_per_pv_energy_available(self) -> None:
+        """Test LXP_EU has per-PV string energy (same layout as PV_SERIES).
+
+        Source: luxpower-ha-integration confirms same register addresses.
+        """
+        # Daily per-PV energy
+        assert LXP_EU_ENERGY_MAP.pv1_energy_today is not None
+        assert LXP_EU_ENERGY_MAP.pv1_energy_today.address == 28
+        assert LXP_EU_ENERGY_MAP.pv2_energy_today is not None
+        assert LXP_EU_ENERGY_MAP.pv2_energy_today.address == 29
+        assert LXP_EU_ENERGY_MAP.pv3_energy_today is not None
+        assert LXP_EU_ENERGY_MAP.pv3_energy_today.address == 30
+
+        # Lifetime per-PV energy (32-bit pairs)
+        assert LXP_EU_ENERGY_MAP.pv1_energy_total is not None
+        assert LXP_EU_ENERGY_MAP.pv1_energy_total.address == 40
+        assert LXP_EU_ENERGY_MAP.pv1_energy_total.bit_width == 32
+        assert LXP_EU_ENERGY_MAP.pv2_energy_total is not None
+        assert LXP_EU_ENERGY_MAP.pv2_energy_total.address == 42
+        assert LXP_EU_ENERGY_MAP.pv3_energy_total is not None
+        assert LXP_EU_ENERGY_MAP.pv3_energy_total.address == 44
 
 
 class TestGetRegisterMap:
