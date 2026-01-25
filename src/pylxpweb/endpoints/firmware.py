@@ -75,7 +75,7 @@ class FirmwareEndpoints(BaseEndpoint):
 
         Example:
             update_info = await client.firmware.check_firmware_updates("1234567890")
-            if update_info.details.has_update():
+            if update_info.details.has_update:
                 print(f"Update available: {update_info.details.lastV1FileName}")
                 print(f"Changelog: {update_info.infoForwardUrl}")
             else:
@@ -128,9 +128,9 @@ class FirmwareEndpoints(BaseEndpoint):
 
         Example:
             status = await client.firmware.get_firmware_update_status()
-            if status.has_active_updates():
+            if status.has_active_updates:
                 for device in status.deviceInfos:
-                    if device.is_in_progress():
+                    if device.is_in_progress:
                         print(f"{device.inverterSn}: {device.updateRate}")
         """
         await self.client._ensure_authenticated()
@@ -173,7 +173,7 @@ class FirmwareEndpoints(BaseEndpoint):
 
         Example:
             eligibility = await client.firmware.check_update_eligibility("1234567890")
-            if eligibility.is_allowed():
+            if eligibility.is_allowed:
                 await client.firmware.start_firmware_update("1234567890")
             else:
                 print(f"Cannot update: {eligibility.msg}")
@@ -229,13 +229,13 @@ class FirmwareEndpoints(BaseEndpoint):
         Example:
             # Check for updates first
             update_info = await client.firmware.check_firmware_updates("1234567890")
-            if not update_info.details.has_update():
+            if not update_info.details.has_update:
                 print("No update available")
                 return
 
             # Check eligibility
             eligibility = await client.firmware.check_update_eligibility("1234567890")
-            if not eligibility.is_allowed():
+            if not eligibility.is_allowed:
                 print(f"Cannot update: {eligibility.msg}")
                 return
 

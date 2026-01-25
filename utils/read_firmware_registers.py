@@ -52,7 +52,7 @@ async def main(host: str, serial: str) -> None:
                     ascii_chars = f" '{chr(high_byte)}.'"
                 elif 32 <= low_byte <= 126:
                     ascii_chars = f" '.{chr(low_byte)}'"
-            except:
+            except (ValueError, OverflowError):
                 pass
 
             print(f"  Reg {addr:3d}: {val:5d} (0x{val:04X}){ascii_chars}")
@@ -115,7 +115,7 @@ async def main(host: str, serial: str) -> None:
                 low_byte = val & 0xFF
                 if 32 <= high_byte <= 126 and 32 <= low_byte <= 126:
                     ascii_chars = f" '{chr(high_byte)}{chr(low_byte)}'"
-            except:
+            except (ValueError, OverflowError):
                 pass
             print(f"  Input Reg {i:3d}: {val:5d} (0x{val:04X}){ascii_chars}")
 

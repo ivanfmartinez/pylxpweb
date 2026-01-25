@@ -110,13 +110,13 @@ async def test_check_firmware_updates() -> None:
                 print(f"\n⚠️ No firmware info available for {serial_display}")
                 print(f"   Device type: {result.details.deviceType}")
                 print("   (This is normal for some device types)")
-            elif result.details.has_update():
+            elif result.details.has_update:
                 print(f"\n✅ Firmware update available for {serial_display}")
                 print(f"   Current: {result.details.fwCodeBeforeUpload}")
-                if result.details.has_app_update():
+                if result.details.has_app_update:
                     print(f"   App update: v{result.details.v1} → v{result.details.lastV1}")
                     print(f"   File: {result.details.lastV1FileName}")
-                if result.details.has_parameter_update():
+                if result.details.has_parameter_update:
                     print(f"   Param update: v{result.details.v2} → v{result.details.lastV2}")
                     print(f"   File: {result.details.lastV2FileName}")
                 if result.infoForwardUrl:
@@ -165,10 +165,10 @@ async def test_get_firmware_update_status() -> None:
         print(f"   File ready: {result.fileReady}")
         print(f"   Active updates: {len(result.deviceInfos)}")
 
-        if result.has_active_updates():
+        if result.has_active_updates:
             print("\n   Devices with active updates:")
             for device_info in result.deviceInfos:
-                if device_info.is_in_progress():
+                if device_info.is_in_progress:
                     print(f"   - {device_info.inverterSn}: {device_info.updateRate}")
                     print(f"     Firmware: {device_info.firmware}")
                     print(f"     Status: {device_info.updateStatus}")
@@ -177,7 +177,7 @@ async def test_get_firmware_update_status() -> None:
         if result.deviceInfos:
             print("\n   Recent update history:")
             for device_info in result.deviceInfos:
-                if device_info.is_complete():
+                if device_info.is_complete:
                     print(f"   - {device_info.inverterSn}: {device_info.updateStatus}")
                     print(f"     Firmware: {device_info.firmware}")
                     print(f"     Completed: {device_info.stopTime}")
@@ -212,7 +212,7 @@ async def test_check_update_eligibility() -> None:
         print(f"\n✅ Update eligibility for {serial_display}:")
         print(f"   Status: {result.msg.value}")
 
-        if result.is_allowed():
+        if result.is_allowed:
             print("   ✅ Device is allowed to update")
         else:
             print(f"   ⚠️  Device cannot update: {result.msg.value}")
@@ -249,11 +249,11 @@ async def test_firmware_workflow() -> None:
             print("\n✅ Step 2: Checked for firmware updates")
             print(f"   Current firmware: {update_check.details.fwCodeBeforeUpload}")
 
-            if update_check.details.has_update():
+            if update_check.details.has_update:
                 print("   ⚠️  Update available!")
-                if update_check.details.has_app_update():
+                if update_check.details.has_app_update:
                     print(f"   - App: v{update_check.details.v1} → v{update_check.details.lastV1}")
-                if update_check.details.has_parameter_update():
+                if update_check.details.has_parameter_update:
                     print(
                         f"   - Param: v{update_check.details.v2} → v{update_check.details.lastV2}"
                     )
@@ -279,7 +279,7 @@ async def test_firmware_workflow() -> None:
         # Step 4: Check current update status
         status = await client.firmware.get_firmware_update_status()
         print("\n✅ Step 4: Checked update status")
-        print(f"   Any active updates: {status.has_active_updates()}")
+        print(f"   Any active updates: {status.has_active_updates}")
 
         # Summary
         print("\n📋 Firmware Update Workflow Summary:")
@@ -287,12 +287,12 @@ async def test_firmware_workflow() -> None:
         print(f"   Device: {serial_display}")
 
         # Handle case where update_check may be None (firmware already up to date)
-        has_update = update_check.details.has_update() if update_check else False
+        has_update = update_check.details.has_update if update_check else False
         print(f"   Update available: {'Yes' if has_update else 'No'}")
-        print(f"   Eligible to update: {'Yes' if eligibility.is_allowed() else 'No'}")
-        print(f"   Active updates: {'Yes' if status.has_active_updates() else 'No'}")
+        print(f"   Eligible to update: {'Yes' if eligibility.is_allowed else 'No'}")
+        print(f"   Active updates: {'Yes' if status.has_active_updates else 'No'}")
 
-        if has_update and eligibility.is_allowed() and not status.has_active_updates():
+        if has_update and eligibility.is_allowed and not status.has_active_updates:
             print("\n✅ All conditions met - device is ready for firmware update")
             print("   (Not starting update in test - would require user confirmation)")
             print("\n   To start update, call:")
@@ -305,7 +305,7 @@ async def test_firmware_workflow() -> None:
             print("\n⚠️  Device not ready for update")
             if not has_update:
                 print("   - No update available")
-            if not eligibility.is_allowed():
+            if not eligibility.is_allowed:
                 print(f"   - Not eligible: {eligibility.msg.value}")
-            if status.has_active_updates():
+            if status.has_active_updates:
                 print("   - Another update is in progress")

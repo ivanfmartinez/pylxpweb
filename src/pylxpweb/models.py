@@ -1064,6 +1064,7 @@ class UpdateEligibilityMessage(str, Enum):
     DEVICE_UPDATING = "deviceUpdating"
     PARALLEL_GROUP_UPDATING = "parallelGroupUpdating"
     NOT_ALLOWED_IN_PARALLEL = "notAllowedInParallel"
+    WARN_PARALLEL = "warnParallel"
 
 
 class FirmwareUpdateDetails(BaseModel):

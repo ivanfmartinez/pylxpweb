@@ -20,6 +20,7 @@ from .._firmware_update_mixin import FirmwareUpdateMixin
 from ..base import BaseDevice
 from ..models import DeviceInfo, Entity
 from ._features import (
+    DEVICE_TYPE_CODE_TO_FAMILY,
     GridType,
     InverterFamily,
     InverterFeatures,
@@ -29,9 +30,42 @@ from ._runtime_properties import InverterRuntimePropertiesMixin
 
 _LOGGER = logging.getLogger(__name__)
 
+# ============================================================================
+# Holding Register Constants for Transport Control Operations
+# ============================================================================
+# Register 21: FUNC_EN - Function enable bit field
+HOLD_FUNC_EN = 21
+FUNC_EN_BIT_EPS = 0  # EPS/Battery Backup mode
+FUNC_EN_BIT_AC_CHARGE = 7  # AC Charge enable
+FUNC_EN_BIT_STANDBY = 9  # Standby mode (power off)
+FUNC_EN_BIT_FORCED_DISCHARGE = 10  # Forced discharge
+FUNC_EN_BIT_FORCED_CHARGE = 11  # Forced charge
+FUNC_EN_BIT_PV_PRIORITY = 12  # PV charge priority
+
+# Register 110: SYS_FUNC - System function bit field
+HOLD_SYS_FUNC = 110
+SYS_FUNC_BIT_GREEN_MODE = 8  # Green/Off-Grid mode
+
+# Value registers - AC charge settings
+HOLD_AC_CHARGE_POWER = 66  # AC charge power percentage (0-100)
+HOLD_AC_CHARGE_SOC_LIMIT = 67  # AC charge SOC limit (0-100)
+
+# Value registers - SOC limits
+HOLD_ON_GRID_SOC_CUTOFF = 105  # On-grid discharge SOC cutoff (10-90)
+HOLD_OFF_GRID_SOC_CUTOFF = 106  # Off-grid discharge SOC cutoff (0-100)
+
+# Value registers - charge/discharge current
+HOLD_CHARGE_CURRENT = 101  # Max charge current (amps)
+HOLD_DISCHARGE_CURRENT = 102  # Max discharge current (amps)
+
+# Value registers - power settings
+HOLD_PV_CHARGE_POWER = 64  # PV charge power percentage (0-100)
+HOLD_DISCHARGE_POWER = 65  # Discharge power percentage (0-100)
+
 if TYPE_CHECKING:
     from pylxpweb import LuxpowerClient
     from pylxpweb.models import EnergyInfo, InverterRuntime
+    from pylxpweb.transports.protocol import InverterTransport
 
 
 class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevice):
@@ -51,6 +85,7 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         client: LuxpowerClient,
         serial_number: str,
         model: str,
+        transport: InverterTransport | None = None,
     ) -> None:
         """Initialize inverter.
 
@@ -58,17 +93,28 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             client: LuxpowerClient instance for API access
             serial_number: Inverter serial number (10-digit)
             model: Inverter model name (e.g., "FlexBOSS21", "18KPV")
+            transport: Optional transport for direct local communication
+                (Modbus TCP, WiFi dongle). When provided, data fetching
+                uses the transport instead of the HTTP API client.
         """
         super().__init__(client, serial_number, model)
 
+        # Optional transport for direct local communication
+        self._transport: InverterTransport | None = transport
+
         # Runtime data (refreshed frequently) - PRIVATE: use properties for access
+        # HTTP API returns InverterRuntime, transport returns InverterRuntimeData
         self._runtime: InverterRuntime | None = None
+        self._transport_runtime: Any | None = None  # InverterRuntimeData when using transport
 
         # Energy data (refreshed less frequently) - PRIVATE: use properties for access
+        # HTTP API returns EnergyInfo, transport returns InverterEnergyData
         self._energy: EnergyInfo | None = None
+        self._transport_energy: Any | None = None  # InverterEnergyData when using transport
 
         # Battery bank (aggregate data and individual batteries) - PRIVATE: use properties
         self._battery_bank: Any | None = None  # Will be BatteryBank object
+        self._transport_battery: Any | None = None  # BatteryBankData when using transport
 
         # Parameters (configuration registers, refreshed hourly)
         self.parameters: dict[str, Any] | None = None
@@ -125,6 +171,142 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             return True
         return (datetime.now() - cache_time) > ttl
 
+    # ============================================================================
+    # Factory Methods
+    # ============================================================================
+
+    @classmethod
+    async def from_modbus_transport(
+        cls,
+        transport: InverterTransport,
+        model: str | None = None,
+    ) -> BaseInverter:
+        """Create an inverter from a Modbus or Dongle transport.
+
+        This factory method creates a BaseInverter (or appropriate subclass)
+        that uses the transport for data fetching instead of HTTP API.
+
+        The method:
+        1. Connects to the transport (if not already connected)
+        2. Reads device type code from register 19 to determine model family
+        3. Creates appropriate inverter subclass based on family
+        4. Reads initial runtime/energy data
+
+        Args:
+            transport: Modbus TCP or WiFi dongle transport (must implement
+                InverterTransport protocol)
+            model: Optional model name override. If not provided, will be
+                determined from device type code.
+
+        Returns:
+            Configured BaseInverter (or subclass) with transport-backed data
+
+        Raises:
+            TransportConnectionError: If transport fails to connect
+            TransportReadError: If device type code cannot be read
+
+        Example:
+            >>> from pylxpweb.transports import create_modbus_transport
+            >>> transport = create_modbus_transport(
+            ...     host="192.168.1.100",
+            ...     serial="CE12345678",
+            ... )
+            >>> inverter = await BaseInverter.from_modbus_transport(transport)
+            >>> await inverter.refresh()
+            >>> print(f"SOC: {inverter.battery_soc}%")
+
+        Note:
+            Control operations (enable_quick_charge, set_ac_charge_power, etc.)
+            are not available when using transport mode, as they require the
+            HTTP API. Use transport mode for read-only monitoring.
+        """
+        # Import here to avoid circular dependency
+        from pylxpweb.devices.inverters.generic import GenericInverter
+
+        # Ensure transport is connected
+        if not transport.is_connected:
+            await transport.connect()
+
+        # Read device type code from register 19 to determine model family
+        device_type_code = 0
+        model_family = InverterFamily.UNKNOWN
+        detected_model = model
+
+        try:
+            # Read holding register 19 (HOLD_DEVICE_TYPE_CODE)
+            params = await transport.read_parameters(19, 1)
+            if 19 in params:
+                device_type_code = params[19]
+                model_family = DEVICE_TYPE_CODE_TO_FAMILY.get(
+                    device_type_code, InverterFamily.UNKNOWN
+                )
+                _LOGGER.debug(
+                    "Detected device type code %d -> family %s for %s",
+                    device_type_code,
+                    model_family.value,
+                    transport.serial,
+                )
+
+                # Set model name from family if not provided
+                if detected_model is None:
+                    if model_family == InverterFamily.PV_SERIES:
+                        detected_model = "18KPV"  # Default for PV series
+                    elif model_family == InverterFamily.SNA:
+                        detected_model = "12000XP"  # Default for SNA series
+                    elif model_family == InverterFamily.LXP_EU:
+                        detected_model = "LXP-EU"  # Default for EU series
+                    else:
+                        detected_model = "Unknown"
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to read device type code for %s: %s, using defaults",
+                transport.serial,
+                err,
+            )
+            if detected_model is None:
+                detected_model = "Unknown"
+
+        # Ensure model is always set
+        if detected_model is None:
+            detected_model = "Unknown"
+
+        # Create a placeholder client (not used for data, only required by init)
+        # In transport mode, all data comes from transport, not client
+        placeholder_client: Any = None
+
+        # Create GenericInverter with transport
+        # Note: We pass None as client since transport handles all data fetching
+        inverter = GenericInverter(
+            client=placeholder_client,
+            serial_number=transport.serial,
+            model=detected_model,
+            transport=transport,
+        )
+
+        # Set detected features
+        inverter._features.model_family = model_family
+        inverter._features.device_type_code = device_type_code
+        inverter._features_detected = True
+
+        _LOGGER.info(
+            "Created transport-backed inverter %s (model=%s, family=%s)",
+            transport.serial,
+            detected_model,
+            model_family.value,
+        )
+
+        return inverter
+
+    @property
+    def has_transport(self) -> bool:
+        """Check if this inverter uses a local transport.
+
+        Returns:
+            True if transport mode is active (Modbus/Dongle),
+            False if using HTTP API.
+        """
+        return self._transport is not None
+
     async def refresh(self, force: bool = False, include_parameters: bool = False) -> None:
         """Refresh runtime, energy, battery, and optionally parameters from API.
 
@@ -169,44 +351,92 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         self._last_refresh = datetime.now()
 
     async def _fetch_runtime(self) -> None:
-        """Fetch runtime data with caching."""
+        """Fetch runtime data with caching.
+
+        Uses transport if available, otherwise falls back to HTTP API.
+        """
         async with self._runtime_cache_lock:
             try:
-                runtime_data = await self._client.api.devices.get_inverter_runtime(
-                    self.serial_number
-                )
-                self._runtime = runtime_data
-                self._runtime_cache_time = datetime.now()
+                if self._transport is not None:
+                    # Use transport for direct local communication
+
+                    transport_data = await self._transport.read_runtime()
+                    # Store transport data directly - we'll expose via properties
+                    self._transport_runtime = transport_data
+                    self._runtime_cache_time = datetime.now()
+                else:
+                    # Use HTTP API
+                    runtime_data = await self._client.api.devices.get_inverter_runtime(
+                        self.serial_number
+                    )
+                    self._runtime = runtime_data
+                    self._runtime_cache_time = datetime.now()
             except (LuxpowerAPIError, LuxpowerConnectionError, LuxpowerDeviceError) as err:
                 # Keep existing cached data on API/connection errors
                 _LOGGER.debug("Failed to fetch runtime data for %s: %s", self.serial_number, err)
                 # Preserve existing cached data
+            except Exception as err:
+                # Catch transport errors as well
+                _LOGGER.debug("Failed to fetch runtime data for %s: %s", self.serial_number, err)
 
     async def _fetch_energy(self) -> None:
-        """Fetch energy data with caching."""
+        """Fetch energy data with caching.
+
+        Uses transport if available, otherwise falls back to HTTP API.
+        """
         async with self._energy_cache_lock:
             try:
-                energy_data = await self._client.api.devices.get_inverter_energy(self.serial_number)
-                self._energy = energy_data
-                self._energy_cache_time = datetime.now()
+                if self._transport is not None:
+                    # Use transport for direct local communication
+                    transport_data = await self._transport.read_energy()
+                    self._transport_energy = transport_data
+                    self._energy_cache_time = datetime.now()
+                else:
+                    # Use HTTP API
+                    energy_data = await self._client.api.devices.get_inverter_energy(
+                        self.serial_number
+                    )
+                    self._energy = energy_data
+                    self._energy_cache_time = datetime.now()
             except (LuxpowerAPIError, LuxpowerConnectionError, LuxpowerDeviceError) as err:
                 # Keep existing cached data on API/connection errors
                 _LOGGER.debug("Failed to fetch energy data for %s: %s", self.serial_number, err)
+            except Exception as err:
+                # Catch transport errors as well
+                _LOGGER.debug("Failed to fetch energy data for %s: %s", self.serial_number, err)
 
     async def _fetch_battery(self) -> None:
-        """Fetch battery data with caching."""
+        """Fetch battery data with caching.
+
+        Uses transport if available, otherwise falls back to HTTP API.
+        Note: Transport returns BatteryBankData with aggregate info only
+        (individual battery data requires HTTP API).
+        """
         async with self._battery_cache_lock:
             try:
-                battery_data = await self._client.api.devices.get_battery_info(self.serial_number)
+                if self._transport is not None:
+                    # Use transport for direct local communication
+                    # Transport returns aggregate BMS data from input registers
+                    transport_battery = await self._transport.read_battery()
+                    if transport_battery is not None:
+                        # Store transport battery data in battery bank format
+                        # Note: Transport doesn't have individual battery details
+                        self._transport_battery = transport_battery
+                    self._battery_cache_time = datetime.now()
+                else:
+                    # Use HTTP API for full battery details
+                    battery_data = await self._client.api.devices.get_battery_info(
+                        self.serial_number
+                    )
 
-                # Create/update battery bank with aggregate data
-                await self._update_battery_bank(battery_data)
+                    # Create/update battery bank with aggregate data
+                    await self._update_battery_bank(battery_data)
 
-                # Update individual batteries
-                if battery_data.batteryArray:
-                    await self._update_batteries(battery_data.batteryArray)
+                    # Update individual batteries
+                    if battery_data.batteryArray:
+                        await self._update_batteries(battery_data.batteryArray)
 
-                self._battery_cache_time = datetime.now()
+                    self._battery_cache_time = datetime.now()
             except (LuxpowerAPIError, LuxpowerConnectionError, LuxpowerDeviceError) as err:
                 # Keep existing cached data on API/connection errors
                 _LOGGER.debug("Failed to fetch battery data for %s: %s", self.serial_number, err)
@@ -223,40 +453,82 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
     async def _fetch_parameters(self) -> None:
         """Fetch all parameters with caching.
 
-        Fetches parameters from all 3 register ranges concurrently:
+        Uses transport if available for direct Modbus register reads,
+        otherwise fetches from HTTP API (3 concurrent register ranges).
+
+        Register ranges (HTTP mode):
         - Range 1: Registers 0-126 (base parameters)
         - Range 2: Registers 127-253 (extended parameters 1)
         - Range 3: Registers 240-366 (extended parameters 2)
         """
         async with self._parameters_cache_lock:
             try:
-                # Fetch all 3 register ranges concurrently
-                range_tasks = [
-                    self._client.api.control.read_parameters(
-                        self.serial_number, 0, MAX_REGISTERS_PER_READ
-                    ),
-                    self._client.api.control.read_parameters(
-                        self.serial_number, MAX_REGISTERS_PER_READ, MAX_REGISTERS_PER_READ
-                    ),
-                    self._client.api.control.read_parameters(
-                        self.serial_number, 240, MAX_REGISTERS_PER_READ
-                    ),
-                ]
+                if self._transport is not None:
+                    # Use transport for direct register reads
+                    # Read holding registers in groups
+                    all_parameters: dict[str, Any] = {}
 
-                responses = await asyncio.gather(*range_tasks, return_exceptions=True)
+                    # Read key register groups used by control operations
+                    # Register 21: FUNC_EN register (working modes)
+                    # Registers 66-73: AC charge settings
+                    # Registers 105-106: SOC limits
+                    # Register 110: SYS_FUNC register (green mode)
+                    register_groups = [
+                        (0, 30),  # System config + FUNC_EN
+                        (60, 30),  # Charging config
+                        (100, 20),  # Battery/SOC config
+                    ]
 
-                # Merge all parameter dictionaries
-                all_parameters: dict[str, Any] = {}
-                for response in responses:
-                    if not isinstance(response, BaseException):
-                        all_parameters.update(response.parameters)
+                    for start, count in register_groups:
+                        try:
+                            regs = await self._transport.read_parameters(start, count)
+                            # Convert register addresses to parameter names
+                            for addr, value in regs.items():
+                                # Store as reg_N for now, mapping done elsewhere
+                                all_parameters[f"reg_{addr}"] = value
+                        except Exception as err:
+                            _LOGGER.debug(
+                                "Failed to read registers %d-%d for %s: %s",
+                                start,
+                                start + count,
+                                self.serial_number,
+                                err,
+                            )
 
-                # Only update if we got at least some parameters
-                if all_parameters:
-                    self.parameters = all_parameters
-                    self._parameters_cache_time = datetime.now()
+                    if all_parameters:
+                        self.parameters = all_parameters
+                        self._parameters_cache_time = datetime.now()
+                else:
+                    # Use HTTP API for full parameter access
+                    range_tasks = [
+                        self._client.api.control.read_parameters(
+                            self.serial_number, 0, MAX_REGISTERS_PER_READ
+                        ),
+                        self._client.api.control.read_parameters(
+                            self.serial_number, MAX_REGISTERS_PER_READ, MAX_REGISTERS_PER_READ
+                        ),
+                        self._client.api.control.read_parameters(
+                            self.serial_number, 240, MAX_REGISTERS_PER_READ
+                        ),
+                    ]
+
+                    responses = await asyncio.gather(*range_tasks, return_exceptions=True)
+
+                    # Merge all parameter dictionaries
+                    all_parameters = {}
+                    for response in responses:
+                        if not isinstance(response, BaseException):
+                            all_parameters.update(response.parameters)
+
+                    # Only update if we got at least some parameters
+                    if all_parameters:
+                        self.parameters = all_parameters
+                        self._parameters_cache_time = datetime.now()
             except (LuxpowerAPIError, LuxpowerConnectionError, LuxpowerDeviceError) as err:
                 # Keep existing cached data on API/connection errors
+                _LOGGER.debug("Failed to fetch parameters for %s: %s", self.serial_number, err)
+            except Exception as err:
+                # Catch transport errors as well
                 _LOGGER.debug("Failed to fetch parameters for %s: %s", self.serial_number, err)
 
     def to_device_info(self) -> DeviceInfo:
@@ -303,9 +575,9 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         """Check if inverter has valid runtime data.
 
         Returns:
-            True if runtime data is available, False otherwise.
+            True if runtime data is available (HTTP or transport), False otherwise.
         """
-        return self._runtime is not None
+        return self._runtime is not None or self._transport_runtime is not None
 
     @property
     def power_output(self) -> float:
@@ -314,6 +586,11 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         Returns:
             Current AC power output in watts, or 0.0 if no data.
         """
+        # Check transport data first
+        if self._transport_runtime is not None:
+            return float(self._transport_runtime.inverter_power)
+
+        # Fall back to HTTP data
         if self._runtime is None:
             return 0.0
         return float(getattr(self._runtime, "pinv", 0))
@@ -328,6 +605,11 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         Returns:
             Energy produced today in kWh, or 0.0 if no data.
         """
+        # Check transport data first
+        if self._transport_energy is not None:
+            return float(self._transport_energy.pv_energy_today)
+
+        # Fall back to HTTP data
         if self._energy is None:
             return 0.0
 
@@ -343,6 +625,11 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         Returns:
             Total lifetime energy in kWh, or 0.0 if no data.
         """
+        # Check transport data first
+        if self._transport_energy is not None:
+            return float(self._transport_energy.pv_energy_total)
+
+        # Fall back to HTTP data
         if self._energy is None:
             return 0.0
 
@@ -358,6 +645,12 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         Returns:
             Battery SOC (0-100), or None if no data.
         """
+        # Check transport data first
+        if self._transport_runtime is not None:
+            # InverterRuntimeData.battery_soc is int
+            return int(self._transport_runtime.battery_soc)
+
+        # Fall back to HTTP data
         if self._runtime is None:
             return None
         return getattr(self._runtime, "soc", None)
@@ -598,13 +891,23 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             stacklevel=2,
         )
 
-        response = await self._client.api.control.read_parameters(
-            self.serial_number, start_register, point_number
-        )
-        return response.parameters
+        if self._transport is not None:
+            # Use transport for direct register reads
+            regs = await self._transport.read_parameters(start_register, point_number)
+            # Convert to named parameters (simple mapping for now)
+            return {f"reg_{addr}": value for addr, value in regs.items()}
+        else:
+            # Use HTTP API
+            response = await self._client.api.control.read_parameters(
+                self.serial_number, start_register, point_number
+            )
+            return response.parameters
 
     async def write_parameters(self, parameters: dict[int, int]) -> bool:
         """Write configuration parameters to inverter.
+
+        Uses transport for direct Modbus register writes when available,
+        otherwise falls back to HTTP API.
 
         Args:
             parameters: Dict of register address to value
@@ -616,13 +919,204 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             >>> # Set register 21 bit 9 to enable (standby off)
             >>> await inverter.write_parameters({21: 512})  # Bit 9 set
         """
-        response = await self._client.api.control.write_parameters(self.serial_number, parameters)
+        if self._transport is not None:
+            # Use transport for direct register writes
+            try:
+                success = await self._transport.write_parameters(parameters)
+                if success:
+                    self._parameters_cache_time = None
+                return success
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to write parameters via transport for %s: %s",
+                    self.serial_number,
+                    err,
+                )
+                return False
+        else:
+            # Use HTTP API
+            response = await self._client.api.control.write_parameters(
+                self.serial_number, parameters
+            )
 
-        # Invalidate parameter cache on successful write
-        if response.success:
-            self._parameters_cache_time = None
+            # Invalidate parameter cache on successful write
+            if response.success:
+                self._parameters_cache_time = None
 
-        return response.success
+            return response.success
+
+    # ============================================================================
+    # Transport Control Operations - Modbus register-level control
+    # ============================================================================
+
+    async def write_transport_bit(
+        self,
+        register: int,
+        bit: int,
+        value: bool,
+    ) -> bool:
+        """Write a single bit in a register using read-modify-write.
+
+        This method reads the current register value, modifies the specified bit,
+        and writes the new value back. Useful for FUNC_EN (register 21) and
+        SYS_FUNC (register 110) bit field operations.
+
+        Args:
+            register: Register address (e.g., 21 for FUNC_EN)
+            bit: Bit position (0-15)
+            value: True to set bit, False to clear bit
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> # Enable AC charge (register 21, bit 7)
+            >>> await inverter.write_transport_bit(21, 7, True)
+            >>> # Disable forced discharge (register 21, bit 10)
+            >>> await inverter.write_transport_bit(21, 10, False)
+
+        Note:
+            Only available in transport mode (Modbus/Dongle).
+            For HTTP mode, use the specific control methods like enable_ac_charge().
+        """
+        if self._transport is None:
+            _LOGGER.warning(
+                "write_transport_bit() only available in transport mode for %s",
+                self.serial_number,
+            )
+            return False
+
+        try:
+            # Read current register value
+            current_values = await self._transport.read_parameters(register, 1)
+            if register not in current_values:
+                _LOGGER.warning("Failed to read register %d for %s", register, self.serial_number)
+                return False
+
+            current_value = current_values[register]
+
+            # Modify the bit (set if value=True, clear if value=False)
+            new_value = current_value | (1 << bit) if value else current_value & ~(1 << bit)
+
+            # Write back if changed
+            if new_value != current_value:
+                success = await self._transport.write_parameters({register: new_value})
+                if success:
+                    _LOGGER.debug(
+                        "Set register %d bit %d to %s for %s (0x%04X -> 0x%04X)",
+                        register,
+                        bit,
+                        value,
+                        self.serial_number,
+                        current_value,
+                        new_value,
+                    )
+                    self._parameters_cache_time = None
+                return success
+            else:
+                _LOGGER.debug(
+                    "Register %d bit %d already %s for %s",
+                    register,
+                    bit,
+                    value,
+                    self.serial_number,
+                )
+                return True  # Already in desired state
+
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to write bit %d in register %d for %s: %s",
+                bit,
+                register,
+                self.serial_number,
+                err,
+            )
+            return False
+
+    async def write_transport_register(
+        self,
+        register: int,
+        value: int,
+    ) -> bool:
+        """Write a single register value via transport.
+
+        Args:
+            register: Register address
+            value: Value to write (0-65535)
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> # Set AC charge SOC limit to 95%
+            >>> await inverter.write_transport_register(67, 95)
+            >>> # Set on-grid SOC cutoff to 30%
+            >>> await inverter.write_transport_register(105, 30)
+
+        Note:
+            Only available in transport mode (Modbus/Dongle).
+        """
+        if self._transport is None:
+            _LOGGER.warning(
+                "write_transport_register() only available in transport mode for %s",
+                self.serial_number,
+            )
+            return False
+
+        try:
+            success = await self._transport.write_parameters({register: value})
+            if success:
+                _LOGGER.debug(
+                    "Wrote register %d = %d (0x%04X) for %s",
+                    register,
+                    value,
+                    value,
+                    self.serial_number,
+                )
+                self._parameters_cache_time = None
+            return success
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to write register %d for %s: %s",
+                register,
+                self.serial_number,
+                err,
+            )
+            return False
+
+    async def read_transport_register(
+        self,
+        register: int,
+    ) -> int | None:
+        """Read a single register value via transport.
+
+        Args:
+            register: Register address
+
+        Returns:
+            Register value, or None if read failed
+
+        Note:
+            Only available in transport mode (Modbus/Dongle).
+        """
+        if self._transport is None:
+            _LOGGER.warning(
+                "read_transport_register() only available in transport mode for %s",
+                self.serial_number,
+            )
+            return None
+
+        try:
+            values = await self._transport.read_parameters(register, 1)
+            return values.get(register)
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to read register %d for %s: %s",
+                register,
+                self.serial_number,
+                err,
+            )
+            return None
 
     def _get_parameter(
         self,
