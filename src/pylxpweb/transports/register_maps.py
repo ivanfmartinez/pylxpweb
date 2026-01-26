@@ -929,12 +929,30 @@ class MidboxRuntimeRegisterMap:
     gen_frequency: RegisterField | None = None  # genFreq
 
     # -------------------------------------------------------------------------
-    # Smart Port Status (0/1)
+    # Smart Port Status (0=off, 1=load, 2=ac_couple)
     # -------------------------------------------------------------------------
     smart_port_1_status: RegisterField | None = None  # smartPort1Status
     smart_port_2_status: RegisterField | None = None  # smartPort2Status
     smart_port_3_status: RegisterField | None = None  # smartPort3Status
     smart_port_4_status: RegisterField | None = None  # smartPort4Status
+
+    # -------------------------------------------------------------------------
+    # Smart Load Power Registers (W, no scaling)
+    # When port is in AC Couple mode (status=2), these show AC Couple power
+    # -------------------------------------------------------------------------
+    smart_load_1_l1_power: RegisterField | None = None  # smartLoad1L1ActivePower
+    smart_load_1_l2_power: RegisterField | None = None  # smartLoad1L2ActivePower
+    smart_load_2_l1_power: RegisterField | None = None  # smartLoad2L1ActivePower
+    smart_load_2_l2_power: RegisterField | None = None  # smartLoad2L2ActivePower
+    smart_load_3_l1_power: RegisterField | None = None  # smartLoad3L1ActivePower
+    smart_load_3_l2_power: RegisterField | None = None  # smartLoad3L2ActivePower
+    smart_load_4_l1_power: RegisterField | None = None  # smartLoad4L1ActivePower
+    smart_load_4_l2_power: RegisterField | None = None  # smartLoad4L2ActivePower
+
+    # -------------------------------------------------------------------------
+    # Hybrid Power (W, signed - total AC couple power flow)
+    # -------------------------------------------------------------------------
+    hybrid_power: RegisterField | None = None  # hybridPower
 
 
 @dataclass(frozen=True)
@@ -1001,6 +1019,16 @@ GRIDBOSS_RUNTIME_MAP = MidboxRuntimeRegisterMap(
     gen_l2_power=RegisterField(31, 16, ScaleFactor.SCALE_NONE, signed=True),
     ups_l1_power=RegisterField(32, 16, ScaleFactor.SCALE_NONE, signed=True),
     ups_l2_power=RegisterField(33, 16, ScaleFactor.SCALE_NONE, signed=True),
+    # Smart Load Power (registers 34-41, watts, signed)
+    # When port is in AC Couple mode, these show AC Couple power
+    smart_load_1_l1_power=RegisterField(34, 16, ScaleFactor.SCALE_NONE, signed=True),
+    smart_load_1_l2_power=RegisterField(35, 16, ScaleFactor.SCALE_NONE, signed=True),
+    smart_load_2_l1_power=RegisterField(36, 16, ScaleFactor.SCALE_NONE, signed=True),
+    smart_load_2_l2_power=RegisterField(37, 16, ScaleFactor.SCALE_NONE, signed=True),
+    smart_load_3_l1_power=RegisterField(38, 16, ScaleFactor.SCALE_NONE, signed=True),
+    smart_load_3_l2_power=RegisterField(39, 16, ScaleFactor.SCALE_NONE, signed=True),
+    smart_load_4_l1_power=RegisterField(40, 16, ScaleFactor.SCALE_NONE, signed=True),
+    smart_load_4_l2_power=RegisterField(41, 16, ScaleFactor.SCALE_NONE, signed=True),
     # Frequency (registers 128-130, scale /100 for Hz)
     phase_lock_freq=RegisterField(128, 16, ScaleFactor.SCALE_100),
     grid_frequency=RegisterField(129, 16, ScaleFactor.SCALE_100),

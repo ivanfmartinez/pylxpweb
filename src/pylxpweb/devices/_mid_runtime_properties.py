@@ -40,6 +40,11 @@ class MIDRuntimePropertiesMixin:
         default to 0. When a port is configured for AC Couple mode (status=2),
         we read from the Smart Load fields to get the actual power values.
 
+        For LOCAL mode (Modbus/Dongle), port status registers are not available,
+        so status defaults to 0. In this case, we check if Smart Load power is
+        non-zero and return it directly, allowing LOCAL mode users to see
+        AC Couple power without needing port status.
+
         Args:
             port: Port number (1-4)
             phase: Phase identifier ("l1" or "l2")
@@ -55,9 +60,16 @@ class MIDRuntimePropertiesMixin:
         # Check port status - 2 means AC Couple mode
         port_status = getattr(midbox, f"smartPort{port}Status", 0)
 
+        # Get Smart Load power for this port/phase
+        smart_load_power = int(getattr(midbox, f"smartLoad{port}{phase.upper()}ActivePower", 0))
+
         if port_status == 2:
-            # AC Couple mode - read from Smart Load fields (where API provides data)
-            return int(getattr(midbox, f"smartLoad{port}{phase.upper()}ActivePower", 0))
+            # AC Couple mode confirmed via HTTP API - return Smart Load power
+            return smart_load_power
+        elif port_status == 0 and smart_load_power != 0:
+            # LOCAL mode: port status not available via Modbus, but Smart Load
+            # has data - return it since AC Couple uses Smart Load fields anyway
+            return smart_load_power
         else:
             # Not in AC Couple mode - return the (likely 0) AC Couple field
             return int(getattr(midbox, f"acCouple{port}{phase.upper()}ActivePower", 0))

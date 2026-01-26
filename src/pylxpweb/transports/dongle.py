@@ -894,13 +894,13 @@ class DongleTransport(BaseTransport):
         from pylxpweb.transports.register_maps import GRIDBOSS_RUNTIME_MAP
 
         # Read holding registers in groups
-        # Group 1: Registers 0-40 (voltages, currents, power)
+        # Group 1: Registers 0-41 (voltages, currents, power, smart load power)
         # Group 2: Registers 128-131 (frequencies)
         holding_registers: dict[int, int] = {}
 
         try:
-            # Read voltages, currents, and power (registers 0-40)
-            values = await self._read_holding_registers(0, 40)
+            # Read voltages, currents, power, and smart load power (registers 0-41)
+            values = await self._read_holding_registers(0, 42)
             for offset, value in enumerate(values):
                 holding_registers[offset] = value
             await asyncio.sleep(0.2)
@@ -966,6 +966,16 @@ class DongleTransport(BaseTransport):
             "genL2ActivePower": get_value("gen_l2_power"),
             "upsL1ActivePower": get_value("ups_l1_power"),
             "upsL2ActivePower": get_value("ups_l2_power"),
+            # Smart Load Power (watts, signed)
+            # When port is in AC Couple mode, these show AC Couple power
+            "smartLoad1L1ActivePower": get_value("smart_load_1_l1_power"),
+            "smartLoad1L2ActivePower": get_value("smart_load_1_l2_power"),
+            "smartLoad2L1ActivePower": get_value("smart_load_2_l1_power"),
+            "smartLoad2L2ActivePower": get_value("smart_load_2_l2_power"),
+            "smartLoad3L1ActivePower": get_value("smart_load_3_l1_power"),
+            "smartLoad3L2ActivePower": get_value("smart_load_3_l2_power"),
+            "smartLoad4L1ActivePower": get_value("smart_load_4_l1_power"),
+            "smartLoad4L2ActivePower": get_value("smart_load_4_l2_power"),
             # Frequencies (scaled /100)
             "phaseLockFreq": get_value("phase_lock_freq"),
             "gridFreq": get_value("grid_frequency"),
