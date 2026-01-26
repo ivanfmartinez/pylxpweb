@@ -425,6 +425,38 @@ class DongleTransport(BaseTransport):
 
         return packet
 
+    async def _drain_buffer(self) -> None:
+        """Drain any pending data from the receive buffer.
+
+        The dongle may send unsolicited heartbeat packets or there may be
+        stale data from previous requests. This method clears the buffer
+        before sending a new request to ensure clean communication.
+        """
+        if not self._reader:
+            return
+
+        try:
+            # Non-blocking read to drain any pending data
+            while True:
+                try:
+                    # Very short timeout - just check if data is available
+                    junk = await asyncio.wait_for(
+                        self._reader.read(512),
+                        timeout=0.05,  # 50ms - just check for immediate data
+                    )
+                    if not junk:
+                        break
+                    _LOGGER.debug(
+                        "Drained %d bytes of pending data: %s",
+                        len(junk),
+                        junk.hex()[:50],
+                    )
+                except TimeoutError:
+                    # No pending data - good!
+                    break
+        except Exception as err:
+            _LOGGER.debug("Error draining buffer: %s", err)
+
     async def _send_receive(
         self,
         packet: bytes,
@@ -453,6 +485,9 @@ class DongleTransport(BaseTransport):
         async with self._lock:
             for attempt in range(max_retries + 1):
                 try:
+                    # Drain any pending data before sending (handles unsolicited packets)
+                    await self._drain_buffer()
+
                     # Send packet
                     self._writer.write(packet)
                     await self._writer.drain()
@@ -514,8 +549,35 @@ class DongleTransport(BaseTransport):
             raise last_error
         raise TransportReadError("Unexpected error in send/receive")
 
+    def _find_packet_start(self, data: bytes) -> int:
+        """Find the start of a valid packet in the buffer.
+
+        The dongle may send unsolicited heartbeat packets or there may be
+        leftover data from previous responses. This method searches for
+        the packet prefix (0xA1, 0x1A) to find where the actual response starts.
+
+        Args:
+            data: Buffer containing received data
+
+        Returns:
+            Index where packet starts, or -1 if not found
+        """
+        # Search for the packet prefix
+        idx = data.find(PACKET_PREFIX)
+        if idx > 0:
+            _LOGGER.debug(
+                "Found packet start at offset %d, discarding %d bytes of junk data: %s",
+                idx,
+                idx,
+                data[:idx].hex()[:50],
+            )
+        return idx
+
     def _parse_response(self, response: bytes) -> list[int]:
         """Parse a dongle response packet.
+
+        Handles cases where there may be junk data before the actual response,
+        such as unsolicited heartbeat packets from the dongle.
 
         Args:
             response: Raw response bytes
@@ -526,16 +588,21 @@ class DongleTransport(BaseTransport):
         Raises:
             TransportReadError: If response is invalid
         """
+        # Find the packet start (handle junk data before the response)
+        packet_start = self._find_packet_start(response)
+        if packet_start < 0:
+            raise TransportReadError(
+                f"No valid packet found in response ({len(response)} bytes): "
+                f"{response[:40].hex() if response else 'empty'}"
+            )
+
+        # Adjust response to start at the packet
+        response = response[packet_start:]
+
         # Minimum response: prefix(2) + version(2) + length(2) + addr(1) + func(1)
         # + dongle(10) + data_len(2) + some data
         if len(response) < 20:
             raise TransportReadError(f"Response too short: {len(response)} bytes")
-
-        # Verify prefix
-        if response[:2] != PACKET_PREFIX:
-            raise TransportReadError(
-                f"Invalid response prefix: {response[:2].hex()}, expected a11a"
-            )
 
         # Extract data length (frame_length and tcp_func available at bytes 4-6 and 7 if needed)
         data_length = struct.unpack("<H", response[18:20])[0]
@@ -543,14 +610,32 @@ class DongleTransport(BaseTransport):
         # Data starts at offset 20
         data_start = 20
         data_end = data_start + data_length - 2  # -2 for CRC
+        crc_start = data_end
+        crc_end = crc_start + 2
 
-        if data_end > len(response):
+        if crc_end > len(response):
             raise TransportReadError(
-                f"Response truncated: expected {data_end} bytes, got {len(response)}"
+                f"Response truncated: expected {crc_end} bytes, got {len(response)}"
             )
 
-        # Extract data frame
+        # Extract data frame and CRC
         data_frame = response[data_start:data_end]
+        received_crc = struct.unpack("<H", response[crc_start:crc_end])[0]
+
+        # Verify CRC to ensure data integrity
+        computed_crc = compute_crc16(data_frame)
+        if computed_crc != received_crc:
+            _LOGGER.warning(
+                "CRC mismatch: computed 0x%04X, received 0x%04X. "
+                "Data may be corrupted. Raw response: %s",
+                computed_crc,
+                received_crc,
+                response[:60].hex(),
+            )
+            raise TransportReadError(
+                f"CRC verification failed: computed 0x{computed_crc:04X}, "
+                f"received 0x{received_crc:04X}"
+            )
 
         # For read responses, data frame contains:
         # - action (1 byte)
