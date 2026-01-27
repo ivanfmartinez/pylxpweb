@@ -1196,7 +1196,7 @@ class IndividualBatteryRegisterMap:
     charge_voltage_ref: RegisterField | None = None  # Offset 2: Charge voltage ref (÷10 = V)
     charge_current_limit: RegisterField | None = None  # Offset 3: Charge limit (÷100 = A)
     discharge_current_limit: RegisterField | None = None  # Offset 4: Discharge limit (÷100 = A)
-    # Offset 5: Unknown
+    discharge_voltage_cutoff: RegisterField | None = None  # Offset 5: Discharge cutoff (÷10 = V)
     voltage: RegisterField | None = None  # Offset 6: Battery voltage (÷100 = V)
     current: RegisterField | None = None  # Offset 7: Current (÷10 = A, signed)
     soc_soh_packed: RegisterField | None = None  # Offset 8: SOC (low byte) / SOH (high byte)
@@ -1225,6 +1225,7 @@ INDIVIDUAL_BATTERY_MAP = IndividualBatteryRegisterMap(
     charge_voltage_ref=RegisterField(2, 16, ScaleFactor.SCALE_10),  # ÷10 = V
     charge_current_limit=RegisterField(3, 16, ScaleFactor.SCALE_100),  # ÷100 = A
     discharge_current_limit=RegisterField(4, 16, ScaleFactor.SCALE_100),  # ÷100 = A
+    discharge_voltage_cutoff=RegisterField(5, 16, ScaleFactor.SCALE_10),  # ÷10 = V
     voltage=RegisterField(6, 16, ScaleFactor.SCALE_100),  # ÷100 = V
     current=RegisterField(7, 16, ScaleFactor.SCALE_10, signed=True),  # ÷10 = A
     soc_soh_packed=RegisterField(8, 16, ScaleFactor.SCALE_NONE),  # Packed: low=SOC, high=SOH

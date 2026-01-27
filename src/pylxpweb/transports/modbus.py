@@ -23,6 +23,13 @@ from typing import TYPE_CHECKING
 
 from pymodbus.exceptions import ModbusIOException
 
+from ._register_readers import (
+    is_midbox_device,
+    read_device_type_async,
+    read_firmware_version_async,
+    read_parallel_config_async,
+    read_serial_number_async,
+)
 from .capabilities import MODBUS_CAPABILITIES, TransportCapabilities
 from .data import (
     BatteryBankData,
@@ -47,10 +54,6 @@ if TYPE_CHECKING:
         RuntimeRegisterMap,
     )
 
-# Device type codes read from register 19
-DEVICE_TYPE_REGISTER = 19
-DEVICE_TYPE_MIDBOX = 50  # GridBOSS / MID device
-
 _LOGGER = logging.getLogger(__name__)
 
 # Register group definitions for efficient reading
@@ -62,18 +65,6 @@ INPUT_REGISTER_GROUPS = {
     "temperatures": (64, 16),  # Registers 64-79: Temperatures, currents, fault history
     "bms_data": (80, 33),  # Registers 80-112: BMS passthrough data (Yippy's docs)
 }
-
-HOLD_REGISTER_GROUPS = {
-    "system": (0, 25),  # Registers 0-24: System config
-    "grid_protection": (25, 35),  # Registers 25-59: Grid protection
-    "charging": (60, 30),  # Registers 60-89: Charging config
-    "battery": (90, 40),  # Registers 90-129: Battery config
-}
-
-# Serial number is stored in input registers 115-119 (5 registers, 10 ASCII chars)
-# Each register contains 2 ASCII characters: low byte = char[0], high byte = char[1]
-SERIAL_NUMBER_START_REGISTER = 115
-SERIAL_NUMBER_REGISTER_COUNT = 5
 
 
 class ModbusTransport(BaseTransport):
@@ -721,89 +712,21 @@ class ModbusTransport(BaseTransport):
         The serial number is stored as 10 ASCII characters across 5 registers.
         Each register contains 2 characters: low byte = char[0], high byte = char[1].
 
-        This can be used to:
-        - Validate the user-entered serial matches the actual device
-        - Auto-discover the serial during setup
-        - Detect cable swaps in multi-inverter setups
-
         Returns:
             10-character serial number string (e.g., "BA12345678")
 
         Raises:
             TransportReadError: If read operation fails
-
-        Example:
-            >>> transport = ModbusTransport(host="192.168.1.100", serial="")
-            >>> await transport.connect()
-            >>> actual_serial = await transport.read_serial_number()
-            >>> print(f"Connected to inverter: {actual_serial}")
         """
-        values = await self._read_input_registers(
-            SERIAL_NUMBER_START_REGISTER, SERIAL_NUMBER_REGISTER_COUNT
-        )
-
-        # Decode ASCII characters from register values
-        chars: list[str] = []
-        for value in values:
-            low_byte = value & 0xFF
-            high_byte = (value >> 8) & 0xFF
-            # Filter out non-printable characters
-            if 32 <= low_byte <= 126:
-                chars.append(chr(low_byte))
-            if 32 <= high_byte <= 126:
-                chars.append(chr(high_byte))
-
-        serial = "".join(chars)
-        _LOGGER.debug("Read serial number from Modbus: %s", serial)
-        return serial
+        return await read_serial_number_async(self._read_input_registers, self._serial)
 
     async def read_firmware_version(self) -> str:
         """Read full firmware version code from holding registers 7-10.
 
-        The firmware information is stored in a specific format:
-        - Registers 7-8: Firmware prefix as byte-swapped ASCII (e.g., "FAAB")
-        - Registers 9-10: Version bytes with special encoding
-
-        Byte layout discovered via diagnostic register reading:
-        - Reg 7: 0x4146 → low byte 'F', high byte 'A' → byte-swapped = "FA"
-        - Reg 8: 0x4241 → low byte 'A', high byte 'B' → byte-swapped = "AB"
-        - Reg 9: v1 is in high byte (e.g., 0x2503 → v1 = 0x25 = 37)
-        - Reg 10: v2 is in low byte (e.g., 0x0125 → v2 = 0x25 = 37)
-
-        The web API returns fwCode like "FAAB-2525" where:
-        - "FAAB" is the device standard/prefix from registers 7-8
-        - "2525" is {v1:02X}{v2:02X} (hex-encoded version bytes)
-
         Returns:
-            Full firmware code string (e.g., "FAAB-2525")
-            Returns empty string if read fails.
+            Full firmware code string (e.g., "FAAB-2525") or empty string
         """
-        try:
-            # Read holding registers 7-10 (prefix + version)
-            regs = await self._read_holding_registers(7, 4)
-            if len(regs) >= 4:
-                # Extract firmware prefix from registers 7-8 (byte-swapped ASCII)
-                # Each register has low byte first, high byte second
-                prefix_chars = [
-                    chr(regs[0] & 0xFF),  # Reg 7 low byte
-                    chr((regs[0] >> 8) & 0xFF),  # Reg 7 high byte
-                    chr(regs[1] & 0xFF),  # Reg 8 low byte
-                    chr((regs[1] >> 8) & 0xFF),  # Reg 8 high byte
-                ]
-                prefix = "".join(prefix_chars)
-
-                # Extract version bytes with special encoding
-                # v1 is the HIGH byte of register 9
-                # v2 is the LOW byte of register 10
-                v1 = (regs[2] >> 8) & 0xFF  # High byte of register 9
-                v2 = regs[3] & 0xFF  # Low byte of register 10
-
-                firmware = f"{prefix}-{v1:02X}{v2:02X}"
-                _LOGGER.debug("Read firmware version: %s", firmware)
-                return firmware
-        except Exception as err:
-            _LOGGER.debug("Failed to read firmware version: %s", err)
-        return ""
+        return await read_firmware_version_async(self._read_holding_registers)
 
     async def validate_serial(self, expected_serial: str) -> bool:
         """Validate that the connected inverter matches the expected serial.
@@ -832,9 +755,6 @@ class ModbusTransport(BaseTransport):
     async def read_device_type(self) -> int:
         """Read device type code from register 19.
 
-        This can be used to detect whether the connected device is an
-        inverter or a MID/GridBOSS device.
-
         Known device type codes:
         - 50: MID/GridBOSS (Microgrid Interconnect Device)
         - 54: SNA Series
@@ -847,36 +767,14 @@ class ModbusTransport(BaseTransport):
         Raises:
             TransportReadError: If read operation fails
         """
-        # Read register 19 which contains the device type code
-        # Use holding register read (function 0x03) as this is a parameter
-        values = await self._read_holding_registers(DEVICE_TYPE_REGISTER, 1)
-        if not values:
-            raise TransportReadError("Failed to read device type register")
-        return values[0]
+        return await read_device_type_async(self._read_holding_registers)
 
     def is_midbox_device(self, device_type_code: int) -> bool:
-        """Check if device type code indicates a MID/GridBOSS device.
-
-        Args:
-            device_type_code: Device type code from read_device_type()
-
-        Returns:
-            True if device is a MID/GridBOSS, False for inverters
-        """
-        return device_type_code == DEVICE_TYPE_MIDBOX
+        """Check if device type code indicates a MID/GridBOSS device."""
+        return is_midbox_device(device_type_code)
 
     async def read_parallel_config(self) -> int:
         """Read parallel configuration from input register 113.
-
-        The parallel config register contains packed information:
-        - Bits 0-1: Master/slave role (0=standalone, 1=master, 2=slave, 3=3-phase master)
-        - Bits 2-3: Phase assignment (0=R, 1=S, 2=T)
-        - Bits 8-15: Parallel group number (0=standalone, 1-255=group number)
-
-        Example: Value 0x0205 (517 decimal) means:
-        - Master/slave = 1 (master)
-        - Phase = 1 (S)
-        - Parallel number = 2 (group B)
 
         Returns:
             Raw 16-bit value with packed parallel config, or 0 if read fails.
@@ -884,14 +782,7 @@ class ModbusTransport(BaseTransport):
         Raises:
             TransportReadError: If read operation fails
         """
-        try:
-            values = await self._read_input_registers(113, 1)
-            if values:
-                return values[0]
-        except Exception as e:
-            _LOGGER.debug("Failed to read parallel config register 113: %s", e)
-            raise TransportReadError(f"Failed to read parallel config: {e}") from e
-        return 0
+        return await read_parallel_config_async(self._read_input_registers, self._serial)
 
     async def read_midbox_runtime(self) -> MidboxRuntimeData:
         """Read runtime data from a MID/GridBOSS device.

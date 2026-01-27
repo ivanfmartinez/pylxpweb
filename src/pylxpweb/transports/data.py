@@ -709,6 +709,7 @@ class BatteryData:
     charge_voltage_ref: float = 0.0  # V (BMS charge voltage reference)
     charge_current_limit: float = 0.0  # A (Max charge current from BMS)
     discharge_current_limit: float = 0.0  # A (Max discharge current from BMS)
+    discharge_voltage_cutoff: float = 0.0  # V (BMS discharge cutoff voltage)
 
     # Model/firmware info
     # Note: Model is only available via Web API (batBmsModelText field).
@@ -854,6 +855,7 @@ class BatteryData:
             charge_voltage_ref=read_field(battery_map.charge_voltage_ref),
             charge_current_limit=read_field(battery_map.charge_current_limit),
             discharge_current_limit=read_field(battery_map.discharge_current_limit),
+            discharge_voltage_cutoff=read_field(battery_map.discharge_voltage_cutoff),
             firmware_version=firmware_version,
             status=status,
         )
