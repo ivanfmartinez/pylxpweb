@@ -353,6 +353,8 @@ REGISTER_TO_PARAM_KEYS: dict[int, list[str]] = {
     150: ["HOLD_EQUALIZATION_PERIOD"],
     160: ["HOLD_AC_CHARGE_START_BATTERY_SOC"],
     190: ["HOLD_P2"],
+    # System charge limit (verified via live testing 2026-01-27)
+    227: ["HOLD_SYSTEM_CHARGE_SOC_LIMIT"],
 }
 
 # Reverse mapping: API Parameter Key → Register (for 18KPV)
