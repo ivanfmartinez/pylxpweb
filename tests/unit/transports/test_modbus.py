@@ -350,6 +350,7 @@ class TestModbusRegisterReading:
             mock_response = MagicMock()
             mock_response.isError.return_value = False
 
+            mock_client.write_register = AsyncMock(return_value=mock_response)
             mock_client.write_registers = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
 
@@ -357,6 +358,7 @@ class TestModbusRegisterReading:
             result = await transport.write_parameters({0: 100, 1: 200})
 
             assert result is True
+            # Multiple consecutive registers use FC16 (write_registers)
             mock_client.write_registers.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -386,6 +388,7 @@ class TestModbusRegisterReading:
             mock_response = MagicMock()
             mock_response.isError.return_value = True
 
+            mock_client.write_register = AsyncMock(return_value=mock_response)
             mock_client.write_registers = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
 
@@ -409,6 +412,7 @@ class TestModbusRegisterReading:
             mock_response = MagicMock()
             mock_response.isError.return_value = False
 
+            mock_client.write_register = AsyncMock(return_value=mock_response)
             mock_client.write_registers = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
 
@@ -439,17 +443,19 @@ class TestModbusRegisterReading:
             mock_response = MagicMock()
             mock_response.isError.return_value = False
 
+            mock_client.write_register = AsyncMock(return_value=mock_response)
             mock_client.write_registers = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
 
             await transport.connect()
 
             # Write non-consecutive addresses - should result in multiple calls
+            # Single registers use FC6 (write_register), not FC16 (write_registers)
             result = await transport.write_parameters({0: 100, 5: 500, 10: 1000})
             assert result is True
 
-            # Should be called 3 times (one for each non-consecutive address)
-            assert mock_client.write_registers.await_count == 3
+            # Should be called 3 times (one for each non-consecutive single register)
+            assert mock_client.write_register.await_count == 3
 
     @pytest.mark.asyncio
     async def test_async_context_manager(self) -> None:

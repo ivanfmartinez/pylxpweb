@@ -406,12 +406,20 @@ class ModbusTransport(BaseTransport):
 
         async with self._lock:
             try:
-                # Let pymodbus handle timeout internally
-                result = await self._client.write_registers(
-                    address=address,
-                    values=values,
-                    device_id=self._unit_id,
-                )
+                # Use FC6 (write_register) for single register, FC16 (write_registers) for multiple
+                # EG4/LuxPower inverters only support FC6 for single register writes
+                if len(values) == 1:
+                    result = await self._client.write_register(
+                        address=address,
+                        value=values[0],
+                        device_id=self._unit_id,
+                    )
+                else:
+                    result = await self._client.write_registers(
+                        address=address,
+                        values=values,
+                        device_id=self._unit_id,
+                    )
 
                 if result.isError():
                     _LOGGER.error(
