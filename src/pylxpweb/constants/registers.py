@@ -49,7 +49,7 @@ HOLD_BAT_VOLT_MIN_DISCHG = 102  # Battery min discharge voltage (V, /100)
 HOLD_MAX_CHG_CURR = 103  # Max charge current (A, /10)
 HOLD_MAX_DISCHG_CURR = 104  # Max discharge current (A, /10)
 HOLD_DISCHG_CUT_OFF_SOC_EOD = 105  # On-grid discharge cutoff SOC (10-90%)
-HOLD_SOC_LOW_LIMIT_EPS_DISCHG = 106  # Off-grid SOC low limit (0-100%)
+HOLD_SOC_LOW_LIMIT_EPS_DISCHG = 125  # Off-grid SOC low limit (0-100%) - verified 2026-01-27
 
 # Grid Protection Parameters
 HOLD_GRID_VOLT_HIGH_1 = 25  # Grid voltage high limit 1 (V, /10)
@@ -350,6 +350,7 @@ REGISTER_TO_PARAM_KEYS: dict[int, list[str]] = {
         "BIT_GENERATOR_CHARGE_TYPE",
     ],
     # Additional verified registers
+    125: ["HOLD_SOC_LOW_LIMIT_EPS_DISCHG"],  # Off-grid SOC limit (verified 2026-01-27)
     150: ["HOLD_EQUALIZATION_PERIOD"],
     160: ["HOLD_AC_CHARGE_START_BATTERY_SOC"],
     190: ["HOLD_P2"],
