@@ -806,8 +806,8 @@ class ModbusTransport(BaseTransport):
     async def read_midbox_runtime(self) -> MidboxRuntimeData:
         """Read runtime data from a MID/GridBOSS device.
 
-        MID devices use HOLDING registers (function 0x03) for runtime data,
-        unlike inverters which use INPUT registers (function 0x04).
+        GridBOSS devices use INPUT registers (function 0x04) for runtime data,
+        with the same register layout as inverters.
 
         Returns:
             MidboxRuntimeData with all values properly scaled:
@@ -821,24 +821,24 @@ class ModbusTransport(BaseTransport):
         """
         from pylxpweb.transports.register_maps import GRIDBOSS_RUNTIME_MAP
 
-        # Read holding registers in groups
+        # Read INPUT registers (same as inverters)
         # Group 1: Registers 0-41 (voltages, currents, power, smart load power)
         # Group 2: Registers 128-131 (frequencies)
-        holding_registers: dict[int, int] = {}
+        input_registers: dict[int, int] = {}
 
         try:
             # Read voltages, currents, power, and smart load power (registers 0-41)
-            values = await self._read_holding_registers(0, 42)
+            values = await self._read_input_registers(0, 42)
             for offset, value in enumerate(values):
-                holding_registers[offset] = value
+                input_registers[offset] = value
 
             # Read frequencies (registers 128-131)
-            freq_values = await self._read_holding_registers(128, 4)
+            freq_values = await self._read_input_registers(128, 4)
             for offset, value in enumerate(freq_values):
-                holding_registers[128 + offset] = value
+                input_registers[128 + offset] = value
 
         except Exception as e:
-            _LOGGER.error("Failed to read MID holding registers: %s", e)
+            _LOGGER.error("Failed to read MID input registers: %s", e)
             raise TransportReadError(f"Failed to read MID registers: {e}") from e
 
-        return MidboxRuntimeData.from_modbus_registers(holding_registers, GRIDBOSS_RUNTIME_MAP)
+        return MidboxRuntimeData.from_modbus_registers(input_registers, GRIDBOSS_RUNTIME_MAP)
