@@ -167,7 +167,10 @@ class MIDDevice(FirmwareUpdateMixin, MIDRuntimePropertiesMixin, BaseDevice):
                 # read_midbox_runtime is implemented by ModbusTcpTransport and DongleTransport
                 # but not part of the generic InverterTransport protocol
                 read_midbox = self._transport.read_midbox_runtime
-                transport_data: dict[str, float | int] = await read_midbox()
+                runtime_data = await read_midbox()
+
+                # MidboxRuntimeData has to_dict() for backward compatibility
+                transport_data: dict[str, float | int] = runtime_data.to_dict()
 
                 # Convert transport dict to MidboxRuntime model
                 self._runtime = self._create_runtime_from_transport(transport_data)
