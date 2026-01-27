@@ -7,7 +7,7 @@ LuxpowerClient for cloud API communication.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pylxpweb.exceptions import (
     LuxpowerAPIError,
@@ -326,4 +326,50 @@ class HTTPTransport(BaseTransport):
             _LOGGER.error("Failed to write parameters for %s: %s", self._serial, err)
             raise TransportWriteError(
                 f"Failed to write parameters for {self._serial}: {err}"
+            ) from err
+
+    async def read_named_parameters(
+        self,
+        start_address: int,
+        count: int,
+    ) -> dict[str, Any]:
+        """Read configuration parameters as named key-value pairs.
+
+        This HTTP implementation is optimized to use the server's named
+        parameter responses directly, avoiding the need for local mapping.
+
+        Args:
+            start_address: Starting register address
+            count: Number of registers to read (max 127)
+
+        Returns:
+            Dict mapping parameter name to value. The EG4 server returns
+            parameter names like "FUNC_EPS_EN", "HOLD_AC_CHARGE_POWER_CMD", etc.
+
+        Raises:
+            TransportReadError: If API call fails
+            TransportTimeoutError: If request times out
+        """
+        self._ensure_connected()
+
+        try:
+            response = await self._client.api.control.read_parameters(
+                self._serial,
+                start_register=start_address,
+                point_number=min(count, 127),
+            )
+
+            # Return the server's named parameters directly
+            # The .parameters property excludes metadata fields
+            return dict(response.parameters)
+
+        except TimeoutError as err:
+            _LOGGER.error("Timeout reading named parameters for %s", self._serial)
+            raise TransportTimeoutError(
+                f"Timeout reading named parameters for {self._serial}"
+            ) from err
+        except (LuxpowerAPIError, LuxpowerDeviceError, LuxpowerConnectionError) as err:
+            _LOGGER.error("Failed to read named parameters for %s: %s", self._serial, err)
+            raise TransportReadError(
+                f"Failed to read named parameters for {self._serial}: {err}"
             ) from err

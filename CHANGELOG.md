@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.42] - 2026-01-27
+
+### Changed
+
+- **Unified Register Mappings**: Removed `_18KPV` suffix from mapping constants since register mappings are identical across all device families (18kPV, FlexBOSS21, SNA, LXP-EU)
+  - `REGISTER_TO_PARAM_KEYS_18KPV` → `REGISTER_TO_PARAM_KEYS`
+  - `PARAM_KEY_TO_REGISTER_18KPV` → `PARAM_KEY_TO_REGISTER`
+  - `REGISTER_STATS_18KPV` → `REGISTER_STATS`
+  - Device-specific naming differences (e.g., `HOLD_COM_ADDR` vs `HOLD_MODBUS_ADDRESS`) handled by alias system
+
+### Fixed
+
+- **Register Mapping Corrections** (validated against live hardware):
+  - Register 21: Fixed overflow - reduced from 27 to 16 bit fields (max for 16-bit register)
+  - Register 22: Corrected to FUNC_LSP_* bit fields (not HOLD_START_PV_VOLT)
+  - Register 26: Removed invalid mixed HOLD value, retained bit fields only
+  - Register 110: Swapped bits 5/6 (FUNC_BUZZER_EN/FUNC_TAKE_LOAD_TOGETHER)
+  - Register 19: Changed from mixed bit field to single `HOLD_DEVICE_TYPE_CODE`
+
+- **Bit Field Write Safety**: Changed from warning to `ValueError` when bit field mapping is inconsistent - prevents accidental writes to wrong registers
+
 ## [0.5.41] - 2026-01-27
 
 ### Changed

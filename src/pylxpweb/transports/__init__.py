@@ -75,12 +75,15 @@ from .exceptions import (
     UnsupportedOperationError,
 )
 from .factory import (
+    ConnectionType,
     create_dongle_transport,
     create_http_transport,
     create_modbus_transport,
+    create_transport,
     create_transport_from_config,
 )
 from .http import HTTPTransport
+from .hybrid import HybridTransport
 from .modbus import ModbusTransport
 from .protocol import BaseTransport, InverterTransport
 from .register_maps import (
@@ -96,7 +99,10 @@ from .register_maps import (
 )
 
 __all__ = [
-    # Factory functions (recommended)
+    # Unified factory (recommended)
+    "create_transport",
+    "ConnectionType",
+    # Legacy factory functions
     "create_http_transport",
     "create_modbus_transport",
     "create_dongle_transport",
@@ -104,6 +110,7 @@ __all__ = [
     # Configuration
     "TransportConfig",
     "TransportType",
+    "AttachResult",
     # Protocol
     "InverterTransport",
     "BaseTransport",
@@ -111,10 +118,7 @@ __all__ = [
     "HTTPTransport",
     "ModbusTransport",
     "DongleTransport",
-    # Configuration (for hybrid mode)
-    "TransportType",
-    "TransportConfig",
-    "AttachResult",
+    "HybridTransport",
     # Discovery utilities
     "DeviceDiscoveryInfo",
     "HOLD_DEVICE_TYPE_CODE",

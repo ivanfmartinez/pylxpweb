@@ -477,12 +477,18 @@ class TestDataHelperFunctions:
         result = _read_register_field({0: 0x8000, 1: 0x0000}, field)
         assert result == -2147483648
 
-    def test_read_and_scale_field_none_returns_default(self) -> None:
-        """Test _read_and_scale_field returns default when field is None."""
+    def test_read_and_scale_field_none_returns_none(self) -> None:
+        """Test _read_and_scale_field returns None when field is None.
+
+        When field_def is None (field not defined for this device), the function
+        returns None to indicate data is unavailable. This allows Home Assistant
+        to show "unavailable" state rather than recording false values.
+        See: eg4_web_monitor issue #91
+        """
         from pylxpweb.transports.data import _read_and_scale_field
 
-        result = _read_and_scale_field({0: 100}, None, default=99.5)
-        assert result == 99.5
+        result = _read_and_scale_field({0: 100}, None)
+        assert result is None
 
     def test_clamp_percentage_negative_value(self) -> None:
         """Test _clamp_percentage clamps negative values to 0."""
@@ -510,8 +516,15 @@ class TestDataHelperFunctions:
 class TestEnergyDataEdgeCases:
     """Tests for InverterEnergyData edge cases."""
 
-    def test_energy_data_none_field_returns_zero(self) -> None:
-        """Test energy data parsing handles None fields gracefully."""
+    def test_energy_data_none_field_returns_none(self) -> None:
+        """Test energy data parsing returns None for unavailable fields.
+
+        When register fields are not defined in the map (None) or not present
+        in the registers dict, the resulting data should be None to indicate
+        data is unavailable. This allows Home Assistant to show "unavailable"
+        state rather than recording false zero values in history graphs.
+        See: eg4_web_monitor issue #91
+        """
         from pylxpweb.transports.data import InverterEnergyData
         from pylxpweb.transports.register_maps import EnergyRegisterMap
 
@@ -519,15 +532,15 @@ class TestEnergyDataEdgeCases:
         # will test the None field code paths
         sparse_map = EnergyRegisterMap()
 
-        # All values should default to 0.0 when fields are None
+        # All values should be None when fields are not defined
         result = InverterEnergyData.from_modbus_registers({}, sparse_map)
 
-        assert result.pv_energy_today == 0.0
-        assert result.pv_energy_total == 0.0
-        assert result.charge_energy_today == 0.0
-        assert result.discharge_energy_today == 0.0
-        assert result.inverter_energy_today == 0.0
-        assert result.inverter_energy_total == 0.0
+        assert result.pv_energy_today is None
+        assert result.pv_energy_total is None
+        assert result.charge_energy_today is None
+        assert result.discharge_energy_today is None
+        assert result.inverter_energy_today is None
+        assert result.inverter_energy_total is None
 
 
 class TestExtendedSensors:

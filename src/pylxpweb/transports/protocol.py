@@ -7,11 +7,14 @@ implementations must follow. Using Protocol allows for structural subtyping
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
+import logging
+from typing import TYPE_CHECKING, Any, Protocol, Self, runtime_checkable
 
 if TYPE_CHECKING:
     from .capabilities import TransportCapabilities
     from .data import BatteryBankData, InverterEnergyData, InverterRuntimeData
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -146,6 +149,44 @@ class InverterTransport(Protocol):
         """
         ...
 
+    async def read_named_parameters(
+        self,
+        start_address: int,
+        count: int,
+    ) -> dict[str, Any]:
+        """Read configuration parameters as named key-value pairs.
+
+        Args:
+            start_address: Starting register address
+            count: Number of registers to read
+
+        Returns:
+            Dict mapping parameter name to value
+
+        Raises:
+            TransportReadError: If read operation fails
+            TransportConnectionError: If not connected
+        """
+        ...
+
+    async def write_named_parameters(
+        self,
+        parameters: dict[str, Any],
+    ) -> bool:
+        """Write configuration parameters using named keys.
+
+        Args:
+            parameters: Dict mapping parameter name to value
+
+        Returns:
+            True if write succeeded
+
+        Raises:
+            TransportWriteError: If write operation fails
+            TransportConnectionError: If not connected
+        """
+        ...
+
 
 class BaseTransport:
     """Base class providing common transport functionality.
@@ -203,6 +244,21 @@ class BaseTransport:
         """Close connection. Must be implemented by subclasses."""
         raise NotImplementedError
 
+    async def read_parameters(
+        self,
+        start_address: int,
+        count: int,
+    ) -> dict[int, int]:
+        """Read configuration parameters. Must be implemented by subclasses."""
+        raise NotImplementedError
+
+    async def write_parameters(
+        self,
+        parameters: dict[int, int],
+    ) -> bool:
+        """Write configuration parameters. Must be implemented by subclasses."""
+        raise NotImplementedError
+
     def _ensure_connected(self) -> None:
         """Ensure transport is connected.
 
@@ -215,3 +271,189 @@ class BaseTransport:
             raise TransportConnectionError(
                 f"Transport not connected for inverter {self._serial}. Call connect() first."
             )
+
+    # -------------------------------------------------------------------------
+    # Named Parameter Methods (Transport-Agnostic)
+    # -------------------------------------------------------------------------
+    # These methods provide a consistent API for reading/writing parameters
+    # by name, regardless of whether using HTTP, Modbus, or Hybrid transport.
+    # The library handles all register-to-parameter mapping internally.
+
+    def _get_inverter_family(self) -> str | None:
+        """Get the inverter family for this transport.
+
+        Subclasses that support family-specific parameter mapping (Modbus, Dongle)
+        should set self._inverter_family in their __init__.
+
+        Returns:
+            Inverter family string (e.g., "PV_SERIES", "SNA") or None if not set.
+        """
+        family = getattr(self, "_inverter_family", None)
+        if family is None:
+            return None
+        # Handle both InverterFamily enum and string values
+        if hasattr(family, "value"):
+            return str(family.value)
+        return str(family)
+
+    def _is_bit_field_register(self, param_keys: list[str]) -> bool:
+        """Check if parameter keys represent a bit field register.
+
+        Bit field registers contain multiple boolean parameters packed into
+        a single 16-bit value, where each bit represents a separate parameter.
+        These are identified by FUNC_* and BIT_* prefixes.
+
+        Args:
+            param_keys: List of parameter key names for a register
+
+        Returns:
+            True if this is a bit field register
+        """
+        return len(param_keys) > 1 and all(
+            k.startswith(("FUNC_", "BIT_")) for k in param_keys
+        )
+
+    async def read_named_parameters(
+        self,
+        start_address: int,
+        count: int,
+    ) -> dict[str, Any]:
+        """Read configuration parameters and return as named key-value pairs.
+
+        This method provides transport-agnostic parameter access. For HTTP,
+        the server returns named parameters directly. For Modbus/Dongle,
+        the library maps register addresses to parameter names using the
+        appropriate mapping for the inverter family.
+
+        Args:
+            start_address: Starting register address
+            count: Number of registers to read
+
+        Returns:
+            Dict mapping parameter name to value. Values are typed appropriately:
+            - Boolean for bit fields (FUNC_*, BIT_*)
+            - String for serial numbers, firmware versions
+            - Integer for most other parameters
+
+        Raises:
+            TransportReadError: If read operation fails
+            TransportConnectionError: If not connected
+
+        Example:
+            params = await transport.read_named_parameters(21, 1)
+            # Returns: {"FUNC_EPS_EN": True, "FUNC_AC_CHARGE": False, ...}
+
+            params = await transport.read_named_parameters(66, 2)
+            # Returns: {"HOLD_AC_CHARGE_POWER_CMD": 50, "HOLD_AC_CHARGE_SOC_LIMIT": 95}
+        """
+        from pylxpweb.constants.registers import get_register_to_param_mapping
+
+        # Get family-specific register mapping
+        family = self._get_inverter_family()
+        register_mapping = get_register_to_param_mapping(family)
+
+        raw_params = await self.read_parameters(start_address, count)
+        result: dict[str, Any] = {}
+
+        for addr, value in raw_params.items():
+            param_keys = register_mapping.get(addr)
+            if not param_keys:
+                result[str(addr)] = value
+                continue
+
+            if self._is_bit_field_register(param_keys):
+                for bit_index, param_key in enumerate(param_keys):
+                    result[param_key] = bool((value >> bit_index) & 1)
+            elif len(param_keys) == 1:
+                result[param_keys[0]] = value
+            else:
+                for param_key in param_keys:
+                    result[param_key] = value
+
+        return result
+
+    async def write_named_parameters(
+        self,
+        parameters: dict[str, Any],
+    ) -> bool:
+        """Write configuration parameters using named keys.
+
+        This method provides transport-agnostic parameter access. The library
+        handles mapping parameter names to register addresses and combining
+        bit fields into register values, using the appropriate mapping for
+        the inverter family.
+
+        Args:
+            parameters: Dict mapping parameter name to value. For bit fields
+                (FUNC_*, BIT_*), values should be boolean. For other parameters,
+                values should be integers.
+
+        Returns:
+            True if write succeeded
+
+        Raises:
+            TransportWriteError: If write operation fails
+            TransportConnectionError: If not connected
+            ValueError: If parameter name is not recognized
+
+        Example:
+            # Write a simple parameter
+            await transport.write_named_parameters({"HOLD_AC_CHARGE_POWER_CMD": 50})
+
+            # Write bit field parameters (will read-modify-write register 21)
+            await transport.write_named_parameters({
+                "FUNC_EPS_EN": True,
+                "FUNC_AC_CHARGE": False,
+            })
+        """
+        from pylxpweb.constants.registers import (
+            get_param_to_register_mapping,
+            get_register_to_param_mapping,
+        )
+
+        # Get family-specific mappings
+        family = self._get_inverter_family()
+        param_to_register = get_param_to_register_mapping(family)
+        register_to_params = get_register_to_param_mapping(family)
+
+        registers_to_write: dict[int, int] = {}
+        bit_field_registers: dict[int, dict[str, bool]] = {}
+
+        for param_name, value in parameters.items():
+            if param_name not in param_to_register:
+                raise ValueError(f"Unknown parameter name: {param_name}")
+
+            register_addr = param_to_register[param_name]
+            param_keys = register_to_params.get(register_addr, [])
+
+            if self._is_bit_field_register(param_keys):
+                if register_addr not in bit_field_registers:
+                    bit_field_registers[register_addr] = {}
+                bit_field_registers[register_addr][param_name] = bool(value)
+            else:
+                registers_to_write[register_addr] = int(value)
+
+        # Handle bit field registers with read-modify-write
+        for register_addr, bit_updates in bit_field_registers.items():
+            current_values = await self.read_parameters(register_addr, 1)
+            current_value = current_values.get(register_addr, 0)
+            param_keys = register_to_params.get(register_addr, [])
+
+            new_value = current_value
+            for param_name, enable in bit_updates.items():
+                if param_name not in param_keys:
+                    raise ValueError(
+                        f"Bit field '{param_name}' not in register {register_addr} mapping"
+                    )
+                bit_index = param_keys.index(param_name)
+                if enable:
+                    new_value |= 1 << bit_index
+                else:
+                    new_value &= ~(1 << bit_index)
+
+            registers_to_write[register_addr] = new_value
+
+        if registers_to_write:
+            return await self.write_parameters(registers_to_write)
+
+        return True

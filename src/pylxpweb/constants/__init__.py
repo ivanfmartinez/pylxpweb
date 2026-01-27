@@ -231,11 +231,14 @@ from .registers import (
     INPUT_V_PV3,
     INPUT_WARNING_CODE,
     LXP_EU_PARAMETERS,
-    PARAM_KEY_TO_REGISTER_18KPV,
+    # Parameter aliases
+    PARAM_ALIASES,
+    PARAM_ALIASES_REVERSE,
+    PARAM_KEY_TO_REGISTER,
     PV_SERIES_PARAMETERS,
-    REGISTER_STATS_18KPV,
+    REGISTER_STATS,
     # Verified register mappings
-    REGISTER_TO_PARAM_KEYS_18KPV,
+    REGISTER_TO_PARAM_KEYS,
     # Model-specific parameters
     SNA_PARAMETERS,
     # Web parameter mappings
@@ -243,6 +246,10 @@ from .registers import (
     get_func_en_bit,
     # Bit manipulation functions
     get_func_en_bit_mask,
+    # Family-specific parameter mappings
+    get_param_to_register_mapping,
+    get_register_to_param_mapping,
+    resolve_param_alias,
     set_func_en_bit,
 )
 
@@ -415,9 +422,9 @@ __all__ = [
     "HOLD_REGISTER_GROUPS",
     "INPUT_REGISTER_GROUPS",
     "WEB_PARAM_TO_HOLD_REGISTER",
-    "REGISTER_TO_PARAM_KEYS_18KPV",
-    "PARAM_KEY_TO_REGISTER_18KPV",
-    "REGISTER_STATS_18KPV",
+    "REGISTER_TO_PARAM_KEYS",
+    "PARAM_KEY_TO_REGISTER",
+    "REGISTER_STATS",
     "GRIDBOSS_PARAMETERS",
     "GRIDBOSS_STATS",
     # Model-specific parameters
@@ -432,6 +439,13 @@ __all__ = [
     "get_func_en_bit_mask",
     "set_func_en_bit",
     "get_func_en_bit",
+    # Family-specific parameter mappings
+    "get_register_to_param_mapping",
+    "get_param_to_register_mapping",
+    # Parameter aliases
+    "PARAM_ALIASES",
+    "PARAM_ALIASES_REVERSE",
+    "resolve_param_alias",
     # Scaling
     "ScaleFactor",
     "INVERTER_RUNTIME_SCALING",

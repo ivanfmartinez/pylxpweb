@@ -92,7 +92,7 @@ class ControlEndpoints(BaseEndpoint):
                 Use .parameters property to get dict of parameter keys.
 
         See Also:
-            - constants.REGISTER_TO_PARAM_KEYS_18KPV: Verified register→parameter mappings
+            - constants.REGISTER_TO_PARAM_KEYS: Verified register→parameter mappings
             - research/REGISTER_NUMBER_MAPPING.md: Complete register documentation
         """
         await self.client._ensure_authenticated()

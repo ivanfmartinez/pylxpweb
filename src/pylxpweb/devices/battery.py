@@ -2,6 +2,9 @@
 
 This module provides the Battery class for monitoring individual battery modules
 within an inverter's battery array.
+
+Supports both HTTP API (BatteryModule) and LOCAL/Modbus (BatteryData) data sources
+with a unified interface.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from .models import DeviceClass, DeviceInfo, Entity, StateClass
 if TYPE_CHECKING:
     from pylxpweb import LuxpowerClient
     from pylxpweb.models import BatteryModule
+    from pylxpweb.transports.data import BatteryData
 
 
 class Battery(BaseDevice):
@@ -24,25 +28,34 @@ class Battery(BaseDevice):
     Each inverter can have multiple battery modules, each with independent monitoring
     of voltage, current, SoC, SoH, temperature, and cell voltages.
 
+    Supports both data sources:
+    - HTTP API: BatteryModule from getBatteryInfo endpoint
+    - LOCAL/Modbus: BatteryData from direct register reads
+
     Example:
         ```python
-        # Battery is typically created from BatteryInfo API response
+        # From HTTP API (BatteryModule)
         battery_info = await client.api.batteries.get_battery_info(serial_num)
-
         for battery_data in battery_info.batteryArray:
             battery = Battery(client=client, battery_data=battery_data)
-            print(f"Battery {battery.battery_index}: {battery.soc}% SOC")
-            print(f"Voltage: {battery.voltage}V, Current: {battery.current}A")
-            print(f"Cell voltage delta: {battery.cell_voltage_delta}V")
+
+        # From LOCAL/Modbus (BatteryData)
+        from pylxpweb.transports.data import BatteryData
+        battery_data = BatteryData.from_modbus_registers(0, registers)
+        battery = Battery.from_transport_data(client, battery_data, inverter_serial)
         ```
     """
 
+    # Instance attributes for type checking
+    _transport_data: BatteryData | None
+    _is_transport_data: bool
+
     def __init__(self, client: LuxpowerClient, battery_data: BatteryModule) -> None:
-        """Initialize battery module.
+        """Initialize battery module from HTTP API data.
 
         Args:
             client: LuxpowerClient instance for API access
-            battery_data: BatteryModule data from API
+            battery_data: BatteryModule data from HTTP API
         """
         # Use batteryKey as serial_number for BaseDevice
         super().__init__(client, battery_data.batteryKey, "Battery Module")
@@ -50,7 +63,66 @@ class Battery(BaseDevice):
         self._battery_key = battery_data.batteryKey
         self._battery_sn = battery_data.batterySn
         self._battery_index = battery_data.batIndex
-        self._data = battery_data
+        self._data: BatteryModule = battery_data
+        self._transport_data = None  # Only set via from_transport_data()
+        self._is_transport_data = False  # Using BatteryModule (HTTP API)
+
+    @classmethod
+    def from_transport_data(
+        cls,
+        client: LuxpowerClient,
+        battery_data: BatteryData,
+        inverter_serial: str,
+    ) -> Battery:
+        """Create Battery from transport-agnostic BatteryData (LOCAL/Modbus).
+
+        This factory method enables LOCAL mode to use the same Battery class
+        as HTTP API mode, providing consistent interface regardless of transport.
+
+        Args:
+            client: LuxpowerClient instance for API access
+            battery_data: BatteryData from Modbus registers
+            inverter_serial: Parent inverter serial number (for unique ID generation)
+
+        Returns:
+            Battery instance configured for LOCAL mode data
+        """
+        # Create a minimal BatteryModule-like object for the base __init__
+        # We need to bypass the normal constructor since we don't have BatteryModule
+        from pylxpweb.models import BatteryModule
+
+        # Generate battery key from inverter serial and index
+        battery_key = f"{inverter_serial}_bat{battery_data.battery_index}"
+
+        # Create a minimal BatteryModule with required fields
+        # The actual data will come from battery_data via property overrides
+        minimal_module = BatteryModule.model_construct(
+            batteryKey=battery_key,
+            batterySn=battery_data.serial_number or battery_key,
+            batIndex=battery_data.battery_index,
+            lost=False,
+            totalVoltage=int(battery_data.voltage * 100),  # Convert back to raw
+            current=int(battery_data.current * 10),  # Convert back to raw
+            soc=battery_data.soc,
+            soh=battery_data.soh,
+            currentRemainCapacity=int(battery_data.remaining_capacity),
+            currentFullCapacity=int(battery_data.max_capacity),
+            batMaxCellTemp=int(battery_data.max_cell_temperature * 10),
+            batMinCellTemp=int(battery_data.min_cell_temperature * 10),
+            batMaxCellVoltage=int(battery_data.max_cell_voltage * 1000),
+            batMinCellVoltage=int(battery_data.min_cell_voltage * 1000),
+            cycleCnt=battery_data.cycle_count,
+            fwVersionText=battery_data.firmware_version or "",
+        )
+
+        # Create instance using normal constructor
+        instance = cls(client, minimal_module)
+
+        # Store the transport data for direct access to pre-scaled values
+        instance._transport_data = battery_data
+        instance._is_transport_data = True
+
+        return instance
 
     # Public accessors for backward compatibility
     @property
@@ -148,6 +220,8 @@ class Battery(BaseDevice):
         Returns:
             Battery voltage (scaled from totalVoltage ÷100).
         """
+        if self._transport_data is not None:
+            return self._transport_data.voltage
         return scale_battery_value("totalVoltage", self._data.totalVoltage)
 
     @property
@@ -157,6 +231,8 @@ class Battery(BaseDevice):
         Returns:
             Battery current (scaled from current ÷10). **CRITICAL: Not ÷100**
         """
+        if self._transport_data is not None:
+            return self._transport_data.current
         return scale_battery_value("current", self._data.current)
 
     @property
@@ -166,6 +242,8 @@ class Battery(BaseDevice):
         Returns:
             Battery power in watts, rounded to voltage precision.
         """
+        if self._transport_data is not None:
+            return self._transport_data.power
         # Use voltage precision (2 decimals) as it's higher than current (1 decimal)
         precision = get_battery_field_precision("totalVoltage")
         return round(self.voltage * self.current, precision)
@@ -199,6 +277,8 @@ class Battery(BaseDevice):
         Returns:
             Current remaining capacity in Ah.
         """
+        if self._transport_data is not None:
+            return int(self._transport_data.remaining_capacity)
         return self._data.currentRemainCapacity
 
     @property
@@ -208,6 +288,8 @@ class Battery(BaseDevice):
         Returns:
             Current full capacity in Ah.
         """
+        if self._transport_data is not None:
+            return int(self._transport_data.max_capacity)
         return self._data.currentFullCapacity
 
     @property
@@ -219,6 +301,9 @@ class Battery(BaseDevice):
             from currentRemainCapacity / currentFullCapacity and rounds to
             nearest integer.
         """
+        if self._transport_data is not None:
+            return self._transport_data.capacity_percent
+
         # Use API value if available
         if self._data.currentCapacityPercent is not None:
             return self._data.currentCapacityPercent
@@ -239,6 +324,8 @@ class Battery(BaseDevice):
         Returns:
             Maximum cell temperature (scaled from batMaxCellTemp ÷10).
         """
+        if self._transport_data is not None:
+            return self._transport_data.max_cell_temperature
         return scale_battery_value("batMaxCellTemp", self._data.batMaxCellTemp)
 
     @property
@@ -248,6 +335,8 @@ class Battery(BaseDevice):
         Returns:
             Minimum cell temperature (scaled from batMinCellTemp ÷10).
         """
+        if self._transport_data is not None:
+            return self._transport_data.min_cell_temperature
         return scale_battery_value("batMinCellTemp", self._data.batMinCellTemp)
 
     @property
@@ -276,6 +365,8 @@ class Battery(BaseDevice):
             Temperature difference between hottest and coolest cell in Celsius,
             rounded to source data precision.
         """
+        if self._transport_data is not None:
+            return self._transport_data.cell_temp_delta
         precision = get_battery_field_precision("batMaxCellTemp")
         return round(self.max_cell_temp - self.min_cell_temp, precision)
 
@@ -288,6 +379,8 @@ class Battery(BaseDevice):
         Returns:
             Maximum cell voltage (scaled from batMaxCellVoltage ÷1000).
         """
+        if self._transport_data is not None:
+            return self._transport_data.max_cell_voltage
         return scale_battery_value("batMaxCellVoltage", self._data.batMaxCellVoltage)
 
     @property
@@ -297,6 +390,8 @@ class Battery(BaseDevice):
         Returns:
             Minimum cell voltage (scaled from batMinCellVoltage ÷1000).
         """
+        if self._transport_data is not None:
+            return self._transport_data.min_cell_voltage
         return scale_battery_value("batMinCellVoltage", self._data.batMinCellVoltage)
 
     @property
@@ -325,6 +420,8 @@ class Battery(BaseDevice):
             Voltage difference between highest and lowest cell in volts,
             rounded to source data precision.
         """
+        if self._transport_data is not None:
+            return self._transport_data.cell_voltage_delta
         precision = get_battery_field_precision("batMaxCellVoltage")
         return round(self.max_cell_voltage - self.min_cell_voltage, precision)
 
@@ -337,6 +434,9 @@ class Battery(BaseDevice):
         Returns:
             Maximum charge current (÷100 for amps), or None if not available.
         """
+        if self._transport_data is not None:
+            val = self._transport_data.charge_current_limit
+            return val if val > 0 else None
         if self._data.batChargeMaxCur is None:
             return None
         return scale_battery_value("batChargeMaxCur", self._data.batChargeMaxCur)
@@ -348,6 +448,9 @@ class Battery(BaseDevice):
         Returns:
             Charge voltage reference (÷10 for volts), or None if not available.
         """
+        if self._transport_data is not None:
+            val = self._transport_data.charge_voltage_ref
+            return val if val > 0 else None
         if self._data.batChargeVoltRef is None:
             return None
         return scale_battery_value("batChargeVoltRef", self._data.batChargeVoltRef)

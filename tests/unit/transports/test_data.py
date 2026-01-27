@@ -20,13 +20,19 @@ class TestInverterRuntimeData:
     """Tests for InverterRuntimeData dataclass."""
 
     def test_default_values(self) -> None:
-        """Test that default values are properly set."""
+        """Test that default values are None (unavailable).
+
+        Fields default to None to indicate data is unavailable, which allows
+        Home Assistant to show "unavailable" state rather than recording false
+        zero values in history graphs. See: eg4_web_monitor issue #91
+        """
         data = InverterRuntimeData()
 
-        assert data.pv_total_power == 0.0
-        assert data.battery_soc == 0
-        assert data.grid_frequency == 0.0
-        assert data.device_status == 0
+        # All numeric fields default to None (unavailable)
+        assert data.pv_total_power is None
+        assert data.battery_soc is None
+        assert data.grid_frequency is None
+        assert data.device_status is None
         assert isinstance(data.timestamp, datetime)
 
     def test_from_http_response(self) -> None:
@@ -153,12 +159,16 @@ class TestInverterEnergyData:
     """Tests for InverterEnergyData dataclass."""
 
     def test_default_values(self) -> None:
-        """Test that default values are properly set."""
+        """Test that default values are None (unavailable).
+
+        See: eg4_web_monitor issue #91
+        """
         data = InverterEnergyData()
 
-        assert data.pv_energy_today == 0.0
-        assert data.charge_energy_today == 0.0
-        assert data.grid_import_total == 0.0
+        # All numeric fields default to None (unavailable)
+        assert data.pv_energy_today is None
+        assert data.charge_energy_today is None
+        assert data.grid_import_total is None
         assert isinstance(data.timestamp, datetime)
 
     def test_from_http_response(self) -> None:
@@ -304,12 +314,18 @@ class TestBatteryBankData:
     """Tests for BatteryBankData dataclass."""
 
     def test_default_values(self) -> None:
-        """Test that default values are properly set."""
+        """Test that default values are None (unavailable).
+
+        Fields default to None to indicate data is unavailable, which allows
+        Home Assistant to show "unavailable" state rather than recording false
+        zero values in history graphs. See: eg4_web_monitor issue #91
+        """
         data = BatteryBankData()
 
-        assert data.voltage == 0.0
-        assert data.soc == 0
-        assert data.battery_count == 0
+        # All numeric fields default to None (unavailable)
+        assert data.voltage is None
+        assert data.soc is None
+        assert data.battery_count is None
         assert data.batteries == []
         assert isinstance(data.timestamp, datetime)
 

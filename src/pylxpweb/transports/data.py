@@ -40,35 +40,45 @@ _LOGGER = logging.getLogger(__name__)
 def _read_register_field(
     registers: dict[int, int],
     field_def: RegisterField | None,
-    default: int = 0,
-) -> int:
+    default: int | None = None,
+) -> int | None:
     """Read a value from registers using a RegisterField definition.
 
     Args:
         registers: Dict mapping register address to raw value
         field_def: RegisterField defining how to read the value, or None
-        default: Default value if field is None or register not found
+        default: Default value if field is None or register not found.
+            Use None to indicate unavailable data (recommended for Modbus reads).
 
     Returns:
-        Raw integer value (no scaling applied yet)
+        Raw integer value (no scaling applied yet), or None if unavailable.
+        Returns None when:
+        - field_def is None (field not defined for this device/map)
+        - Required register(s) not present in registers dict (read failed)
     """
     if field_def is None:
         return default
 
     if field_def.bit_width == 32:
         # 32-bit value from two consecutive registers
+        # Both registers must be present for valid data
+        if field_def.address not in registers or field_def.address + 1 not in registers:
+            return default
+
         if field_def.little_endian:
             # Little-endian: low word at address, high word at address+1 (LuxPower style)
-            low = registers.get(field_def.address, 0)
-            high = registers.get(field_def.address + 1, 0)
+            low = registers[field_def.address]
+            high = registers[field_def.address + 1]
         else:
             # Big-endian: high word at address, low word at address+1 (EG4 style)
-            high = registers.get(field_def.address, 0)
-            low = registers.get(field_def.address + 1, 0)
+            high = registers[field_def.address]
+            low = registers[field_def.address + 1]
         value = (high << 16) | low
     else:
-        # 16-bit value
-        value = registers.get(field_def.address, default)
+        # 16-bit value - register must be present
+        if field_def.address not in registers:
+            return default
+        value = registers[field_def.address]
 
     # Handle signed values
     if field_def.signed:
@@ -83,29 +93,47 @@ def _read_register_field(
 def _read_and_scale_field(
     registers: dict[int, int],
     field_def: RegisterField | None,
-    default: float = 0.0,
-) -> float:
+) -> float | None:
     """Read a value from registers and apply scaling.
 
     Args:
         registers: Dict mapping register address to raw value
         field_def: RegisterField defining how to read and scale the value
-        default: Default value if field is None or register not found
 
     Returns:
-        Scaled floating-point value
+        Scaled floating-point value, or None if unavailable.
+        Returns None when:
+        - field_def is None (field not defined for this device/map)
+        - Required register(s) not present (read failed, flaky connectivity)
+
+    Note:
+        Returning None instead of 0.0 for missing data allows Home Assistant
+        to show "unavailable" state rather than recording false zero values
+        in history graphs. See: eg4_web_monitor issue #91
     """
     if field_def is None:
-        return default
+        return None
 
     from pylxpweb.constants.scaling import apply_scale
 
-    raw_value = _read_register_field(registers, field_def, int(default))
+    raw_value = _read_register_field(registers, field_def)
+    if raw_value is None:
+        return None
     return apply_scale(raw_value, field_def.scale_factor)
 
 
-def _clamp_percentage(value: int, name: str) -> int:
-    """Clamp percentage value to 0-100 range, logging if out of bounds."""
+def _clamp_percentage(value: int | None, name: str) -> int | None:
+    """Clamp percentage value to 0-100 range, logging if out of bounds.
+
+    Args:
+        value: Percentage value to clamp, or None if unavailable
+        name: Field name for logging
+
+    Returns:
+        Clamped value (0-100), or None if input was None
+    """
+    if value is None:
+        return None
     if value < 0:
         _LOGGER.warning("%s value %d is negative, clamping to 0", name, value)
         return 0
@@ -115,6 +143,36 @@ def _clamp_percentage(value: int, name: str) -> int:
     return value
 
 
+def _decode_parallel_config(value: int | None, bits: int, shift: int) -> int | None:
+    """Decode parallel configuration from register value.
+
+    Args:
+        value: Raw register value, or None if unavailable
+        bits: Bitmask to apply after shifting
+        shift: Number of bits to shift right
+
+    Returns:
+        Decoded value, or None if input was None
+    """
+    if value is None:
+        return None
+    return (value >> shift) & bits
+
+
+def _sum_optional(*values: float | None) -> float | None:
+    """Sum multiple optional float values.
+
+    Args:
+        *values: Float values that may be None
+
+    Returns:
+        Sum of all non-None values, or None if all values are None.
+        If some values are None but not all, returns sum of available values.
+    """
+    non_none = [v for v in values if v is not None]
+    return sum(non_none) if non_none else None
+
+
 @dataclass
 class InverterRuntimeData:
     """Real-time inverter operating data.
@@ -122,130 +180,143 @@ class InverterRuntimeData:
     All values are already scaled to proper units.
     This is the transport-agnostic representation of runtime data.
 
+    Field values:
+        - None: Data unavailable (Modbus read failed, register not present)
+        - Numeric value: Actual measured/calculated value
+
+    Returning None for unavailable data allows Home Assistant to show
+    "unavailable" state rather than recording false zero values in history.
+    See: eg4_web_monitor issue #91
+
     Validation:
-        - battery_soc and battery_soh are clamped to 0-100 range
+        - battery_soc and battery_soh are clamped to 0-100 range when not None
     """
 
     # Timestamp
     timestamp: datetime = field(default_factory=datetime.now)
 
     # PV Input
-    pv1_voltage: float = 0.0  # V
-    pv1_current: float = 0.0  # A
-    pv1_power: float = 0.0  # W
-    pv2_voltage: float = 0.0  # V
-    pv2_current: float = 0.0  # A
-    pv2_power: float = 0.0  # W
-    pv3_voltage: float = 0.0  # V
-    pv3_current: float = 0.0  # A
-    pv3_power: float = 0.0  # W
-    pv_total_power: float = 0.0  # W
+    pv1_voltage: float | None = None  # V
+    pv1_current: float | None = None  # A
+    pv1_power: float | None = None  # W
+    pv2_voltage: float | None = None  # V
+    pv2_current: float | None = None  # A
+    pv2_power: float | None = None  # W
+    pv3_voltage: float | None = None  # V
+    pv3_current: float | None = None  # A
+    pv3_power: float | None = None  # W
+    pv_total_power: float | None = None  # W
 
     # Battery
-    battery_voltage: float = 0.0  # V
-    battery_current: float = 0.0  # A
-    battery_soc: int = 0  # %
-    battery_soh: int = 100  # %
-    battery_charge_power: float = 0.0  # W
-    battery_discharge_power: float = 0.0  # W
-    battery_temperature: float = 0.0  # °C
+    battery_voltage: float | None = None  # V
+    battery_current: float | None = None  # A
+    battery_soc: int | None = None  # %
+    battery_soh: int | None = None  # %
+    battery_charge_power: float | None = None  # W
+    battery_discharge_power: float | None = None  # W
+    battery_temperature: float | None = None  # °C
 
     # Grid (AC Input)
-    grid_voltage_r: float = 0.0  # V (Phase R/L1)
-    grid_voltage_s: float = 0.0  # V (Phase S/L2)
-    grid_voltage_t: float = 0.0  # V (Phase T/L3)
-    grid_current_r: float = 0.0  # A
-    grid_current_s: float = 0.0  # A
-    grid_current_t: float = 0.0  # A
-    grid_frequency: float = 0.0  # Hz
-    grid_power: float = 0.0  # W (positive = import, negative = export)
-    power_to_grid: float = 0.0  # W (export)
-    power_from_grid: float = 0.0  # W (import)
+    grid_voltage_r: float | None = None  # V (Phase R/L1)
+    grid_voltage_s: float | None = None  # V (Phase S/L2)
+    grid_voltage_t: float | None = None  # V (Phase T/L3)
+    grid_l1_voltage: float | None = None  # V (Split-phase L1, ~120V)
+    grid_l2_voltage: float | None = None  # V (Split-phase L2, ~120V)
+    grid_current_r: float | None = None  # A
+    grid_current_s: float | None = None  # A
+    grid_current_t: float | None = None  # A
+    grid_frequency: float | None = None  # Hz
+    grid_power: float | None = None  # W (positive = import, negative = export)
+    power_to_grid: float | None = None  # W (export)
+    power_from_grid: float | None = None  # W (import)
 
     # Inverter Output
-    inverter_power: float = 0.0  # W
-    inverter_current_r: float = 0.0  # A
-    inverter_current_s: float = 0.0  # A
-    inverter_current_t: float = 0.0  # A
-    power_factor: float = 1.0  # 0.0-1.0
+    inverter_power: float | None = None  # W
+    inverter_current_r: float | None = None  # A
+    inverter_current_s: float | None = None  # A
+    inverter_current_t: float | None = None  # A
+    power_factor: float | None = None  # 0.0-1.0
 
     # EPS/Off-Grid Output
-    eps_voltage_r: float = 0.0  # V
-    eps_voltage_s: float = 0.0  # V
-    eps_voltage_t: float = 0.0  # V
-    eps_frequency: float = 0.0  # Hz
-    eps_power: float = 0.0  # W
-    eps_status: int = 0  # Status code
+    eps_voltage_r: float | None = None  # V
+    eps_voltage_s: float | None = None  # V
+    eps_voltage_t: float | None = None  # V
+    eps_l1_voltage: float | None = None  # V (Split-phase L1, ~120V)
+    eps_l2_voltage: float | None = None  # V (Split-phase L2, ~120V)
+    eps_frequency: float | None = None  # Hz
+    eps_power: float | None = None  # W
+    eps_status: int | None = None  # Status code
 
     # Load
-    load_power: float = 0.0  # W
+    load_power: float | None = None  # W
+    output_power: float | None = None  # W (Total output, split-phase systems)
 
     # Internal
-    bus_voltage_1: float = 0.0  # V
-    bus_voltage_2: float = 0.0  # V
+    bus_voltage_1: float | None = None  # V
+    bus_voltage_2: float | None = None  # V
 
     # Temperatures
-    internal_temperature: float = 0.0  # °C
-    radiator_temperature_1: float = 0.0  # °C
-    radiator_temperature_2: float = 0.0  # °C
+    internal_temperature: float | None = None  # °C
+    radiator_temperature_1: float | None = None  # °C
+    radiator_temperature_2: float | None = None  # °C
 
     # Status
-    device_status: int = 0  # Status code
-    fault_code: int = 0  # Fault code
-    warning_code: int = 0  # Warning code
+    device_status: int | None = None  # Status code
+    fault_code: int | None = None  # Fault code
+    warning_code: int | None = None  # Warning code
 
     # -------------------------------------------------------------------------
     # Extended Sensors - Inverter RMS Current & Power
     # -------------------------------------------------------------------------
-    inverter_rms_current: float = 0.0  # A (Inverter RMS current)
-    inverter_apparent_power: float = 0.0  # VA (Inverter apparent power)
+    inverter_rms_current: float | None = None  # A (Inverter RMS current)
+    inverter_apparent_power: float | None = None  # VA (Inverter apparent power)
 
     # -------------------------------------------------------------------------
     # Generator Input (if connected)
     # -------------------------------------------------------------------------
-    generator_voltage: float = 0.0  # V
-    generator_frequency: float = 0.0  # Hz
-    generator_power: float = 0.0  # W
+    generator_voltage: float | None = None  # V
+    generator_frequency: float | None = None  # Hz
+    generator_power: float | None = None  # W
 
     # -------------------------------------------------------------------------
     # BMS Limits and Cell Data
     # -------------------------------------------------------------------------
-    bms_charge_current_limit: float = 0.0  # A (Max charge current from BMS)
-    bms_discharge_current_limit: float = 0.0  # A (Max discharge current from BMS)
-    bms_charge_voltage_ref: float = 0.0  # V (BMS charge voltage reference)
-    bms_discharge_cutoff: float = 0.0  # V (BMS discharge cutoff voltage)
-    bms_max_cell_voltage: float = 0.0  # V (Highest cell voltage)
-    bms_min_cell_voltage: float = 0.0  # V (Lowest cell voltage)
-    bms_max_cell_temperature: float = 0.0  # °C (Highest cell temp)
-    bms_min_cell_temperature: float = 0.0  # °C (Lowest cell temp)
-    bms_cycle_count: int = 0  # Charge/discharge cycle count
-    battery_parallel_num: int = 0  # Number of parallel battery units
-    battery_capacity_ah: float = 0.0  # Ah (Battery capacity)
+    bms_charge_current_limit: float | None = None  # A (Max charge current from BMS)
+    bms_discharge_current_limit: float | None = None  # A (Max discharge current from BMS)
+    bms_charge_voltage_ref: float | None = None  # V (BMS charge voltage reference)
+    bms_discharge_cutoff: float | None = None  # V (BMS discharge cutoff voltage)
+    bms_max_cell_voltage: float | None = None  # V (Highest cell voltage)
+    bms_min_cell_voltage: float | None = None  # V (Lowest cell voltage)
+    bms_max_cell_temperature: float | None = None  # °C (Highest cell temp)
+    bms_min_cell_temperature: float | None = None  # °C (Lowest cell temp)
+    bms_cycle_count: int | None = None  # Charge/discharge cycle count
+    battery_parallel_num: int | None = None  # Number of parallel battery units
+    battery_capacity_ah: float | None = None  # Ah (Battery capacity)
 
     # -------------------------------------------------------------------------
     # Additional Temperatures
     # -------------------------------------------------------------------------
-    temperature_t1: float = 0.0  # °C
-    temperature_t2: float = 0.0  # °C
-    temperature_t3: float = 0.0  # °C
-    temperature_t4: float = 0.0  # °C
-    temperature_t5: float = 0.0  # °C
+    temperature_t1: float | None = None  # °C
+    temperature_t2: float | None = None  # °C
+    temperature_t3: float | None = None  # °C
+    temperature_t4: float | None = None  # °C
+    temperature_t5: float | None = None  # °C
 
     # -------------------------------------------------------------------------
     # Inverter Operational
     # -------------------------------------------------------------------------
-    inverter_on_time: int = 0  # hours (total on time)
-    ac_input_type: int = 0  # AC input type code
+    inverter_on_time: int | None = None  # hours (total on time)
+    ac_input_type: int | None = None  # AC input type code
 
     # -------------------------------------------------------------------------
     # Parallel Configuration (decoded from register 113)
     # -------------------------------------------------------------------------
-    parallel_master_slave: int = 0  # 0=no parallel, 1=master, 2=slave, 3=3-phase master
-    parallel_phase: int = 0  # 0=R, 1=S, 2=T
-    parallel_number: int = 0  # unit ID in parallel system (0-255)
+    parallel_master_slave: int | None = None  # 0=no parallel, 1=master, 2=slave, 3=3-phase master
+    parallel_phase: int | None = None  # 0=R, 1=S, 2=T
+    parallel_number: int | None = None  # unit ID in parallel system (0-255)
 
     def __post_init__(self) -> None:
-        """Validate and clamp percentage values."""
+        """Validate and clamp percentage values (if not None)."""
         self.battery_soc = _clamp_percentage(self.battery_soc, "battery_soc")
         self.battery_soh = _clamp_percentage(self.battery_soh, "battery_soh")
 
@@ -351,8 +422,13 @@ class InverterRuntimeData:
 
         # SOC/SOH packed register (low byte = SOC, high byte = SOH)
         soc_soh_packed = _read_register_field(input_registers, register_map.soc_soh_packed)
-        battery_soc = soc_soh_packed & 0xFF
-        battery_soh = (soc_soh_packed >> 8) & 0xFF
+        battery_soc: int | None = None
+        battery_soh: int | None = None
+        if soc_soh_packed is not None:
+            battery_soc = soc_soh_packed & 0xFF
+            battery_soh = (soc_soh_packed >> 8) & 0xFF
+            if battery_soh == 0:
+                battery_soh = 100  # Default to 100% if not reported
 
         # Fault/warning codes
         inverter_fault_code = _read_register_field(
@@ -364,7 +440,7 @@ class InverterRuntimeData:
         bms_fault_code = _read_register_field(input_registers, register_map.bms_fault_code)
         bms_warning_code = _read_register_field(input_registers, register_map.bms_warning_code)
 
-        # Combine fault/warning codes (inverter + BMS)
+        # Combine fault/warning codes (inverter + BMS) - prefer non-None/non-zero values
         fault_code = inverter_fault_code if inverter_fault_code else bms_fault_code
         warning_code = inverter_warning_code if inverter_warning_code else bms_warning_code
 
@@ -377,12 +453,12 @@ class InverterRuntimeData:
             pv2_power=pv2_power,
             pv3_voltage=_read_and_scale_field(input_registers, register_map.pv3_voltage),
             pv3_power=pv3_power,
-            pv_total_power=pv1_power + pv2_power + pv3_power,
+            pv_total_power=_sum_optional(pv1_power, pv2_power, pv3_power),
             # Battery - SOC/SOH from packed register
             battery_voltage=_read_and_scale_field(input_registers, register_map.battery_voltage),
             battery_current=_read_and_scale_field(input_registers, register_map.battery_current),
             battery_soc=battery_soc,
-            battery_soh=battery_soh if battery_soh > 0 else 100,
+            battery_soh=battery_soh,
             battery_charge_power=charge_power,
             battery_discharge_power=discharge_power,
             battery_temperature=_read_and_scale_field(
@@ -392,6 +468,8 @@ class InverterRuntimeData:
             grid_voltage_r=_read_and_scale_field(input_registers, register_map.grid_voltage_r),
             grid_voltage_s=_read_and_scale_field(input_registers, register_map.grid_voltage_s),
             grid_voltage_t=_read_and_scale_field(input_registers, register_map.grid_voltage_t),
+            grid_l1_voltage=_read_and_scale_field(input_registers, register_map.grid_l1_voltage),
+            grid_l2_voltage=_read_and_scale_field(input_registers, register_map.grid_l2_voltage),
             grid_frequency=_read_and_scale_field(input_registers, register_map.grid_frequency),
             grid_power=grid_power,
             power_to_grid=_read_and_scale_field(input_registers, register_map.power_to_grid),
@@ -402,11 +480,14 @@ class InverterRuntimeData:
             eps_voltage_r=_read_and_scale_field(input_registers, register_map.eps_voltage_r),
             eps_voltage_s=_read_and_scale_field(input_registers, register_map.eps_voltage_s),
             eps_voltage_t=_read_and_scale_field(input_registers, register_map.eps_voltage_t),
+            eps_l1_voltage=_read_and_scale_field(input_registers, register_map.eps_l1_voltage),
+            eps_l2_voltage=_read_and_scale_field(input_registers, register_map.eps_l2_voltage),
             eps_frequency=_read_and_scale_field(input_registers, register_map.eps_frequency),
             eps_power=eps_power,
             eps_status=_read_register_field(input_registers, register_map.eps_status),
             # Load
             load_power=load_power,
+            output_power=_read_and_scale_field(input_registers, register_map.output_power),
             # Internal
             bus_voltage_1=_read_and_scale_field(input_registers, register_map.bus_voltage_1),
             bus_voltage_2=_read_and_scale_field(input_registers, register_map.bus_voltage_2),
@@ -483,15 +564,20 @@ class InverterRuntimeData:
             ac_input_type=_read_register_field(input_registers, register_map.ac_input_type),
             # Parallel configuration (decoded from register 113)
             # bits 0-1: master/slave, bits 2-3: phase, bits 8-15: number
-            parallel_master_slave=(
-                _read_register_field(input_registers, register_map.parallel_config) & 0x03
+            parallel_master_slave=_decode_parallel_config(
+                _read_register_field(input_registers, register_map.parallel_config),
+                bits=0x03,
+                shift=0,
             ),
-            parallel_phase=(
-                _read_register_field(input_registers, register_map.parallel_config) >> 2
-            )
-            & 0x03,
-            parallel_number=(
-                _read_register_field(input_registers, register_map.parallel_config) >> 8
+            parallel_phase=_decode_parallel_config(
+                _read_register_field(input_registers, register_map.parallel_config),
+                bits=0x03,
+                shift=2,
+            ),
+            parallel_number=_decode_parallel_config(
+                _read_register_field(input_registers, register_map.parallel_config),
+                bits=0xFF,
+                shift=8,
             ),
         )
 
@@ -501,42 +587,48 @@ class InverterEnergyData:
     """Energy production and consumption statistics.
 
     All values are already scaled to proper units.
+
+    Field values:
+        - None: Data unavailable (Modbus read failed, register not present)
+        - Numeric value: Actual measured/calculated value
+
+    See: eg4_web_monitor issue #91
     """
 
     # Timestamp
     timestamp: datetime = field(default_factory=datetime.now)
 
     # Daily energy (kWh)
-    pv_energy_today: float = 0.0
-    pv1_energy_today: float = 0.0
-    pv2_energy_today: float = 0.0
-    pv3_energy_today: float = 0.0
-    charge_energy_today: float = 0.0
-    discharge_energy_today: float = 0.0
-    grid_import_today: float = 0.0
-    grid_export_today: float = 0.0
-    load_energy_today: float = 0.0
-    eps_energy_today: float = 0.0
+    pv_energy_today: float | None = None
+    pv1_energy_today: float | None = None
+    pv2_energy_today: float | None = None
+    pv3_energy_today: float | None = None
+    charge_energy_today: float | None = None
+    discharge_energy_today: float | None = None
+    grid_import_today: float | None = None
+    grid_export_today: float | None = None
+    load_energy_today: float | None = None
+    eps_energy_today: float | None = None
 
     # Lifetime energy (kWh)
-    pv_energy_total: float = 0.0
-    pv1_energy_total: float = 0.0
-    pv2_energy_total: float = 0.0
-    pv3_energy_total: float = 0.0
-    charge_energy_total: float = 0.0
-    discharge_energy_total: float = 0.0
-    grid_import_total: float = 0.0
-    grid_export_total: float = 0.0
-    load_energy_total: float = 0.0
-    eps_energy_total: float = 0.0
+    pv_energy_total: float | None = None
+    pv1_energy_total: float | None = None
+    pv2_energy_total: float | None = None
+    pv3_energy_total: float | None = None
+    charge_energy_total: float | None = None
+    discharge_energy_total: float | None = None
+    grid_import_total: float | None = None
+    grid_export_total: float | None = None
+    load_energy_total: float | None = None
+    eps_energy_total: float | None = None
 
     # Inverter output energy
-    inverter_energy_today: float = 0.0
-    inverter_energy_total: float = 0.0
+    inverter_energy_today: float | None = None
+    inverter_energy_total: float | None = None
 
     # Generator energy (if connected)
-    generator_energy_today: float = 0.0  # kWh
-    generator_energy_total: float = 0.0  # kWh
+    generator_energy_today: float | None = None  # kWh
+    generator_energy_total: float | None = None  # kWh
 
     @classmethod
     def from_http_response(cls, energy: EnergyInfo) -> InverterEnergyData:
@@ -599,14 +691,14 @@ class InverterEnergyData:
 
         def read_energy_field(
             field_def: RegisterField | None,
-        ) -> float:
+        ) -> float | None:
             """Read an energy field and return value in kWh.
 
             Args:
                 field_def: RegisterField for the energy value
 
             Returns:
-                Energy value in kWh
+                Energy value in kWh, or None if field not defined or register missing
 
             Note:
                 According to galets/eg4-modbus-monitor, energy register values
@@ -615,15 +707,22 @@ class InverterEnergyData:
                 the result is directly in kWh.
             """
             if field_def is None:
-                return 0.0
+                return None
 
             raw_value = _read_register_field(input_registers, field_def)
+            if raw_value is None:
+                return None
 
             # Apply scale factor - result is in kWh directly
             # Energy values are in 0.1 kWh (scale=0.1), so raw/10 = kWh
             from pylxpweb.constants.scaling import apply_scale
 
             return apply_scale(raw_value, field_def.scale_factor)
+
+        def sum_pv_energy(pv1: float | None, pv2: float | None, pv3: float | None) -> float | None:
+            """Sum PV energy values, returning None if all components are None."""
+            values = [v for v in [pv1, pv2, pv3] if v is not None]
+            return sum(values) if values else None
 
         # Calculate total PV energy from per-string values
         pv1_today = read_energy_field(register_map.pv1_energy_today)
@@ -646,7 +745,7 @@ class InverterEnergyData:
             pv1_energy_today=pv1_today,
             pv2_energy_today=pv2_today,
             pv3_energy_today=pv3_today,
-            pv_energy_today=pv1_today + pv2_today + pv3_today,
+            pv_energy_today=sum_pv_energy(pv1_today, pv2_today, pv3_today),
             # Lifetime energy
             inverter_energy_total=read_energy_field(register_map.inverter_energy_total),
             grid_import_total=read_energy_field(register_map.grid_import_total),
@@ -658,7 +757,7 @@ class InverterEnergyData:
             pv1_energy_total=pv1_total,
             pv2_energy_total=pv2_total,
             pv3_energy_total=pv3_total,
-            pv_energy_total=pv1_total + pv2_total + pv3_total,
+            pv_energy_total=sum_pv_energy(pv1_total, pv2_total, pv3_total),
             # Generator energy
             generator_energy_today=read_energy_field(register_map.generator_energy_today),
             generator_energy_total=read_energy_field(register_map.generator_energy_total),
@@ -725,8 +824,14 @@ class BatteryData:
 
     def __post_init__(self) -> None:
         """Validate and clamp percentage values."""
-        self.soc = _clamp_percentage(self.soc, "battery_soc")
-        self.soh = _clamp_percentage(self.soh, "battery_soh")
+        # BatteryData uses non-nullable soc/soh (0 and 100 defaults)
+        # _clamp_percentage accepts int|None, so we need to explicitly handle the result
+        clamped_soc = _clamp_percentage(self.soc, "battery_soc")
+        if clamped_soc is not None:
+            self.soc = clamped_soc
+        clamped_soh = _clamp_percentage(self.soh, "battery_soh")
+        if clamped_soh is not None:
+            self.soh = clamped_soh
 
     @property
     def remaining_capacity(self) -> float:
@@ -738,6 +843,56 @@ class BatteryData:
         if self.max_capacity > 0 and self.soc > 0:
             return self.max_capacity * self.soc / 100
         return 0.0
+
+    @property
+    def power(self) -> float:
+        """Calculate battery power in watts (V * I).
+
+        Positive = charging, Negative = discharging.
+
+        Returns:
+            Battery power in watts, rounded to 2 decimal places.
+        """
+        return round(self.voltage * self.current, 2)
+
+    @property
+    def capacity_percent(self) -> int:
+        """Calculate capacity percentage (remaining / full * 100).
+
+        This is different from SOC - it represents the battery's actual
+        capacity relative to its rated full capacity.
+
+        Returns:
+            Capacity percentage (0-100), or 0 if full capacity is 0.
+        """
+        if self.max_capacity > 0 and self.current_capacity > 0:
+            return round((self.current_capacity / self.max_capacity) * 100)
+        # Fall back to SOC if current_capacity not available
+        return self.soc
+
+    @property
+    def cell_voltage_delta(self) -> float:
+        """Calculate cell voltage delta (max - min).
+
+        A healthy battery pack should have a small delta (<0.05V).
+        Large deltas may indicate cell imbalance.
+
+        Returns:
+            Voltage difference in volts, rounded to 3 decimal places (mV precision).
+        """
+        return round(self.max_cell_voltage - self.min_cell_voltage, 3)
+
+    @property
+    def cell_temp_delta(self) -> float:
+        """Calculate cell temperature delta (max - min).
+
+        A healthy battery pack should have minimal temperature variation.
+        Large deltas may indicate cooling issues or cell problems.
+
+        Returns:
+            Temperature difference in °C, rounded to 1 decimal place.
+        """
+        return round(self.max_cell_temperature - self.min_cell_temperature, 1)
 
     @classmethod
     def from_modbus_registers(
@@ -867,53 +1022,60 @@ class BatteryBankData:
 
     All values are already scaled to proper units.
 
+    Field values:
+        - None: Data unavailable (Modbus read failed, register not present)
+        - Numeric value: Actual measured/calculated value
+
     Validation:
-        - soc and soh are clamped to 0-100 range
+        - soc and soh are clamped to 0-100 range when non-None
 
     Note:
         battery_count reflects the API-reported count and may differ from
         len(batteries) if the API returns a different count than battery array size.
+        See: eg4_web_monitor issue #91 for None/unavailable handling rationale.
     """
 
     # Timestamp
     timestamp: datetime = field(default_factory=datetime.now)
 
     # Aggregate state
-    voltage: float = 0.0  # V
-    current: float = 0.0  # A
-    soc: int = 0  # %
-    soh: int = 100  # %
-    temperature: float = 0.0  # °C
+    voltage: float | None = None  # V
+    current: float | None = None  # A
+    soc: int | None = None  # %
+    soh: int | None = None  # %
+    temperature: float | None = None  # °C
 
     # Power
-    charge_power: float = 0.0  # W
-    discharge_power: float = 0.0  # W
+    charge_power: float | None = None  # W
+    discharge_power: float | None = None  # W
 
     # Capacity
-    max_capacity: float = 0.0  # Ah
-    current_capacity: float = 0.0  # Ah
+    max_capacity: float | None = None  # Ah
+    current_capacity: float | None = None  # Ah
 
     # Cell data (from BMS, Modbus registers 101-106)
     # Source: Yippy's documentation - https://github.com/joyfulhouse/pylxpweb/issues/97
-    max_cell_voltage: float = 0.0  # V (highest cell voltage)
-    min_cell_voltage: float = 0.0  # V (lowest cell voltage)
-    max_cell_temperature: float = 0.0  # °C (highest cell temp)
-    min_cell_temperature: float = 0.0  # °C (lowest cell temp)
-    cycle_count: int = 0  # Charge/discharge cycle count
+    max_cell_voltage: float | None = None  # V (highest cell voltage)
+    min_cell_voltage: float | None = None  # V (lowest cell voltage)
+    max_cell_temperature: float | None = None  # °C (highest cell temp)
+    min_cell_temperature: float | None = None  # °C (lowest cell temp)
+    cycle_count: int | None = None  # Charge/discharge cycle count
 
     # Status
-    status: int = 0
-    fault_code: int = 0
-    warning_code: int = 0
+    status: int | None = None
+    fault_code: int | None = None
+    warning_code: int | None = None
 
     # Individual batteries
-    battery_count: int = 0
+    battery_count: int | None = None
     batteries: list[BatteryData] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate and clamp percentage values."""
-        self.soc = _clamp_percentage(self.soc, "battery_bank_soc")
-        self.soh = _clamp_percentage(self.soh, "battery_bank_soh")
+        if self.soc is not None:
+            self.soc = _clamp_percentage(self.soc, "battery_bank_soc")
+        if self.soh is not None:
+            self.soh = _clamp_percentage(self.soh, "battery_bank_soh")
 
     @classmethod
     def from_modbus_registers(
@@ -946,14 +1108,17 @@ class BatteryBankData:
         # Battery voltage from register map
         battery_voltage = _read_and_scale_field(input_registers, register_map.battery_voltage)
 
-        # If voltage is too low, assume no battery present
-        if battery_voltage < 1.0:
+        # If voltage is too low or None, assume no battery present
+        if battery_voltage is None or battery_voltage < 1.0:
             return None
 
         # SOC/SOH from packed register (low byte = SOC, high byte = SOH)
         soc_soh_packed = _read_register_field(input_registers, register_map.soc_soh_packed)
-        battery_soc = soc_soh_packed & 0xFF
-        battery_soh = (soc_soh_packed >> 8) & 0xFF
+        battery_soc: int | None = None
+        battery_soh: int | None = None
+        if soc_soh_packed is not None:
+            battery_soc = soc_soh_packed & 0xFF
+            battery_soh = (soc_soh_packed >> 8) & 0xFF
 
         # Charge/discharge power from register map (16-bit, no scaling)
         charge_power = _read_and_scale_field(input_registers, register_map.charge_power)
@@ -991,10 +1156,12 @@ class BatteryBankData:
             from pylxpweb.transports.register_maps import INDIVIDUAL_BATTERY_MAX_COUNT
 
             # Try to read each battery slot (up to max count or battery_count)
-            max_to_check = min(
-                battery_count if battery_count > 0 else INDIVIDUAL_BATTERY_MAX_COUNT,
-                INDIVIDUAL_BATTERY_MAX_COUNT,
-            )
+            # Use INDIVIDUAL_BATTERY_MAX_COUNT if battery_count is None or 0
+            if battery_count is not None and battery_count > 0:
+                count_to_use = battery_count
+            else:
+                count_to_use = INDIVIDUAL_BATTERY_MAX_COUNT
+            max_to_check = min(count_to_use, INDIVIDUAL_BATTERY_MAX_COUNT)
             for idx in range(max_to_check):
                 battery_data = BatteryData.from_modbus_registers(
                     battery_index=idx,
@@ -1003,18 +1170,31 @@ class BatteryBankData:
                 if battery_data is not None:
                     batteries.append(battery_data)
 
+        # Handle None values for battery_count and soh with sensible defaults
+        # battery_count defaults to 1 if unavailable
+        # soh defaults to 100 (assume healthy) if unavailable
+        actual_battery_count: int | None = None
+        if battery_count is not None and battery_count > 0:
+            actual_battery_count = battery_count
+        elif batteries:
+            actual_battery_count = len(batteries)
+
+        actual_soh: int | None = battery_soh
+        if battery_soh is not None and battery_soh == 0:
+            actual_soh = 100  # 0 is invalid, assume healthy
+
         return cls(
             timestamp=datetime.now(),
             voltage=battery_voltage,
             current=battery_current,
             soc=battery_soc,
-            soh=battery_soh if battery_soh > 0 else 100,
+            soh=actual_soh,
             temperature=battery_temp,
             charge_power=charge_power,
             discharge_power=discharge_power,
             fault_code=bms_fault_code,
             warning_code=bms_warning_code,
-            battery_count=battery_count if battery_count > 0 else 1,
+            battery_count=actual_battery_count,
             max_cell_voltage=max_cell_voltage,
             min_cell_voltage=min_cell_voltage,
             max_cell_temperature=max_cell_temp,
@@ -1031,6 +1211,12 @@ class MidboxRuntimeData:
     All values are already scaled to proper units.
     This is the transport-agnostic representation of MID device runtime data.
 
+    Field values:
+        - None: Data unavailable (Modbus read failed, register not present)
+        - Numeric value: Actual measured/calculated value
+
+    See: eg4_web_monitor issue #91
+
     Note: MID devices use HOLDING registers (function 0x03) for runtime data,
     unlike inverters which use INPUT registers (function 0x04).
     """
@@ -1041,141 +1227,152 @@ class MidboxRuntimeData:
     # -------------------------------------------------------------------------
     # Voltage (V)
     # -------------------------------------------------------------------------
-    grid_voltage: float = 0.0  # gridRmsVolt
-    ups_voltage: float = 0.0  # upsRmsVolt
-    gen_voltage: float = 0.0  # genRmsVolt
-    grid_l1_voltage: float = 0.0  # gridL1RmsVolt
-    grid_l2_voltage: float = 0.0  # gridL2RmsVolt
-    ups_l1_voltage: float = 0.0  # upsL1RmsVolt
-    ups_l2_voltage: float = 0.0  # upsL2RmsVolt
-    gen_l1_voltage: float = 0.0  # genL1RmsVolt
-    gen_l2_voltage: float = 0.0  # genL2RmsVolt
+    grid_voltage: float | None = None  # gridRmsVolt
+    ups_voltage: float | None = None  # upsRmsVolt
+    gen_voltage: float | None = None  # genRmsVolt
+    grid_l1_voltage: float | None = None  # gridL1RmsVolt
+    grid_l2_voltage: float | None = None  # gridL2RmsVolt
+    ups_l1_voltage: float | None = None  # upsL1RmsVolt
+    ups_l2_voltage: float | None = None  # upsL2RmsVolt
+    gen_l1_voltage: float | None = None  # genL1RmsVolt
+    gen_l2_voltage: float | None = None  # genL2RmsVolt
 
     # -------------------------------------------------------------------------
     # Current (A)
     # -------------------------------------------------------------------------
-    grid_l1_current: float = 0.0  # gridL1RmsCurr
-    grid_l2_current: float = 0.0  # gridL2RmsCurr
-    load_l1_current: float = 0.0  # loadL1RmsCurr
-    load_l2_current: float = 0.0  # loadL2RmsCurr
-    gen_l1_current: float = 0.0  # genL1RmsCurr
-    gen_l2_current: float = 0.0  # genL2RmsCurr
-    ups_l1_current: float = 0.0  # upsL1RmsCurr
-    ups_l2_current: float = 0.0  # upsL2RmsCurr
+    grid_l1_current: float | None = None  # gridL1RmsCurr
+    grid_l2_current: float | None = None  # gridL2RmsCurr
+    load_l1_current: float | None = None  # loadL1RmsCurr
+    load_l2_current: float | None = None  # loadL2RmsCurr
+    gen_l1_current: float | None = None  # genL1RmsCurr
+    gen_l2_current: float | None = None  # genL2RmsCurr
+    ups_l1_current: float | None = None  # upsL1RmsCurr
+    ups_l2_current: float | None = None  # upsL2RmsCurr
 
     # -------------------------------------------------------------------------
     # Power (W, signed)
     # -------------------------------------------------------------------------
-    grid_l1_power: float = 0.0  # gridL1ActivePower
-    grid_l2_power: float = 0.0  # gridL2ActivePower
-    load_l1_power: float = 0.0  # loadL1ActivePower
-    load_l2_power: float = 0.0  # loadL2ActivePower
-    gen_l1_power: float = 0.0  # genL1ActivePower
-    gen_l2_power: float = 0.0  # genL2ActivePower
-    ups_l1_power: float = 0.0  # upsL1ActivePower
-    ups_l2_power: float = 0.0  # upsL2ActivePower
-    hybrid_power: float = 0.0  # hybridPower (total AC couple power flow)
+    grid_l1_power: float | None = None  # gridL1ActivePower
+    grid_l2_power: float | None = None  # gridL2ActivePower
+    load_l1_power: float | None = None  # loadL1ActivePower
+    load_l2_power: float | None = None  # loadL2ActivePower
+    gen_l1_power: float | None = None  # genL1ActivePower
+    gen_l2_power: float | None = None  # genL2ActivePower
+    ups_l1_power: float | None = None  # upsL1ActivePower
+    ups_l2_power: float | None = None  # upsL2ActivePower
+    hybrid_power: float | None = None  # hybridPower (total AC couple power flow)
 
     # -------------------------------------------------------------------------
     # Smart Load Power (W, signed)
     # When port is in AC Couple mode (status=2), these show AC Couple power
     # -------------------------------------------------------------------------
-    smart_load_1_l1_power: float = 0.0  # smartLoad1L1ActivePower
-    smart_load_1_l2_power: float = 0.0  # smartLoad1L2ActivePower
-    smart_load_2_l1_power: float = 0.0  # smartLoad2L1ActivePower
-    smart_load_2_l2_power: float = 0.0  # smartLoad2L2ActivePower
-    smart_load_3_l1_power: float = 0.0  # smartLoad3L1ActivePower
-    smart_load_3_l2_power: float = 0.0  # smartLoad3L2ActivePower
-    smart_load_4_l1_power: float = 0.0  # smartLoad4L1ActivePower
-    smart_load_4_l2_power: float = 0.0  # smartLoad4L2ActivePower
+    smart_load_1_l1_power: float | None = None  # smartLoad1L1ActivePower
+    smart_load_1_l2_power: float | None = None  # smartLoad1L2ActivePower
+    smart_load_2_l1_power: float | None = None  # smartLoad2L1ActivePower
+    smart_load_2_l2_power: float | None = None  # smartLoad2L2ActivePower
+    smart_load_3_l1_power: float | None = None  # smartLoad3L1ActivePower
+    smart_load_3_l2_power: float | None = None  # smartLoad3L2ActivePower
+    smart_load_4_l1_power: float | None = None  # smartLoad4L1ActivePower
+    smart_load_4_l2_power: float | None = None  # smartLoad4L2ActivePower
 
     # -------------------------------------------------------------------------
     # Smart Port Status (0=off, 1=smart load, 2=ac_couple)
     # Note: Not available via Modbus, only via HTTP API
     # -------------------------------------------------------------------------
-    smart_port_1_status: int = 0  # smartPort1Status
-    smart_port_2_status: int = 0  # smartPort2Status
-    smart_port_3_status: int = 0  # smartPort3Status
-    smart_port_4_status: int = 0  # smartPort4Status
+    smart_port_1_status: int | None = None  # smartPort1Status
+    smart_port_2_status: int | None = None  # smartPort2Status
+    smart_port_3_status: int | None = None  # smartPort3Status
+    smart_port_4_status: int | None = None  # smartPort4Status
 
     # -------------------------------------------------------------------------
     # Frequency (Hz)
     # -------------------------------------------------------------------------
-    phase_lock_freq: float = 0.0  # phaseLockFreq
-    grid_frequency: float = 0.0  # gridFreq
-    gen_frequency: float = 0.0  # genFreq
+    phase_lock_freq: float | None = None  # phaseLockFreq
+    grid_frequency: float | None = None  # gridFreq
+    gen_frequency: float | None = None  # genFreq
 
     # -------------------------------------------------------------------------
     # Energy Today (kWh) - Daily accumulated energy
     # -------------------------------------------------------------------------
-    load_energy_today_l1: float = 0.0  # eLoadTodayL1
-    load_energy_today_l2: float = 0.0  # eLoadTodayL2
-    ups_energy_today_l1: float = 0.0  # eUpsTodayL1
-    ups_energy_today_l2: float = 0.0  # eUpsTodayL2
-    to_grid_energy_today_l1: float = 0.0  # eToGridTodayL1
-    to_grid_energy_today_l2: float = 0.0  # eToGridTodayL2
-    to_user_energy_today_l1: float = 0.0  # eToUserTodayL1
-    to_user_energy_today_l2: float = 0.0  # eToUserTodayL2
-    ac_couple_1_energy_today_l1: float = 0.0  # eACcouple1TodayL1
-    ac_couple_1_energy_today_l2: float = 0.0  # eACcouple1TodayL2
-    smart_load_1_energy_today_l1: float = 0.0  # eSmartLoad1TodayL1
-    smart_load_1_energy_today_l2: float = 0.0  # eSmartLoad1TodayL2
+    load_energy_today_l1: float | None = None  # eLoadTodayL1
+    load_energy_today_l2: float | None = None  # eLoadTodayL2
+    ups_energy_today_l1: float | None = None  # eUpsTodayL1
+    ups_energy_today_l2: float | None = None  # eUpsTodayL2
+    to_grid_energy_today_l1: float | None = None  # eToGridTodayL1
+    to_grid_energy_today_l2: float | None = None  # eToGridTodayL2
+    to_user_energy_today_l1: float | None = None  # eToUserTodayL1
+    to_user_energy_today_l2: float | None = None  # eToUserTodayL2
+    ac_couple_1_energy_today_l1: float | None = None  # eACcouple1TodayL1
+    ac_couple_1_energy_today_l2: float | None = None  # eACcouple1TodayL2
+    smart_load_1_energy_today_l1: float | None = None  # eSmartLoad1TodayL1
+    smart_load_1_energy_today_l2: float | None = None  # eSmartLoad1TodayL2
 
     # -------------------------------------------------------------------------
     # Energy Total (kWh) - Lifetime accumulated energy
     # -------------------------------------------------------------------------
-    load_energy_total_l1: float = 0.0  # eLoadTotalL1
-    load_energy_total_l2: float = 0.0  # eLoadTotalL2
-    ups_energy_total_l1: float = 0.0  # eUpsTotalL1
-    ups_energy_total_l2: float = 0.0  # eUpsTotalL2
-    to_grid_energy_total_l1: float = 0.0  # eToGridTotalL1
-    to_grid_energy_total_l2: float = 0.0  # eToGridTotalL2
-    to_user_energy_total_l1: float = 0.0  # eToUserTotalL1
-    to_user_energy_total_l2: float = 0.0  # eToUserTotalL2
-    ac_couple_1_energy_total_l1: float = 0.0  # eACcouple1TotalL1
-    ac_couple_1_energy_total_l2: float = 0.0  # eACcouple1TotalL2
-    smart_load_1_energy_total_l1: float = 0.0  # eSmartLoad1TotalL1
-    smart_load_1_energy_total_l2: float = 0.0  # eSmartLoad1TotalL2
+    load_energy_total_l1: float | None = None  # eLoadTotalL1
+    load_energy_total_l2: float | None = None  # eLoadTotalL2
+    ups_energy_total_l1: float | None = None  # eUpsTotalL1
+    ups_energy_total_l2: float | None = None  # eUpsTotalL2
+    to_grid_energy_total_l1: float | None = None  # eToGridTotalL1
+    to_grid_energy_total_l2: float | None = None  # eToGridTotalL2
+    to_user_energy_total_l1: float | None = None  # eToUserTotalL1
+    to_user_energy_total_l2: float | None = None  # eToUserTotalL2
+    ac_couple_1_energy_total_l1: float | None = None  # eACcouple1TotalL1
+    ac_couple_1_energy_total_l2: float | None = None  # eACcouple1TotalL2
+    smart_load_1_energy_total_l1: float | None = None  # eSmartLoad1TotalL1
+    smart_load_1_energy_total_l2: float | None = None  # eSmartLoad1TotalL2
 
     # -------------------------------------------------------------------------
-    # Computed totals (convenience)
+    # Computed totals (convenience) - returns None if any component is None
     # -------------------------------------------------------------------------
     @property
-    def grid_power(self) -> float:
-        """Total grid power (L1 + L2)."""
+    def grid_power(self) -> float | None:
+        """Total grid power (L1 + L2). Returns None if any component unavailable."""
+        if self.grid_l1_power is None or self.grid_l2_power is None:
+            return None
         return self.grid_l1_power + self.grid_l2_power
 
     @property
-    def load_power(self) -> float:
-        """Total load power (L1 + L2)."""
+    def load_power(self) -> float | None:
+        """Total load power (L1 + L2). Returns None if any component unavailable."""
+        if self.load_l1_power is None or self.load_l2_power is None:
+            return None
         return self.load_l1_power + self.load_l2_power
 
     @property
-    def gen_power(self) -> float:
-        """Total generator power (L1 + L2)."""
+    def gen_power(self) -> float | None:
+        """Total generator power (L1 + L2). Returns None if any component unavailable."""
+        if self.gen_l1_power is None or self.gen_l2_power is None:
+            return None
         return self.gen_l1_power + self.gen_l2_power
 
     @property
-    def ups_power(self) -> float:
-        """Total UPS power (L1 + L2)."""
+    def ups_power(self) -> float | None:
+        """Total UPS power (L1 + L2). Returns None if any component unavailable."""
+        if self.ups_l1_power is None or self.ups_l2_power is None:
+            return None
         return self.ups_l1_power + self.ups_l2_power
 
     @property
-    def smart_load_total_power(self) -> float:
-        """Total smart load power across all ports (L1 + L2 for ports 1-4)."""
-        return (
-            self.smart_load_1_l1_power
-            + self.smart_load_1_l2_power
-            + self.smart_load_2_l1_power
-            + self.smart_load_2_l2_power
-            + self.smart_load_3_l1_power
-            + self.smart_load_3_l2_power
-            + self.smart_load_4_l1_power
-            + self.smart_load_4_l2_power
-        )
+    def smart_load_total_power(self) -> float | None:
+        """Total smart load power across all ports. Returns None if any unavailable."""
+        values = [
+            self.smart_load_1_l1_power,
+            self.smart_load_1_l2_power,
+            self.smart_load_2_l1_power,
+            self.smart_load_2_l2_power,
+            self.smart_load_3_l1_power,
+            self.smart_load_3_l2_power,
+            self.smart_load_4_l1_power,
+            self.smart_load_4_l2_power,
+        ]
+        if any(v is None for v in values):
+            return None
+        return sum(v for v in values if v is not None)
 
     @property
-    def computed_hybrid_power(self) -> float:
+    def computed_hybrid_power(self) -> float | None:
         """Computed hybrid power when not available from registers.
 
         For Modbus reads, hybrid_power is not available in registers.
@@ -1184,9 +1381,13 @@ class MidboxRuntimeData:
         When smart ports are in AC couple mode (status=2), smart_load_power
         represents AC-coupled solar/generator feeding into the system.
         Subtracting it from load gives the power flowing through the hybrid inverters.
+
+        Returns None if any required value is unavailable.
         """
-        if self.hybrid_power != 0.0:
+        if self.hybrid_power is not None and self.hybrid_power != 0.0:
             return self.hybrid_power
+        if self.load_power is None or self.smart_load_total_power is None:
+            return None
         return self.load_power - self.smart_load_total_power
 
     @classmethod
@@ -1555,11 +1756,16 @@ class MidboxRuntimeData:
             ),
         )
 
-    def to_dict(self) -> dict[str, float | int]:
+    def to_dict(self) -> dict[str, float | int | None]:
         """Convert to dictionary with MidboxData-compatible field names.
 
         This provides backward compatibility with code expecting the old
         dict[str, float | int] return type from read_midbox_runtime().
+
+        Note:
+            Values may be None if the corresponding register read failed.
+            This allows Home Assistant to show "unavailable" state.
+            See: eg4_web_monitor issue #91
 
         Returns:
             Dictionary with camelCase field names matching MidboxData model

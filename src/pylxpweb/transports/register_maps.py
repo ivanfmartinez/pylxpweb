@@ -112,6 +112,8 @@ class RuntimeRegisterMap:
     grid_voltage_r: RegisterField | None = None
     grid_voltage_s: RegisterField | None = None
     grid_voltage_t: RegisterField | None = None
+    grid_l1_voltage: RegisterField | None = None  # Split-phase L1 (120V leg)
+    grid_l2_voltage: RegisterField | None = None  # Split-phase L2 (120V leg)
     grid_frequency: RegisterField | None = None
     inverter_power: RegisterField | None = None
     grid_power: RegisterField | None = None
@@ -123,6 +125,8 @@ class RuntimeRegisterMap:
     eps_voltage_r: RegisterField | None = None
     eps_voltage_s: RegisterField | None = None
     eps_voltage_t: RegisterField | None = None
+    eps_l1_voltage: RegisterField | None = None  # Split-phase L1 (120V leg)
+    eps_l2_voltage: RegisterField | None = None  # Split-phase L2 (120V leg)
     eps_frequency: RegisterField | None = None
     eps_power: RegisterField | None = None
     eps_status: RegisterField | None = None
@@ -132,6 +136,7 @@ class RuntimeRegisterMap:
     # Load
     # -------------------------------------------------------------------------
     load_power: RegisterField | None = None
+    output_power: RegisterField | None = None  # Total output power (split-phase systems)
 
     # -------------------------------------------------------------------------
     # Internal Bus
@@ -445,6 +450,9 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     grid_voltage_r=RegisterField(12, 16, ScaleFactor.SCALE_10),  # L1-L2
     grid_voltage_s=RegisterField(13, 16, ScaleFactor.SCALE_10),  # L2-L3
     grid_voltage_t=RegisterField(14, 16, ScaleFactor.SCALE_10),  # L3-L1
+    # Split-phase L1/L2 voltages (FlexBOSS21) - confirmed via Modbus testing
+    grid_l1_voltage=RegisterField(127, 16, ScaleFactor.SCALE_10),  # L1 ~120V
+    grid_l2_voltage=RegisterField(128, 16, ScaleFactor.SCALE_10),  # L2 ~120V
     grid_frequency=RegisterField(15, 16, ScaleFactor.SCALE_100),
     inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 16
     grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # AC charge/Prec at reg 17
@@ -453,12 +461,17 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     eps_voltage_r=RegisterField(20, 16, ScaleFactor.SCALE_10),  # L1-L2
     eps_voltage_s=RegisterField(21, 16, ScaleFactor.SCALE_10),  # L2-L3
     eps_voltage_t=RegisterField(22, 16, ScaleFactor.SCALE_10),  # L3-L1
+    # Split-phase L1/L2 EPS voltages (FlexBOSS21) - confirmed via Modbus testing
+    eps_l1_voltage=RegisterField(140, 16, ScaleFactor.SCALE_10),  # L1 ~120V
+    eps_l2_voltage=RegisterField(141, 16, ScaleFactor.SCALE_10),  # L2 ~120V
     eps_frequency=RegisterField(23, 16, ScaleFactor.SCALE_100),
     eps_power=RegisterField(24, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 24
     eps_status=RegisterField(25, 16, ScaleFactor.SCALE_NONE),  # Seps at reg 25
     power_to_grid=RegisterField(26, 16, ScaleFactor.SCALE_NONE),  # Ptogrid at reg 26
     # Load
     load_power=RegisterField(27, 16, ScaleFactor.SCALE_NONE),  # Ptouser at reg 27
+    # Output power (FlexBOSS21) - confirmed via Modbus testing, tracks with discharge
+    output_power=RegisterField(170, 16, ScaleFactor.SCALE_NONE, signed=True),  # W
     # Internal - bus voltages at regs 38-39
     bus_voltage_1=RegisterField(38, 16, ScaleFactor.SCALE_10),
     bus_voltage_2=RegisterField(39, 16, ScaleFactor.SCALE_10),
@@ -1053,37 +1066,31 @@ GRIDBOSS_RUNTIME_MAP = MidboxRuntimeRegisterMap(
 # GridBOSS Energy Register Map
 # Source: eg4-modbus-monitor registers-gridboss.yaml
 # Note: GridBOSS reads energy from INPUT registers (function 0x04)
+#
+# IMPORTANT: GridBOSS Modbus energy data does NOT match HTTP API values!
+# Testing (2025-01-26) confirmed significant discrepancies:
+#   - HTTP eLoadTodayL1=441 vs Modbus Reg 42=1902 (4.3x difference)
+#   - HTTP eToGridTodayL1=417 vs Modbus Reg 46=2961 (7.1x difference)
+#   - 32-bit total energy values completely absent from Modbus registers
+#
+# Possible explanations:
+#   1. WiFi dongle calculates/aggregates energy differently than Modbus registers
+#   2. Different firmware paths for local vs cloud reporting
+#   3. Modbus registers contain raw accumulator values, not calibrated energy
+#
+# Recommendation: Use HTTP API for GridBOSS energy data (getMidboxRuntime endpoint).
+# The values below are DOCUMENTED BUT UNRELIABLE - provided for reference only.
+# Set all fields to None to prevent incorrect data from being used.
 GRIDBOSS_ENERGY_MAP = MidboxEnergyRegisterMap(
-    # Daily energy (registers 42-67, scale /10 for kWh)
-    load_energy_today_l1=RegisterField(42, 16, ScaleFactor.SCALE_10),
-    load_energy_today_l2=RegisterField(43, 16, ScaleFactor.SCALE_10),
-    ups_energy_today_l1=RegisterField(44, 16, ScaleFactor.SCALE_10),
-    ups_energy_today_l2=RegisterField(45, 16, ScaleFactor.SCALE_10),
-    to_grid_energy_today_l1=RegisterField(46, 16, ScaleFactor.SCALE_10),
-    to_grid_energy_today_l2=RegisterField(47, 16, ScaleFactor.SCALE_10),
-    to_user_energy_today_l1=RegisterField(48, 16, ScaleFactor.SCALE_10),
-    to_user_energy_today_l2=RegisterField(49, 16, ScaleFactor.SCALE_10),
-    # AC Couple and Smart Load energy today
-    # Verified: AC couple 1 at registers 60-61, smart load 1 at 62-63
-    ac_couple_1_energy_today_l1=RegisterField(60, 16, ScaleFactor.SCALE_10),
-    ac_couple_1_energy_today_l2=RegisterField(61, 16, ScaleFactor.SCALE_10),
-    smart_load_1_energy_today_l1=RegisterField(62, 16, ScaleFactor.SCALE_10),
-    smart_load_1_energy_today_l2=RegisterField(63, 16, ScaleFactor.SCALE_10),
-    # Total energy (registers 68+, 32-bit pairs, scale /10 for kWh)
-    load_energy_total_l1=RegisterField(68, 32, ScaleFactor.SCALE_10, little_endian=True),
-    load_energy_total_l2=RegisterField(70, 32, ScaleFactor.SCALE_10, little_endian=True),
-    ups_energy_total_l1=RegisterField(72, 32, ScaleFactor.SCALE_10, little_endian=True),
-    ups_energy_total_l2=RegisterField(74, 32, ScaleFactor.SCALE_10, little_endian=True),
-    to_grid_energy_total_l1=RegisterField(76, 32, ScaleFactor.SCALE_10, little_endian=True),
-    to_grid_energy_total_l2=RegisterField(78, 32, ScaleFactor.SCALE_10, little_endian=True),
-    to_user_energy_total_l1=RegisterField(80, 32, ScaleFactor.SCALE_10, little_endian=True),
-    to_user_energy_total_l2=RegisterField(82, 32, ScaleFactor.SCALE_10, little_endian=True),
-    # Note: AC Couple and Smart Load total energy registers need verification
-    # Registers 84-103+ may contain these values as 32-bit pairs
-    ac_couple_1_energy_total_l1=RegisterField(88, 32, ScaleFactor.SCALE_10, little_endian=True),
-    ac_couple_1_energy_total_l2=RegisterField(90, 32, ScaleFactor.SCALE_10, little_endian=True),
-    smart_load_1_energy_total_l1=RegisterField(104, 32, ScaleFactor.SCALE_10, little_endian=True),
-    smart_load_1_energy_total_l2=RegisterField(106, 32, ScaleFactor.SCALE_10, little_endian=True),
+    # All energy fields set to None because Modbus values don't match HTTP API.
+    # When Modbus transport is used for GridBOSS, energy data will be unavailable.
+    # Use HTTP API endpoint get_midbox_runtime() for accurate energy statistics.
+    #
+    # Original documented mappings (DO NOT USE - values don't match HTTP API):
+    #   load_energy_today_l1: Register 42 (HTTP shows ~440, Modbus shows ~1900)
+    #   ups_energy_today_l1: Register 44 (HTTP shows ~23, Modbus shows ~0)
+    #   to_grid_energy_today_l1: Register 46 (HTTP shows ~417, Modbus shows ~2960)
+    #   to_user_energy_today_l1: Register 48 (HTTP shows ~393, Modbus shows ~787)
 )
 
 

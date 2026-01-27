@@ -257,58 +257,63 @@ WEB_PARAM_TO_HOLD_REGISTER = {
 #   BIT_*    - Bit field values
 #   MIDBOX_* - GridBOSS-specific parameters
 
-# Register → API Parameter Key Mappings (18KPV, Verified)
-REGISTER_TO_PARAM_KEYS_18KPV: dict[int, list[str]] = {
+# Register → API Parameter Key Mappings (18KPV, Verified via live testing)
+# IMPORTANT: Each register is 16 bits. Bit field registers can have max 16 params.
+REGISTER_TO_PARAM_KEYS: dict[int, list[str]] = {
     15: ["HOLD_COM_ADDR"],
     16: ["HOLD_LANGUAGE"],
-    19: ["HOLD_DEVICE_TYPE_CODE", "BIT_DEVICE_TYPE_ODM", "BIT_MACHINE_TYPE"],
+    # Register 19: Device type code (single value, not bit fields)
+    19: ["HOLD_DEVICE_TYPE_CODE"],
     20: ["HOLD_PV_INPUT_MODE"],
-    # Register 21: Critical function enable register (27 bit fields!)
+    # Register 21: Function enable bit field (16 bits, verified 100% match)
     21: [
         "FUNC_EPS_EN",  # Bit 0: Off-grid mode
-        "FUNC_OVF_LOAD_DERATE_EN",
-        "FUNC_DRMS_EN",
-        "FUNC_LVRT_EN",
-        "FUNC_ANTI_ISLAND_EN",
-        "FUNC_NEUTRAL_DETECT_EN",
-        "FUNC_GRID_ON_POWER_SS_EN",
+        "FUNC_OVF_LOAD_DERATE_EN",  # Bit 1
+        "FUNC_DRMS_EN",  # Bit 2
+        "FUNC_LVRT_EN",  # Bit 3
+        "FUNC_ANTI_ISLAND_EN",  # Bit 4
+        "FUNC_NEUTRAL_DETECT_EN",  # Bit 5
+        "FUNC_GRID_ON_POWER_SS_EN",  # Bit 6
         "FUNC_AC_CHARGE",  # Bit 7: AC charge enable
-        "FUNC_SW_SEAMLESSLY_EN",
+        "FUNC_SW_SEAMLESSLY_EN",  # Bit 8
         "FUNC_SET_TO_STANDBY",  # Bit 9: Standby mode (0=Standby, 1=On)
         "FUNC_FORCED_DISCHG_EN",  # Bit 10: Forced discharge
         "FUNC_FORCED_CHG_EN",  # Bit 11: Force charge
-        "FUNC_ISO_EN",
-        "FUNC_GFCI_EN",
-        "FUNC_DCI_EN",
-        "FUNC_FEED_IN_GRID_EN",
-        "FUNC_LSP_SET_TO_STANDBY",
-        "FUNC_LSP_ISO_EN",
-        "FUNC_LSP_FAN_CHECK_EN",
-        "FUNC_LSP_WHOLE_DAY_SCHEDULE_EN",
-        "FUNC_LSP_LCD_REMOTE_DIS_CHG_EN",
-        "FUNC_LSP_SELF_CONSUMPTION_EN",
-        "FUNC_LSP_AC_CHARGE",
-        "FUNC_LSP_BAT_ACTIVATION_EN",
-        "FUNC_LSP_BYPASS_MODE_EN",
-        "FUNC_LSP_BYPASS_EN",
-        "FUNC_LSP_CHARGE_PRIORITY_EN",
+        "FUNC_ISO_EN",  # Bit 12
+        "FUNC_GFCI_EN",  # Bit 13
+        "FUNC_DCI_EN",  # Bit 14
+        "FUNC_FEED_IN_GRID_EN",  # Bit 15
     ],
-    22: ["HOLD_START_PV_VOLT"],
+    # Register 22: LSP function bit field (verified 9/11 match)
+    # Note: HTTP also returns HOLD_START_PV_VOLT from this register (value ÷10)
+    22: [
+        "FUNC_LSP_SET_TO_STANDBY",  # Bit 0
+        "FUNC_LSP_ISO_EN",  # Bit 1
+        "FUNC_LSP_FAN_CHECK_EN",  # Bit 2
+        "FUNC_LSP_WHOLE_DAY_SCHEDULE_EN",  # Bit 3
+        "FUNC_LSP_LCD_REMOTE_DIS_CHG_EN",  # Bit 4
+        "FUNC_LSP_SELF_CONSUMPTION_EN",  # Bit 5
+        "FUNC_LSP_AC_CHARGE",  # Bit 6
+        "FUNC_LSP_BAT_ACTIVATION_EN",  # Bit 7
+        "FUNC_LSP_BYPASS_MODE_EN",  # Bit 8
+        "FUNC_LSP_BYPASS_EN",  # Bit 9
+        "FUNC_LSP_CHARGE_PRIORITY_EN",  # Bit 10
+    ],
     23: ["HOLD_CONNECT_TIME"],
     24: ["HOLD_RECONNECT_TIME"],
     25: ["HOLD_GRID_VOLT_CONN_LOW"],
+    # Register 26: LSP whole-day schedule bit field
     26: [
-        "HOLD_GRID_VOLT_CONN_HIGH",
-        "FUNC_LSP_WHOLE_BYPASS_1_EN",
-        "FUNC_LSP_WHOLE_BYPASS_2_EN",
-        "FUNC_LSP_WHOLE_BYPASS_3_EN",
-        "FUNC_LSP_WHOLE_BAT_FIRST_1_EN",
-        "FUNC_LSP_WHOLE_BAT_FIRST_2_EN",
-        "FUNC_LSP_WHOLE_BAT_FIRST_3_EN",
-        "FUNC_LSP_WHOLE_SELF_CONSUMPTION_1_EN",
-        "FUNC_LSP_WHOLE_SELF_CONSUMPTION_2_EN",
-        "FUNC_LSP_WHOLE_SELF_CONSUMPTION_3_EN",
-        "FUNC_LSP_BATT_VOLT_OR_SOC",
+        "FUNC_LSP_WHOLE_BYPASS_1_EN",  # Bit 0
+        "FUNC_LSP_WHOLE_BYPASS_2_EN",  # Bit 1
+        "FUNC_LSP_WHOLE_BYPASS_3_EN",  # Bit 2
+        "FUNC_LSP_WHOLE_BAT_FIRST_1_EN",  # Bit 3
+        "FUNC_LSP_WHOLE_BAT_FIRST_2_EN",  # Bit 4
+        "FUNC_LSP_WHOLE_BAT_FIRST_3_EN",  # Bit 5
+        "FUNC_LSP_WHOLE_SELF_CONSUMPTION_1_EN",  # Bit 6
+        "FUNC_LSP_WHOLE_SELF_CONSUMPTION_2_EN",  # Bit 7
+        "FUNC_LSP_WHOLE_SELF_CONSUMPTION_3_EN",  # Bit 8
+        "FUNC_LSP_BATT_VOLT_OR_SOC",  # Bit 9
     ],
     27: ["HOLD_GRID_FREQ_CONN_LOW"],
     28: ["HOLD_GRID_FREQ_CONN_HIGH"],
@@ -318,22 +323,22 @@ REGISTER_TO_PARAM_KEYS_18KPV: dict[int, list[str]] = {
     70: ["HOLD_AC_CHARGE_START_HOUR_1", "HOLD_AC_CHARGE_START_MINUTE_1"],
     # Battery protection
     100: ["HOLD_LEAD_ACID_DISCHARGE_CUT_OFF_VOLT"],
-    # System functions (Register 110: 14 bit fields)
+    # System functions (Register 110: 14 bit fields, verified)
     110: [
-        "FUNC_PV_GRID_OFF_EN",
-        "FUNC_RUN_WITHOUT_GRID",
-        "FUNC_MICRO_GRID_EN",
-        "FUNC_BAT_SHARED",
-        "FUNC_CHARGE_LAST",
-        "FUNC_BUZZER_EN",
-        "FUNC_TAKE_LOAD_TOGETHER",
-        "FUNC_GO_TO_OFFGRID",
-        "FUNC_GREEN_EN",
-        "FUNC_BATTERY_ECO_EN",
-        "BIT_WORKING_MODE",
-        "BIT_PVCT_SAMPLE_TYPE",
-        "BIT_PVCT_SAMPLE_RATIO",
-        "BIT_CT_SAMPLE_RATIO",
+        "FUNC_PV_GRID_OFF_EN",  # Bit 0
+        "FUNC_RUN_WITHOUT_GRID",  # Bit 1
+        "FUNC_MICRO_GRID_EN",  # Bit 2
+        "FUNC_BAT_SHARED",  # Bit 3
+        "FUNC_CHARGE_LAST",  # Bit 4
+        "FUNC_TAKE_LOAD_TOGETHER",  # Bit 5 (swapped with bit 6)
+        "FUNC_BUZZER_EN",  # Bit 6 (swapped with bit 5)
+        "FUNC_GO_TO_OFFGRID",  # Bit 7
+        "FUNC_GREEN_EN",  # Bit 8
+        "FUNC_BATTERY_ECO_EN",  # Bit 9
+        "BIT_WORKING_MODE",  # Bit 10 (multi-bit field?)
+        "BIT_PVCT_SAMPLE_TYPE",  # Bit 11
+        "BIT_PVCT_SAMPLE_RATIO",  # Bit 12
+        "BIT_CT_SAMPLE_RATIO",  # Bit 13 (multi-bit field?)
     ],
     120: [
         "FUNC_HALF_HOUR_AC_CHG_START_EN",
@@ -352,12 +357,12 @@ REGISTER_TO_PARAM_KEYS_18KPV: dict[int, list[str]] = {
 
 # Reverse mapping: API Parameter Key → Register (for 18KPV)
 # Note: Some parameters appear in multiple registers (bit fields)
-PARAM_KEY_TO_REGISTER_18KPV: dict[str, int] = {
-    param: reg for reg, params in REGISTER_TO_PARAM_KEYS_18KPV.items() for param in params
+PARAM_KEY_TO_REGISTER: dict[str, int] = {
+    param: reg for reg, params in REGISTER_TO_PARAM_KEYS.items() for param in params
 }
 
 # Statistics (18KPV verified via live API testing)
-REGISTER_STATS_18KPV = {
+REGISTER_STATS = {
     "total_registers_queried": 200,  # Registers 0-199
     "registers_with_parameters": 147,  # Registers that returned parameter keys
     "empty_registers": 49,  # Registers with no parameters
@@ -1052,3 +1057,121 @@ def get_func_en_bit(value: int, bit_number: int) -> bool:
     """
     mask = get_func_en_bit_mask(bit_number)
     return bool(value & mask)
+
+
+# ============================================================================
+# FAMILY-SPECIFIC PARAMETER MAPPINGS
+# ============================================================================
+# Different inverter families have different register-to-parameter mappings.
+# The HTTP server handles this automatically, but local transports (Modbus/Dongle)
+# need to map registers to parameter names locally.
+#
+# Known differences between families:
+# - Register 15: SNA uses "HOLD_MODBUS_ADDRESS", PV_SERIES uses "HOLD_COM_ADDR"
+# - Some registers exist in one family but not another (e.g., VOLT_WATT in PV_SERIES)
+#
+# The 18KPV (PV_SERIES) mapping is used as the default since it's the most complete.
+# Parameter aliases are supported to handle naming differences across families.
+
+# Parameter name aliases - maps alternative names to canonical names
+# This allows users to use either name when reading/writing parameters
+PARAM_ALIASES: dict[str, str] = {
+    # Register 15 naming difference
+    "HOLD_MODBUS_ADDRESS": "HOLD_COM_ADDR",  # SNA → PV_SERIES canonical name
+}
+
+# Reverse alias mapping (canonical → alternatives)
+PARAM_ALIASES_REVERSE: dict[str, list[str]] = {
+    "HOLD_COM_ADDR": ["HOLD_MODBUS_ADDRESS"],
+}
+
+
+def resolve_param_alias(param_name: str) -> str:
+    """Resolve a parameter name alias to its canonical name.
+
+    Some parameters have different names across inverter families.
+    This function normalizes to the canonical (PV_SERIES/18KPV) name.
+
+    Args:
+        param_name: Parameter name (may be an alias)
+
+    Returns:
+        Canonical parameter name
+
+    Example:
+        resolve_param_alias("HOLD_MODBUS_ADDRESS")  # Returns "HOLD_COM_ADDR"
+        resolve_param_alias("HOLD_COM_ADDR")  # Returns "HOLD_COM_ADDR"
+    """
+    return PARAM_ALIASES.get(param_name, param_name)
+
+
+def get_register_to_param_mapping(
+    family: str | None = None,
+) -> dict[int, list[str]]:
+    """Get the register-to-parameter mapping for an inverter family.
+
+    Different inverter families may have different parameter names for the same
+    register addresses. This function returns the appropriate mapping based on
+    the inverter family.
+
+    Args:
+        family: Inverter family string (from InverterFamily enum value).
+            Supported values: "SNA", "PV_SERIES", "LXP_EU", "LXP_LV", "UNKNOWN", None.
+            If None or unrecognized, defaults to PV_SERIES mapping.
+
+    Returns:
+        Dict mapping register address to list of parameter key names.
+        For single-value registers, the list has one element.
+        For bit-field registers (FUNC_*, BIT_*), the list has multiple elements
+        representing each bit position.
+
+    Example:
+        mapping = get_register_to_param_mapping("PV_SERIES")
+        param_keys = mapping.get(21)  # ["FUNC_EPS_EN", "FUNC_OVF_LOAD_DERATE_EN", ...]
+    """
+    # Currently all families use the 18KPV mapping as the base
+    # The HTTP transport handles family-specific differences on the server side
+    # For local transports, the 18KPV mapping covers most common parameters
+    #
+    # Future: Add family-specific overrides when they are documented
+    # For SNA devices, the server returns "HOLD_MODBUS_ADDRESS" instead of
+    # "HOLD_COM_ADDR" for register 15 - use PARAM_ALIASES to handle this
+    _ = family  # Reserved for future family-specific mappings
+    return REGISTER_TO_PARAM_KEYS
+
+
+def get_param_to_register_mapping(
+    family: str | None = None,
+) -> dict[str, int]:
+    """Get the parameter-to-register mapping for an inverter family.
+
+    This is the reverse mapping of get_register_to_param_mapping(), useful for
+    converting parameter names back to register addresses when writing.
+
+    Includes alias support: both canonical names and their aliases will map
+    to the same register address.
+
+    Args:
+        family: Inverter family string (from InverterFamily enum value).
+            Supported values: "SNA", "PV_SERIES", "LXP_EU", "LXP_LV", "UNKNOWN", None.
+            If None or unrecognized, defaults to PV_SERIES mapping.
+
+    Returns:
+        Dict mapping parameter key name to register address.
+        Includes both canonical names and their aliases.
+
+    Example:
+        mapping = get_param_to_register_mapping("PV_SERIES")
+        mapping.get("FUNC_EPS_EN")  # 21
+        mapping.get("HOLD_MODBUS_ADDRESS")  # 15 (via alias)
+    """
+    # Build reverse mapping from the register-to-param mapping
+    register_mapping = get_register_to_param_mapping(family)
+    result = {param: reg for reg, params in register_mapping.items() for param in params}
+
+    # Add aliases to the mapping so both names work
+    for alias, canonical in PARAM_ALIASES.items():
+        if canonical in result:
+            result[alias] = result[canonical]
+
+    return result
