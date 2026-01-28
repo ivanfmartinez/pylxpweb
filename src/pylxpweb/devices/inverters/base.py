@@ -355,6 +355,19 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         if detected_model is None:
             detected_model = "Unknown"
 
+        # Update transport's inverter_family to match detected family
+        # This ensures the correct register map is used for read_runtime/read_energy
+        # Even if the transport was created with a different/default family
+        if model_family != InverterFamily.UNKNOWN and hasattr(transport, "inverter_family"):
+            if transport.inverter_family != model_family:
+                _LOGGER.info(
+                    "Auto-correcting transport family from %s to %s for %s",
+                    transport.inverter_family,
+                    model_family.value,
+                    transport.serial,
+                )
+                transport.inverter_family = model_family
+
         # Create a placeholder client (not used for data, only required by init)
         # In transport mode, all data comes from transport, not client
         placeholder_client: Any = None

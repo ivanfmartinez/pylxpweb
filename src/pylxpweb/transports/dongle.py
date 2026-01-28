@@ -199,6 +199,26 @@ class DongleTransport(BaseTransport):
         """Get the inverter family for register mapping."""
         return self._inverter_family
 
+    @inverter_family.setter
+    def inverter_family(self, value: InverterFamily | None) -> None:
+        """Set the inverter family for register mapping.
+
+        This allows updating the family after auto-detection from device type code,
+        ensuring the correct register map is used even if the initial family was
+        wrong or defaulted.
+
+        Args:
+            value: The detected or configured inverter family
+        """
+        if value != self._inverter_family:
+            _LOGGER.debug(
+                "Updating inverter family from %s to %s for %s",
+                self._inverter_family,
+                value,
+                self._serial,
+            )
+        self._inverter_family = value
+
     @property
     def runtime_register_map(self) -> RuntimeRegisterMap:
         """Get the runtime register map for this inverter family."""
