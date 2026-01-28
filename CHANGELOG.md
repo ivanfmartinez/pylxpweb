@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-01-27
+
+### Fixed
+
+- **Local Transport Parameter Bug**: Fixed parameters showing as all-false/zero for LOCAL mode (Modbus/Dongle) devices
+  - Root cause: `_fetch_parameters()` was using `read_parameters()` which returns raw register addresses as keys (`reg_21`, `reg_110`)
+  - Switch entities expect named parameter keys like `FUNC_EPS_EN`, `FUNC_GREEN_EN`
+  - Fixed by using `read_named_parameters()` which decodes bit fields and returns proper parameter names
+  - This affects all LOCAL mode devices including FlexBOSS21, 18kPV, SNA, LXP-EU
+  - Now parameters like `FUNC_EPS_EN`, `FUNC_AC_CHARGE`, `FUNC_GREEN_EN` work correctly
+
+### Changed
+
+- Expanded register group for Battery/SOC config from 20 registers to 30 to ensure register 110 (FUNC_GREEN_EN) is included
+
 ## [0.5.42] - 2026-01-27
 
 ### Changed

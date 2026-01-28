@@ -358,15 +358,18 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         # Update transport's inverter_family to match detected family
         # This ensures the correct register map is used for read_runtime/read_energy
         # Even if the transport was created with a different/default family
-        if model_family != InverterFamily.UNKNOWN and hasattr(transport, "inverter_family"):
-            if transport.inverter_family != model_family:
-                _LOGGER.info(
-                    "Auto-correcting transport family from %s to %s for %s",
-                    transport.inverter_family,
-                    model_family.value,
-                    transport.serial,
-                )
-                transport.inverter_family = model_family
+        if (
+            model_family != InverterFamily.UNKNOWN
+            and hasattr(transport, "inverter_family")
+            and transport.inverter_family != model_family
+        ):
+            _LOGGER.info(
+                "Auto-correcting transport family from %s to %s for %s",
+                transport.inverter_family,
+                model_family.value,
+                transport.serial,
+            )
+            transport.inverter_family = model_family
 
         # Create a placeholder client (not used for data, only required by init)
         # In transport mode, all data comes from transport, not client
@@ -598,8 +601,11 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         async with self._parameters_cache_lock:
             try:
                 if self._transport is not None:
-                    # Use transport for direct register reads
-                    # Read holding registers in groups
+                    # Use transport for direct register reads with named parameter mapping
+                    # The read_named_parameters method handles:
+                    # - Reading raw register values via Modbus/Dongle
+                    # - Converting register addresses to named parameter keys
+                    # - Decoding bit field registers (FUNC_*, BIT_*) into individual booleans
                     all_parameters: dict[str, Any] = {}
 
                     # Read key register groups used by control operations
@@ -608,18 +614,17 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
                     # Registers 105-106: SOC limits
                     # Register 110: SYS_FUNC register (green mode)
                     register_groups = [
-                        (0, 30),  # System config + FUNC_EN
-                        (60, 30),  # Charging config
-                        (100, 20),  # Battery/SOC config
+                        (0, 30),  # System config + FUNC_EN (reg 21)
+                        (60, 30),  # Charging config (regs 64-67)
+                        (100, 30),  # Battery/SOC config (regs 105, 110)
                     ]
 
                     for start, count in register_groups:
                         try:
-                            regs = await self._transport.read_parameters(start, count)
-                            # Convert register addresses to parameter names
-                            for addr, value in regs.items():
-                                # Store as reg_N for now, mapping done elsewhere
-                                all_parameters[f"reg_{addr}"] = value
+                            # Use read_named_parameters to get properly decoded parameter names
+                            # e.g., {"FUNC_EPS_EN": True, "FUNC_AC_CHARGE": False, ...}
+                            named_params = await self._transport.read_named_parameters(start, count)
+                            all_parameters.update(named_params)
                         except Exception as err:
                             _LOGGER.debug(
                                 "Failed to read registers %d-%d for %s: %s",
