@@ -877,8 +877,8 @@ MIDBOX_DEVICE_TYPE_CODE = 50
 # MIDBOX RUNTIME REGISTER MAP (GridBOSS)
 # =============================================================================
 # Source: eg4-modbus-monitor registers-gridboss.yaml
-# Note: MID devices use HOLDING registers (function 0x03) for runtime data,
-# unlike inverters which use INPUT registers (function 0x04).
+# Note: MID devices use INPUT registers (function 0x04) for runtime data,
+# same as inverters. HOLDING registers (0x03) store configuration parameters.
 #
 # Key differences from inverters:
 # - No PV, battery, or DC bus registers
@@ -891,10 +891,10 @@ MIDBOX_DEVICE_TYPE_CODE = 50
 class MidboxRuntimeRegisterMap:
     """Register map for GridBOSS/MID device runtime data.
 
-    Maps holding registers to MidboxData fields. All fields correspond to
+    Maps INPUT registers to MidboxData fields. All fields correspond to
     the MidboxData model in pylxpweb.models for web API compatibility.
 
-    Note: MID devices read runtime data from HOLDING registers, not INPUT registers.
+    Note: MID devices read runtime data from INPUT registers (function 0x04).
     """
 
     # -------------------------------------------------------------------------
@@ -1076,12 +1076,13 @@ GRIDBOSS_RUNTIME_MAP = MidboxRuntimeRegisterMap(
     smart_load_3_l2_power=RegisterField(39, 16, ScaleFactor.SCALE_NONE, signed=True),
     smart_load_4_l1_power=RegisterField(40, 16, ScaleFactor.SCALE_NONE, signed=True),
     smart_load_4_l2_power=RegisterField(41, 16, ScaleFactor.SCALE_NONE, signed=True),
-    # Smart Port Status - NOT available via Modbus
-    # Registers 105-108 conflict with AC Couple energy totals (regs 104-119).
-    # Reading them returns energy high-words, not port status codes.
-    # Port status is only available via HTTP API (MidboxData.smartPort*Status).
-    # Setting to None ensures _filter_unused_smart_port_sensors removes all
-    # port-specific entities in LOCAL mode (status defaults to 0 = unused).
+    # Smart Port Status (INPUT registers 105-108)
+    # Values: 0=off, 1=smart_load, 2=ac_couple
+    # Confirmed via live register probe: matches HTTP API smartPort*Status values.
+    smart_port_1_status=RegisterField(105, 16, ScaleFactor.SCALE_NONE),
+    smart_port_2_status=RegisterField(106, 16, ScaleFactor.SCALE_NONE),
+    smart_port_3_status=RegisterField(107, 16, ScaleFactor.SCALE_NONE),
+    smart_port_4_status=RegisterField(108, 16, ScaleFactor.SCALE_NONE),
     # Frequency (registers 128-130, NO scaling - MidboxData stores raw values,
     # properties apply ÷100 via scale_mid_frequency)
     phase_lock_freq=RegisterField(128, 16, ScaleFactor.SCALE_NONE),

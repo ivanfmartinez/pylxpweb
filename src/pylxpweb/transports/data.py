@@ -1287,7 +1287,7 @@ class MidboxRuntimeData:
 
     # -------------------------------------------------------------------------
     # Smart Port Status (0=off, 1=smart load, 2=ac_couple)
-    # Note: Not available via Modbus, only via HTTP API
+    # Available via both HTTP API and Modbus (INPUT registers 105-108)
     # -------------------------------------------------------------------------
     smart_port_1_status: int | None = None  # smartPort1Status
     smart_port_2_status: int | None = None  # smartPort2Status
@@ -1821,8 +1821,7 @@ class MidboxRuntimeData:
                 input_registers, register_map.smart_load_4_l2_power
             ),
             # Smart Port Status (0=off, 1=smart_load, 2=ac_couple)
-            # Note: Smart port status registers conflict with energy totals.
-            # These are only available via HTTP API, will be 0 when reading from Modbus.
+            # INPUT registers 105-108, confirmed via live register probe.
             smart_port_1_status=_read_register_field(
                 input_registers, register_map.smart_port_1_status
             ),
