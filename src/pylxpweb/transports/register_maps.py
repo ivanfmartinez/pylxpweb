@@ -1076,13 +1076,12 @@ GRIDBOSS_RUNTIME_MAP = MidboxRuntimeRegisterMap(
     smart_load_3_l2_power=RegisterField(39, 16, ScaleFactor.SCALE_NONE, signed=True),
     smart_load_4_l1_power=RegisterField(40, 16, ScaleFactor.SCALE_NONE, signed=True),
     smart_load_4_l2_power=RegisterField(41, 16, ScaleFactor.SCALE_NONE, signed=True),
-    # Smart Port Status (registers 105-108)
-    # Values: 0=off, 1=smart_load, 2=ac_couple
-    # Note: Registers 81-84 are part of 32-bit energy totals, actual status is at 105-108
-    smart_port_1_status=RegisterField(105, 16, ScaleFactor.SCALE_NONE),
-    smart_port_2_status=RegisterField(106, 16, ScaleFactor.SCALE_NONE),
-    smart_port_3_status=RegisterField(107, 16, ScaleFactor.SCALE_NONE),
-    smart_port_4_status=RegisterField(108, 16, ScaleFactor.SCALE_NONE),
+    # Smart Port Status - NOT available via Modbus
+    # Registers 105-108 conflict with AC Couple energy totals (regs 104-119).
+    # Reading them returns energy high-words, not port status codes.
+    # Port status is only available via HTTP API (MidboxData.smartPort*Status).
+    # Setting to None ensures _filter_unused_smart_port_sensors removes all
+    # port-specific entities in LOCAL mode (status defaults to 0 = unused).
     # Frequency (registers 128-130, NO scaling - MidboxData stores raw values,
     # properties apply ÷100 via scale_mid_frequency)
     phase_lock_freq=RegisterField(128, 16, ScaleFactor.SCALE_NONE),
