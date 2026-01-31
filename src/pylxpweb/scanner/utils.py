@@ -72,14 +72,22 @@ def _parse_dash_range(ip_range: str) -> list[str]:
     count = int(end) - int(start) + 1
     if count > MAX_SAFE_HOSTS:
         raise ValueError(
-            f"Range contains {count} hosts (max {MAX_SAFE_HOSTS}). "
-            "Use a smaller range."
+            f"Range contains {count} hosts (max {MAX_SAFE_HOSTS}). Use a smaller range."
         )
 
     # Validate both endpoints are private
     for addr in (start, end):
         if not addr.is_private:
             raise ValueError(f"Only private IP ranges are allowed, got {addr}")
+
+    # Validate both endpoints are on the same /24 subnet
+    start_net = ipaddress.IPv4Network(f"{start}/24", strict=False)
+    end_net = ipaddress.IPv4Network(f"{end}/24", strict=False)
+    if start_net != end_net and count > 254:
+        raise ValueError(
+            f"Dash range spans multiple subnets ({start_net} to {end_net}). "
+            "Use CIDR notation for cross-subnet scans."
+        )
 
     return [str(ipaddress.IPv4Address(int(start) + i)) for i in range(count)]
 
@@ -89,12 +97,12 @@ def _validate_private(network: ipaddress.IPv4Network | ipaddress.IPv6Network) ->
     if isinstance(network, ipaddress.IPv6Network):
         raise ValueError("IPv6 scanning is not supported")
 
-    assert isinstance(network, ipaddress.IPv4Network)
+    if not isinstance(network, ipaddress.IPv4Network):
+        raise TypeError(f"Expected IPv4Network, got {type(network).__name__}")
 
     if not any(network.subnet_of(priv) for priv in _PRIVATE_NETWORKS):
         raise ValueError(
-            f"Only private IP ranges are allowed (10.x, 172.16-31.x, 192.168.x), "
-            f"got {network}"
+            f"Only private IP ranges are allowed (10.x, 172.16-31.x, 192.168.x), got {network}"
         )
 
     host_count = network.num_addresses - 2  # Subtract network + broadcast
