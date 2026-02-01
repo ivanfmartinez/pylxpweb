@@ -246,3 +246,219 @@ class TestFirmwareUpdateCheckCreateUpToDate:
         assert result.details.pcs1UpdateMatch is False
         assert result.details.pcs2UpdateMatch is False
         assert result.details.pcs3UpdateMatch is False
+
+
+class TestGetFirmwareUpdateStatus:
+    """Tests for get_firmware_update_status endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_get_firmware_update_status_success(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test get_firmware_update_status returns update status."""
+        from pylxpweb.models import FirmwareUpdateStatus
+
+        response = {
+            "receiving": False,
+            "progressing": False,
+            "fileReady": True,
+            "deviceInfos": [],
+        }
+        mock_client._request.return_value = response
+
+        result = await firmware_endpoints.get_firmware_update_status()
+
+        mock_client._ensure_authenticated.assert_called_once()
+        mock_client._request.assert_called_once_with(
+            "POST",
+            "/WManage/web/maintain/remoteUpdate/info",
+            data={"userId": 12345},
+        )
+
+        assert isinstance(result, FirmwareUpdateStatus)
+        assert result.receiving is False
+        assert result.progressing is False
+
+    @pytest.mark.asyncio
+    async def test_get_firmware_update_status_no_user_id(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test get_firmware_update_status raises error when user_id is None."""
+        from pylxpweb.exceptions import LuxpowerAuthError
+
+        mock_client._user_id = None
+
+        with pytest.raises(LuxpowerAuthError) as exc_info:
+            await firmware_endpoints.get_firmware_update_status()
+
+        assert "User ID not available" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_firmware_update_status_missing_user_id_attribute(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test get_firmware_update_status raises error when _user_id attribute missing."""
+        from pylxpweb.exceptions import LuxpowerAuthError
+
+        delattr(mock_client, "_user_id")
+
+        with pytest.raises(LuxpowerAuthError) as exc_info:
+            await firmware_endpoints.get_firmware_update_status()
+
+        assert "User ID not available" in str(exc_info.value)
+
+
+class TestCheckUpdateEligibility:
+    """Tests for check_update_eligibility endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_check_update_eligibility_allowed(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test check_update_eligibility when update is allowed."""
+        from pylxpweb.models import UpdateEligibilityStatus
+
+        response = {
+            "success": True,
+            "msg": "allowToUpdate",
+        }
+        mock_client._request.return_value = response
+
+        result = await firmware_endpoints.check_update_eligibility("1234567890")
+
+        mock_client._ensure_authenticated.assert_called_once()
+        mock_client._request.assert_called_once_with(
+            "POST",
+            "/WManage/web/maintain/standardUpdate/check12KParallelStatus",
+            data={"userId": 12345, "serialNum": "1234567890"},
+        )
+
+        assert isinstance(result, UpdateEligibilityStatus)
+        assert result.success is True
+        assert result.is_allowed is True
+
+    @pytest.mark.asyncio
+    async def test_check_update_eligibility_device_updating(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test check_update_eligibility when device is currently updating."""
+
+        response = {
+            "success": False,
+            "msg": "deviceUpdating",
+        }
+        mock_client._request.return_value = response
+
+        result = await firmware_endpoints.check_update_eligibility("1234567890")
+
+        assert result.is_allowed is False
+        assert result.msg == "deviceUpdating"
+
+    @pytest.mark.asyncio
+    async def test_check_update_eligibility_no_user_id(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test check_update_eligibility raises error when user_id is None."""
+        from pylxpweb.exceptions import LuxpowerAuthError
+
+        mock_client._user_id = None
+
+        with pytest.raises(LuxpowerAuthError) as exc_info:
+            await firmware_endpoints.check_update_eligibility("1234567890")
+
+        assert "User ID not available" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_check_update_eligibility_missing_user_id_attribute(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test check_update_eligibility raises error when _user_id attribute missing."""
+        from pylxpweb.exceptions import LuxpowerAuthError
+
+        delattr(mock_client, "_user_id")
+
+        with pytest.raises(LuxpowerAuthError) as exc_info:
+            await firmware_endpoints.check_update_eligibility("1234567890")
+
+        assert "User ID not available" in str(exc_info.value)
+
+
+class TestStartFirmwareUpdate:
+    """Tests for start_firmware_update endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_start_firmware_update_success(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test start_firmware_update initiates update successfully."""
+        response = {"success": True}
+        mock_client._request.return_value = response
+
+        result = await firmware_endpoints.start_firmware_update("1234567890")
+
+        mock_client._ensure_authenticated.assert_called_once()
+        mock_client._request.assert_called_once_with(
+            "POST",
+            "/WManage/web/maintain/standardUpdate/run",
+            data={
+                "userId": 12345,
+                "serialNum": "1234567890",
+                "tryFastMode": "false",
+            },
+        )
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_start_firmware_update_with_fast_mode(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test start_firmware_update with fast mode enabled."""
+        response = {"success": True}
+        mock_client._request.return_value = response
+
+        result = await firmware_endpoints.start_firmware_update("1234567890", try_fast_mode=True)
+
+        call_data = mock_client._request.call_args[1]["data"]
+        assert call_data["tryFastMode"] == "true"
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_start_firmware_update_failed(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test start_firmware_update returns False when update fails."""
+        response = {"success": False}
+        mock_client._request.return_value = response
+
+        result = await firmware_endpoints.start_firmware_update("1234567890")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_start_firmware_update_no_user_id(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test start_firmware_update raises error when user_id is None."""
+        from pylxpweb.exceptions import LuxpowerAuthError
+
+        mock_client._user_id = None
+
+        with pytest.raises(LuxpowerAuthError) as exc_info:
+            await firmware_endpoints.start_firmware_update("1234567890")
+
+        assert "User ID not available" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_start_firmware_update_missing_user_id_attribute(
+        self, firmware_endpoints: FirmwareEndpoints, mock_client: Mock
+    ) -> None:
+        """Test start_firmware_update raises error when _user_id attribute missing."""
+        from pylxpweb.exceptions import LuxpowerAuthError
+
+        delattr(mock_client, "_user_id")
+
+        with pytest.raises(LuxpowerAuthError) as exc_info:
+            await firmware_endpoints.start_firmware_update("1234567890")
+
+        assert "User ID not available" in str(exc_info.value)
