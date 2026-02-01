@@ -45,7 +45,8 @@ class TestNetworkScanner:
                 return MagicMock(), writer
             raise ConnectionRefusedError()
 
-        with patch("pylxpweb.scanner.scanner.asyncio.open_connection", side_effect=mock_open_connection):
+        mock_target = "pylxpweb.scanner.scanner.asyncio.open_connection"
+        with patch(mock_target, side_effect=mock_open_connection):
             scanner = NetworkScanner(scan_config)
             results = [r async for r in scanner.scan()]
 
