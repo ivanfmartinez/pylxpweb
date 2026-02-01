@@ -1,6 +1,6 @@
 [project]
 name = "pylxpweb"
-version = "0.6.6"
+version = "0.6.7"
 description = "Python client library for Luxpower/EG4 inverter web monitoring API"
 readme = "README.md"
 authors = [
@@ -146,7 +146,7 @@ exclude_lines = [
 ]
 precision = 2
 skip_empty = true
-fail_under = 78  # Temporarily lowered to unblock hybrid mode feature
+fail_under = 80
 
 [dependency-groups]
 dev = [

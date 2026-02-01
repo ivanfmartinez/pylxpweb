@@ -118,6 +118,133 @@ class BatteryBank(BaseDevice):
         """
         return self.data.soc
 
+    @property
+    def soc_delta(self) -> int | None:
+        """Get SOC imbalance across batteries in the bank (max - min).
+
+        Useful for determining if top balancing is required between
+        battery packs. A high delta indicates uneven charge states.
+
+        Returns:
+            SOC difference in percentage points, or None if fewer than
+            2 batteries are present (delta not meaningful).
+        """
+        if len(self.batteries) < 2:
+            return None
+        soc_values = [b.soc for b in self.batteries]
+        return max(soc_values) - min(soc_values)
+
+    # ========== State of Health ==========
+
+    @property
+    def min_soh(self) -> int | None:
+        """Get minimum state of health across all batteries.
+
+        The weakest battery determines effective bank health.
+
+        Returns:
+            Lowest SOH percentage, or None if no batteries present.
+        """
+        if not self.batteries:
+            return None
+        return min(b.soh for b in self.batteries)
+
+    @property
+    def soh_delta(self) -> int | None:
+        """Get SOH imbalance across batteries in the bank (max - min).
+
+        A high delta indicates uneven aging and may suggest pack
+        replacement planning.
+
+        Returns:
+            SOH difference in percentage points, or None if fewer than
+            2 batteries are present.
+        """
+        if len(self.batteries) < 2:
+            return None
+        soh_values = [b.soh for b in self.batteries]
+        return max(soh_values) - min(soh_values)
+
+    # ========== Cross-Battery Diagnostics ==========
+
+    @property
+    def voltage_delta(self) -> float | None:
+        """Get voltage spread across batteries in the bank (max - min).
+
+        Voltage can diverge from SOC under load, making this a useful
+        complement to soc_delta.
+
+        Returns:
+            Voltage difference in volts, or None if fewer than
+            2 batteries are present.
+        """
+        if len(self.batteries) < 2:
+            return None
+        voltages = [b.voltage for b in self.batteries]
+        return round(max(voltages) - min(voltages), 2)
+
+    @property
+    def cell_voltage_delta_max(self) -> float | None:
+        """Get worst-case cell voltage imbalance across all batteries.
+
+        Returns the highest cell_voltage_delta from any battery in
+        the bank. Useful for quickly checking if any pack needs
+        cell-level balancing.
+
+        Returns:
+            Maximum cell voltage delta in volts, or None if no
+            batteries present.
+        """
+        if not self.batteries:
+            return None
+        return max(b.cell_voltage_delta for b in self.batteries)
+
+    @property
+    def cycle_count_delta(self) -> int | None:
+        """Get cycle count spread across batteries (max - min).
+
+        A high delta indicates uneven usage across packs.
+
+        Returns:
+            Cycle count difference, or None if fewer than
+            2 batteries are present.
+        """
+        if len(self.batteries) < 2:
+            return None
+        counts = [b.cycle_count for b in self.batteries]
+        return max(counts) - min(counts)
+
+    @property
+    def max_cell_temp(self) -> float | None:
+        """Get highest cell temperature across all batteries.
+
+        Bank-wide thermal ceiling for safety monitoring.
+
+        Returns:
+            Maximum cell temperature in Celsius, or None if no
+            batteries present.
+        """
+        if not self.batteries:
+            return None
+        return max(b.max_cell_temp for b in self.batteries)
+
+    @property
+    def temp_delta(self) -> float | None:
+        """Get thermal spread across all batteries (max - min).
+
+        Compares the hottest cell in any battery to the coolest cell
+        in any battery across the entire bank.
+
+        Returns:
+            Temperature difference in Celsius, or None if no
+            batteries present.
+        """
+        if not self.batteries:
+            return None
+        highest = max(b.max_cell_temp for b in self.batteries)
+        lowest = min(b.min_cell_temp for b in self.batteries)
+        return round(highest - lowest, 1)
+
     # ========== Voltage Properties ==========
 
     @property

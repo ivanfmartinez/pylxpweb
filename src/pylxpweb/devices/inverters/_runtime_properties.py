@@ -19,7 +19,7 @@ Properties are organized by category:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pylxpweb.constants import scale_runtime_value
 
@@ -31,6 +31,7 @@ class InverterRuntimePropertiesMixin:
     """Mixin providing runtime property accessors for inverters."""
 
     _runtime: InverterRuntime | None
+    _transport_runtime: Any | None
 
     # ===========================================
     # PV (Solar Panel) Properties

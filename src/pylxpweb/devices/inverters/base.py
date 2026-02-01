@@ -242,7 +242,7 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
                     f"Invalid connection type '{connection_type}'. "
                     "Use 'modbus', 'dongle', or 'hybrid'."
                 )
-            transport = create_transport(connection_type, **config)  # type: ignore[arg-type]
+            transport = create_transport(connection_type, **config)  # type: ignore[call-overload]
         else:
             transport = transport_or_type
 
