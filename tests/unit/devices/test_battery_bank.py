@@ -5,8 +5,9 @@ from unittest.mock import Mock
 import pytest
 
 from pylxpweb import LuxpowerClient
+from pylxpweb.devices.battery import Battery
 from pylxpweb.devices.battery_bank import BatteryBank
-from pylxpweb.models import BatteryInfo
+from pylxpweb.models import BatteryInfo, BatteryModule
 
 
 @pytest.fixture
@@ -449,3 +450,247 @@ class TestBatteryBankEnhancedProperties:
 
         # Should prefer totalNumber when available
         assert battery_bank.battery_count == 3
+
+
+def _make_bank(
+    mock_client: LuxpowerClient,
+    sample_battery_info: BatteryInfo,
+    batteries: list[Battery],
+) -> BatteryBank:
+    """Helper to create a BatteryBank with pre-populated batteries."""
+    bank = BatteryBank(
+        client=mock_client,
+        inverter_serial="1234567890",
+        battery_info=sample_battery_info,
+    )
+    bank.batteries = batteries
+    return bank
+
+
+def _make_battery(
+    mock_client: LuxpowerClient,
+    soc: int,
+    *,
+    soh: int = 100,
+    total_voltage: int = 5394,
+    max_cell_voltage: int = 3400,
+    min_cell_voltage: int = 3350,
+    max_cell_temp: int = 350,
+    min_cell_temp: int = 340,
+    cycle_count: int = 50,
+) -> Battery:
+    """Helper to create a Battery with configurable values."""
+    module = BatteryModule.model_construct(
+        batteryKey="test_bat",
+        batterySn="test_sn",
+        batIndex=0,
+        lost=False,
+        totalVoltage=total_voltage,
+        current=100,
+        soc=soc,
+        soh=soh,
+        currentRemainCapacity=100,
+        currentFullCapacity=200,
+        batMaxCellTemp=max_cell_temp,
+        batMinCellTemp=min_cell_temp,
+        batMaxCellVoltage=max_cell_voltage,
+        batMinCellVoltage=min_cell_voltage,
+        cycleCnt=cycle_count,
+        fwVersionText="1.0",
+    )
+    return Battery(client=mock_client, battery_data=module)
+
+
+class TestBatteryBankSocDelta:
+    """Test BatteryBank soc_delta property."""
+
+    def test_soc_delta_no_batteries(self, mock_client, sample_battery_info):
+        """Test soc_delta returns None with no batteries."""
+        bank = _make_bank(mock_client, sample_battery_info, [])
+        assert bank.soc_delta is None
+
+    def test_soc_delta_one_battery(self, mock_client, sample_battery_info):
+        """Test soc_delta returns None with only one battery."""
+        bank = _make_bank(mock_client, sample_battery_info, [_make_battery(mock_client, 85)])
+        assert bank.soc_delta is None
+
+    def test_soc_delta_two_batteries(self, mock_client, sample_battery_info):
+        """Test soc_delta computes max - min across two batteries."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [_make_battery(mock_client, 90), _make_battery(mock_client, 85)],
+        )
+        assert bank.soc_delta == 5
+
+    def test_soc_delta_three_batteries(self, mock_client, sample_battery_info):
+        """Test soc_delta with three batteries picks correct extremes."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 82),
+                _make_battery(mock_client, 90),
+                _make_battery(mock_client, 85),
+            ],
+        )
+        assert bank.soc_delta == 8
+
+    def test_soc_delta_equal_soc(self, mock_client, sample_battery_info):
+        """Test soc_delta is 0 when all batteries have equal SOC."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 85),
+                _make_battery(mock_client, 85),
+                _make_battery(mock_client, 85),
+            ],
+        )
+        assert bank.soc_delta == 0
+
+
+class TestBatteryBankSohMetrics:
+    """Test BatteryBank SOH-related properties."""
+
+    def test_min_soh_no_batteries(self, mock_client, sample_battery_info):
+        """Test min_soh returns None with no batteries."""
+        bank = _make_bank(mock_client, sample_battery_info, [])
+        assert bank.min_soh is None
+
+    def test_min_soh_returns_lowest(self, mock_client, sample_battery_info):
+        """Test min_soh returns lowest SOH across batteries."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 85, soh=98),
+                _make_battery(mock_client, 90, soh=92),
+                _make_battery(mock_client, 80, soh=95),
+            ],
+        )
+        assert bank.min_soh == 92
+
+    def test_soh_delta_none_with_one_battery(self, mock_client, sample_battery_info):
+        """Test soh_delta returns None with fewer than 2 batteries."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [_make_battery(mock_client, 85, soh=98)],
+        )
+        assert bank.soh_delta is None
+
+    def test_soh_delta_computes_spread(self, mock_client, sample_battery_info):
+        """Test soh_delta computes max - min SOH."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 85, soh=98),
+                _make_battery(mock_client, 90, soh=92),
+                _make_battery(mock_client, 80, soh=95),
+            ],
+        )
+        assert bank.soh_delta == 6
+
+
+class TestBatteryBankCrossBatteryDiagnostics:
+    """Test BatteryBank cross-battery diagnostic properties."""
+
+    def test_voltage_delta_none_with_one_battery(self, mock_client, sample_battery_info):
+        """Test voltage_delta returns None with fewer than 2 batteries."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [_make_battery(mock_client, 85, total_voltage=5394)],
+        )
+        assert bank.voltage_delta is None
+
+    def test_voltage_delta_computes_spread(self, mock_client, sample_battery_info):
+        """Test voltage_delta computes max - min voltage."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 85, total_voltage=5400),  # 54.00V
+                _make_battery(mock_client, 80, total_voltage=5350),  # 53.50V
+            ],
+        )
+        assert bank.voltage_delta == 0.50
+
+    def test_cell_voltage_delta_max_no_batteries(self, mock_client, sample_battery_info):
+        """Test cell_voltage_delta_max returns None with no batteries."""
+        bank = _make_bank(mock_client, sample_battery_info, [])
+        assert bank.cell_voltage_delta_max is None
+
+    def test_cell_voltage_delta_max_returns_worst(self, mock_client, sample_battery_info):
+        """Test cell_voltage_delta_max returns highest cell delta."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(
+                    mock_client, 85, max_cell_voltage=3400, min_cell_voltage=3380
+                ),  # 0.020V
+                _make_battery(
+                    mock_client, 80, max_cell_voltage=3400, min_cell_voltage=3350
+                ),  # 0.050V
+            ],
+        )
+        assert bank.cell_voltage_delta_max == 0.050
+
+    def test_cycle_count_delta_none_with_one(self, mock_client, sample_battery_info):
+        """Test cycle_count_delta returns None with fewer than 2 batteries."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [_make_battery(mock_client, 85, cycle_count=100)],
+        )
+        assert bank.cycle_count_delta is None
+
+    def test_cycle_count_delta_computes_spread(self, mock_client, sample_battery_info):
+        """Test cycle_count_delta computes max - min cycles."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 85, cycle_count=120),
+                _make_battery(mock_client, 80, cycle_count=95),
+                _make_battery(mock_client, 82, cycle_count=110),
+            ],
+        )
+        assert bank.cycle_count_delta == 25
+
+    def test_max_cell_temp_no_batteries(self, mock_client, sample_battery_info):
+        """Test max_cell_temp returns None with no batteries."""
+        bank = _make_bank(mock_client, sample_battery_info, [])
+        assert bank.max_cell_temp is None
+
+    def test_max_cell_temp_returns_highest(self, mock_client, sample_battery_info):
+        """Test max_cell_temp returns highest across all batteries."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 85, max_cell_temp=380),  # 38.0°C
+                _make_battery(mock_client, 80, max_cell_temp=420),  # 42.0°C
+            ],
+        )
+        assert bank.max_cell_temp == 42.0
+
+    def test_temp_delta_no_batteries(self, mock_client, sample_battery_info):
+        """Test temp_delta returns None with no batteries."""
+        bank = _make_bank(mock_client, sample_battery_info, [])
+        assert bank.temp_delta is None
+
+    def test_temp_delta_computes_spread(self, mock_client, sample_battery_info):
+        """Test temp_delta computes hottest max - coolest min across bank."""
+        bank = _make_bank(
+            mock_client,
+            sample_battery_info,
+            [
+                _make_battery(mock_client, 85, max_cell_temp=400, min_cell_temp=370),
+                _make_battery(mock_client, 80, max_cell_temp=420, min_cell_temp=350),
+            ],
+        )
+        assert bank.temp_delta == 7.0
