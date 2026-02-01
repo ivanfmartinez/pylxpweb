@@ -1,7 +1,7 @@
 # CLAUDE.md - Development Guidelines for pylxpweb
 
-**Last Updated**: 2025-11-20
-**Version**: 0.2.1
+**Last Updated**: 2026-01-30
+**Version**: 0.6.5
 **Purpose**: Guide Claude Code development in this repository
 
 ## Project Overview

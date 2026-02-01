@@ -237,10 +237,10 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         # If given a string, create the transport from config
         if isinstance(transport_or_type, str):
             connection_type = transport_or_type
-            if connection_type not in ("modbus", "dongle", "hybrid"):
+            if connection_type not in ("modbus", "serial", "dongle", "hybrid"):
                 raise ValueError(
                     f"Invalid connection type '{connection_type}'. "
-                    "Use 'modbus', 'dongle', or 'hybrid'."
+                    "Use 'modbus', 'serial', 'dongle', or 'hybrid'."
                 )
             transport = create_transport(connection_type, **config)  # type: ignore[call-overload]
         else:

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] - 2026-01-31
+
+### Added
+
+- **Modbus RTU serial transport**: New `ModbusSerialTransport` for direct communication via USB-to-RS485 adapters using Modbus RTU protocol
+- `create_serial_transport()` factory function for easy serial transport creation
+- `TransportType.MODBUS_SERIAL` enum value with full config validation (port, baudrate, parity, stopbits)
+- Serial-specific `TransportConfig` fields (`serial_port`, `serial_baudrate`, `serial_parity`, `serial_stopbits`)
+
+### Fixed
+
+- **GridBOSS smart port status registers**: Restored INPUT registers 105-108 for smart port status, fixed MID register comments
+- **GridBOSS double-scaling**: Resolved double-scaling for voltage, current, and frequency sensors
+- **GridBOSS energy registers**: Enabled energy registers for local transport
+- **MIDDevice None handling**: Handle None values in transport-to-runtime conversion
+- **Smart port register conflicts**: Removed conflicting smart port status registers from GridBOSS Modbus map
+
+## [0.6.6] - 2026-01-30
+
+### Added
+
+- **Network scanner module**: Device autodiscovery for finding inverters on the local network
+
+### Fixed
+
+- Code review issues in network scanner
+
 ## [0.6.5] - 2026-01-30
 
 ### Fixed

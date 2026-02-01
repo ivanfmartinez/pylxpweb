@@ -8,6 +8,14 @@ from pylxpweb.scanner.scanner import NetworkScanner
 from pylxpweb.scanner.types import DeviceType, ScanConfig, ScanProgress
 
 
+def _mock_writer() -> MagicMock:
+    """Create a mock asyncio StreamWriter."""
+    writer = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+    return writer
+
+
 @pytest.fixture
 def scan_config():
     """Config scanning a tiny range for fast tests."""
@@ -39,14 +47,11 @@ class TestNetworkScanner:
             nonlocal call_count
             call_count += 1
             if host == "192.168.1.2":
-                writer = MagicMock()
-                writer.close = MagicMock()
-                writer.wait_closed = AsyncMock()
-                return MagicMock(), writer
+                return MagicMock(), _mock_writer()
             raise ConnectionRefusedError()
 
-        mock_target = "pylxpweb.scanner.scanner.asyncio.open_connection"
-        with patch(mock_target, side_effect=mock_open_connection):
+        target = "pylxpweb.scanner.scanner.asyncio.open_connection"
+        with patch(target, side_effect=mock_open_connection):
             scanner = NetworkScanner(scan_config)
             results = [r async for r in scanner.scan()]
 
@@ -66,10 +71,7 @@ class TestNetworkScanner:
         )
 
         async def mock_open(host, port):
-            writer = MagicMock()
-            writer.close = MagicMock()
-            writer.wait_closed = AsyncMock()
-            return MagicMock(), writer
+            return MagicMock(), _mock_writer()
 
         with patch("pylxpweb.scanner.scanner.asyncio.open_connection", side_effect=mock_open):
             scanner = NetworkScanner(config)
@@ -100,10 +102,7 @@ class TestNetworkScanner:
         )
 
         async def mock_open(host, port):
-            writer = MagicMock()
-            writer.close = MagicMock()
-            writer.wait_closed = AsyncMock()
-            return MagicMock(), writer
+            return MagicMock(), _mock_writer()
 
         mock_info = MagicMock()
         mock_info.serial = "4512345678"
@@ -144,10 +143,7 @@ class TestNetworkScanner:
         )
 
         async def mock_open(host, port):
-            writer = MagicMock()
-            writer.close = MagicMock()
-            writer.wait_closed = AsyncMock()
-            return MagicMock(), writer
+            return MagicMock(), _mock_writer()
 
         mock_info = MagicMock()
         mock_info.serial = "9999999999"
@@ -187,10 +183,7 @@ class TestNetworkScanner:
         )
 
         async def mock_open(host, port):
-            writer = MagicMock()
-            writer.close = MagicMock()
-            writer.wait_closed = AsyncMock()
-            return MagicMock(), writer
+            return MagicMock(), _mock_writer()
 
         mock_transport = MagicMock()
         mock_transport.connect = AsyncMock(side_effect=OSError("Connection reset"))

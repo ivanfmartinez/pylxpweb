@@ -43,6 +43,7 @@ from .dongle import DongleTransport
 from .http import HTTPTransport
 from .hybrid import HybridTransport
 from .modbus import ModbusTransport
+from .modbus_serial import ModbusSerialTransport
 from .protocol import BaseTransport, InverterTransport
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ if TYPE_CHECKING:
     from pylxpweb.devices.inverters._features import InverterFamily
 
 # Type alias for connection types
-ConnectionType = Literal["http", "modbus", "dongle", "hybrid"]
+ConnectionType = Literal["http", "modbus", "serial", "dongle", "hybrid"]
 
 
 # -----------------------------------------------------------------------------
@@ -78,6 +79,21 @@ def create_transport(
     timeout: float = ...,
     inverter_family: InverterFamily | None = ...,
 ) -> ModbusTransport: ...
+
+
+@overload
+def create_transport(
+    connection_type: Literal["serial"],
+    *,
+    port: str,
+    serial: str,
+    baudrate: int = ...,
+    parity: str = ...,
+    stopbits: int = ...,
+    unit_id: int = ...,
+    timeout: float = ...,
+    inverter_family: InverterFamily | None = ...,
+) -> ModbusSerialTransport: ...
 
 
 @overload
@@ -199,6 +215,24 @@ def create_transport(
             host=host,
             serial=serial,
             port=config.get("port", 502),
+            unit_id=config.get("unit_id", 1),
+            timeout=config.get("timeout", 10.0),
+            inverter_family=config.get("inverter_family"),
+        )
+
+    if connection_type == "serial":
+        port = config.get("port")
+        serial = config.get("serial")
+        if not port:
+            raise ValueError("port is required for Serial transport")
+        if not serial:
+            raise ValueError("serial is required for Serial transport")
+        return ModbusSerialTransport(
+            port=port,
+            serial=serial,
+            baudrate=config.get("baudrate", 19200),
+            parity=config.get("parity", "N"),
+            stopbits=config.get("stopbits", 1),
             unit_id=config.get("unit_id", 1),
             timeout=config.get("timeout", 10.0),
             inverter_family=config.get("inverter_family"),
@@ -459,6 +493,74 @@ def create_dongle_transport(
     )
 
 
+def create_serial_transport(
+    port: str,
+    serial: str,
+    *,
+    baudrate: int = 19200,
+    parity: str = "N",
+    stopbits: int = 1,
+    unit_id: int = 1,
+    timeout: float = 10.0,
+    inverter_family: InverterFamily | None = None,
+) -> ModbusSerialTransport:
+    """Create a Modbus RTU serial transport for local communication.
+
+    This allows direct communication with the inverter via a USB-to-RS485
+    serial adapter using Modbus RTU protocol.
+
+    IMPORTANT: Single-Client Limitation
+    ------------------------------------
+    Serial ports support only ONE concurrent connection.
+    Running multiple clients (e.g., Home Assistant + custom script) causes
+    communication errors and data corruption.
+
+    Ensure only ONE integration/script connects to each serial port at a time.
+
+    Args:
+        port: Serial port path (e.g., "/dev/ttyUSB0", "COM1")
+        serial: Inverter serial number (for identification)
+        baudrate: Serial baud rate (default: 19200)
+        parity: Serial parity: 'N' (none), 'E' (even), 'O' (odd) (default: 'N')
+        stopbits: Serial stop bits: 1 or 2 (default: 1)
+        unit_id: Modbus unit/slave ID (default: 1)
+        timeout: Operation timeout in seconds (default: 10.0)
+        inverter_family: Inverter model family for correct register mapping.
+            If None, defaults to PV_SERIES (EG4-18KPV) for backward
+            compatibility.
+
+    Returns:
+        ModbusSerialTransport instance ready for use
+
+    Example:
+        transport = create_serial_transport(
+            port="/dev/ttyUSB0",
+            serial="CE12345678",
+            baudrate=19200,
+        )
+
+        async with transport:
+            runtime = await transport.read_runtime()
+            print(f"PV Power: {runtime.pv_total_power}W")
+
+    Note:
+        Serial communication requires:
+        - USB-to-RS485 adapter connected to inverter
+        - Correct serial parameters (baudrate, parity, stopbits)
+        - Appropriate permissions for serial port access
+    """
+    return ModbusSerialTransport(
+        port=port,
+        serial=serial,
+        baudrate=baudrate,
+        parity=parity,
+        stopbits=stopbits,
+        unit_id=unit_id,
+        timeout=timeout,
+        inverter_family=inverter_family,
+    )
+
+
 def create_transport_from_config(config: TransportConfig) -> BaseTransport:
     """Create transport instance from configuration object.
 
@@ -500,6 +602,19 @@ def create_transport_from_config(config: TransportConfig) -> BaseTransport:
             timeout=config.timeout,
             inverter_family=config.inverter_family,
         )
+    elif config.transport_type == TransportType.MODBUS_SERIAL:
+        # serial_port is guaranteed to be set after validate() for MODBUS_SERIAL
+        assert config.serial_port is not None
+        return ModbusSerialTransport(
+            port=config.serial_port,
+            serial=config.serial,
+            baudrate=config.serial_baudrate,
+            parity=config.serial_parity,
+            stopbits=config.serial_stopbits,
+            unit_id=config.unit_id,
+            timeout=config.timeout,
+            inverter_family=config.inverter_family,
+        )
     elif config.transport_type == TransportType.WIFI_DONGLE:
         # dongle_serial is guaranteed to be set after validate() for WIFI_DONGLE
         assert config.dongle_serial is not None
@@ -527,8 +642,11 @@ __all__ = [
     # Legacy factory functions
     "create_http_transport",
     "create_modbus_transport",
+    "create_serial_transport",
     "create_dongle_transport",
     "create_transport_from_config",
+    # Transport classes
+    "ModbusSerialTransport",
     # Configuration
     "TransportConfig",
     "TransportType",

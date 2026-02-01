@@ -45,6 +45,9 @@ class TransportType(str, Enum):
     MODBUS_TCP = "modbus_tcp"
     """Modbus TCP transport via RS485-to-Ethernet adapter."""
 
+    MODBUS_SERIAL = "modbus_serial"
+    """Modbus RTU serial transport via USB-to-RS485 adapter."""
+
     WIFI_DONGLE = "wifi_dongle"
     """WiFi dongle transport via inverter's built-in WiFi dongle."""
 
@@ -120,6 +123,18 @@ class TransportConfig:
     timeout: float = field(default=10.0)
     """Connection timeout in seconds."""
 
+    serial_port: str | None = field(default=None)
+    """Serial port path (only for MODBUS_SERIAL transport, e.g., /dev/ttyUSB0)."""
+
+    serial_baudrate: int = field(default=19200)
+    """Serial baud rate (only for MODBUS_SERIAL transport)."""
+
+    serial_parity: str = field(default="N")
+    """Serial parity: 'N' (none), 'E' (even), 'O' (odd)."""
+
+    serial_stopbits: int = field(default=1)
+    """Serial stop bits: 1 or 2."""
+
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         self.validate()
@@ -139,7 +154,21 @@ class TransportConfig:
                 raise ValueError("serial is required")
             return
 
-        # Local transports require host and port
+        # Serial transport has different validation (uses serial_port instead of host)
+        if self.transport_type == TransportType.MODBUS_SERIAL:
+            if not self.serial_port:
+                raise ValueError("serial_port is required for Modbus serial transport")
+            if not self.serial:
+                raise ValueError("serial is required")
+            if self.serial_baudrate <= 0:
+                raise ValueError(f"Invalid baudrate: {self.serial_baudrate}")
+            if self.serial_parity not in ("N", "E", "O"):
+                raise ValueError(f"Invalid parity: {self.serial_parity}")
+            if self.serial_stopbits not in (1, 2):
+                raise ValueError(f"Invalid stopbits: {self.serial_stopbits}")
+            return
+
+        # TCP-based local transports require host and port
         if not self.host:
             raise ValueError("host is required")
         if self.port <= 0 or self.port > 65535:
@@ -165,6 +194,10 @@ class TransportConfig:
             "dongle_serial": self.dongle_serial,
             "timeout": self.timeout,
             "unit_id": self.unit_id,
+            "serial_port": self.serial_port,
+            "serial_baudrate": self.serial_baudrate,
+            "serial_parity": self.serial_parity,
+            "serial_stopbits": self.serial_stopbits,
         }
 
     @classmethod
@@ -198,6 +231,10 @@ class TransportConfig:
         instance.dongle_serial = data.get("dongle_serial")
         instance.timeout = data.get("timeout", 10.0)
         instance.unit_id = data.get("unit_id", 1)
+        instance.serial_port = data.get("serial_port")
+        instance.serial_baudrate = data.get("serial_baudrate", 19200)
+        instance.serial_parity = data.get("serial_parity", "N")
+        instance.serial_stopbits = data.get("serial_stopbits", 1)
 
         # Validate the restored config
         instance.validate()

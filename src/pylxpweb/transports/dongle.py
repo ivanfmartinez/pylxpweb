@@ -915,34 +915,41 @@ class DongleTransport(BaseTransport):
         )
 
         # Read INPUT registers for full parity with web API
-        # Group 1: Registers 0-41 (voltages, currents, power, smart load power)
+        # All reads capped at 40 registers (dongle hardware limit)
+        # Group 1a: Registers 0-39 (voltages, currents, power, smart loads 1-3)
+        # Group 1b: Registers 40-41 (smart load 4 power)
         # Group 2: Registers 42-67 (energy today data)
-        # Group 3: Registers 68-108 (energy total data + smart port status)
+        # Group 3a: Registers 68-107 (energy totals + smart load totals)
+        # Group 3b: Registers 108-119 (smart port 4 status + AC couple totals)
         # Group 4: Registers 128-131 (frequencies)
         input_registers: dict[int, int] = {}
 
         try:
-            # Read voltages, currents, power, and smart load power (registers 0-41)
-            values = await self._read_input_registers(0, 42)
+            # Registers 0-39 (voltages, currents, power, smart loads 1-3)
+            values = await self._read_input_registers(0, 40)
             for offset, value in enumerate(values):
                 input_registers[offset] = value
             await asyncio.sleep(0.2)
 
-            # Read energy today data (registers 42-67)
-            energy_today_values = await self._read_input_registers(42, 26)
-            for offset, value in enumerate(energy_today_values):
-                input_registers[42 + offset] = value
+            # Registers 40-67 (smart load 4 power + energy today)
+            values = await self._read_input_registers(40, 28)
+            for offset, value in enumerate(values):
+                input_registers[40 + offset] = value
             await asyncio.sleep(0.2)
 
-            # Read energy total data (registers 68-119)
-            # Includes load/ups/grid/user totals (68-83), smart load totals (84-99),
-            # and AC couple totals (104-119). Registers 100-103 are unknown/unused.
-            energy_total_values = await self._read_input_registers(68, 52)
-            for offset, value in enumerate(energy_total_values):
+            # Registers 68-107 (energy totals)
+            values = await self._read_input_registers(68, 40)
+            for offset, value in enumerate(values):
                 input_registers[68 + offset] = value
             await asyncio.sleep(0.2)
 
-            # Read frequencies (registers 128-131)
+            # Registers 108-119 (smart port 4 status + AC couple totals)
+            values = await self._read_input_registers(108, 12)
+            for offset, value in enumerate(values):
+                input_registers[108 + offset] = value
+            await asyncio.sleep(0.2)
+
+            # Registers 128-131 (frequencies)
             freq_values = await self._read_input_registers(128, 4)
             for offset, value in enumerate(freq_values):
                 input_registers[128 + offset] = value

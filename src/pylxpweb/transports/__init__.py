@@ -79,12 +79,14 @@ from .factory import (
     create_dongle_transport,
     create_http_transport,
     create_modbus_transport,
+    create_serial_transport,
     create_transport,
     create_transport_from_config,
 )
 from .http import HTTPTransport
 from .hybrid import HybridTransport
 from .modbus import ModbusTransport
+from .modbus_serial import ModbusSerialTransport
 from .protocol import BaseTransport, InverterTransport
 from .register_maps import (
     LXP_EU_ENERGY_MAP,
@@ -105,6 +107,7 @@ __all__ = [
     # Legacy factory functions
     "create_http_transport",
     "create_modbus_transport",
+    "create_serial_transport",
     "create_dongle_transport",
     "create_transport_from_config",
     # Configuration
@@ -117,6 +120,7 @@ __all__ = [
     # Transport implementations
     "HTTPTransport",
     "ModbusTransport",
+    "ModbusSerialTransport",
     "DongleTransport",
     "HybridTransport",
     # Discovery utilities
