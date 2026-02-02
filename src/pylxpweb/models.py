@@ -775,47 +775,48 @@ class MidboxData(BaseModel):
     Energy values are in deciwatt-hours (÷10 for kWh).
     """
 
-    status: int
+    # All numeric fields are int | None — None means register read failed / unavailable
+    status: int | None
     serverTime: str
     deviceTime: str
     # Grid voltages (÷10 for volts, e.g., 2418 = 241.8V)
-    gridRmsVolt: int
-    upsRmsVolt: int
-    genRmsVolt: int
-    gridL1RmsVolt: int
-    gridL2RmsVolt: int
-    upsL1RmsVolt: int
-    upsL2RmsVolt: int
-    genL1RmsVolt: int
-    genL2RmsVolt: int
+    gridRmsVolt: int | None
+    upsRmsVolt: int | None
+    genRmsVolt: int | None
+    gridL1RmsVolt: int | None
+    gridL2RmsVolt: int | None
+    upsL1RmsVolt: int | None
+    upsL2RmsVolt: int | None
+    genL1RmsVolt: int | None
+    genL2RmsVolt: int | None
     # Currents (÷100 for amps)
-    gridL1RmsCurr: int
-    gridL2RmsCurr: int
-    loadL1RmsCurr: int
-    loadL2RmsCurr: int
-    genL1RmsCurr: int
-    genL2RmsCurr: int
-    upsL1RmsCurr: int
-    upsL2RmsCurr: int
+    gridL1RmsCurr: int | None
+    gridL2RmsCurr: int | None
+    loadL1RmsCurr: int | None
+    loadL2RmsCurr: int | None
+    genL1RmsCurr: int | None
+    genL2RmsCurr: int | None
+    upsL1RmsCurr: int | None
+    upsL2RmsCurr: int | None
     # Power (watts, no scaling)
-    gridL1ActivePower: int
-    gridL2ActivePower: int
-    loadL1ActivePower: int
-    loadL2ActivePower: int
-    genL1ActivePower: int
-    genL2ActivePower: int
-    upsL1ActivePower: int
-    upsL2ActivePower: int
-    hybridPower: int
+    gridL1ActivePower: int | None
+    gridL2ActivePower: int | None
+    loadL1ActivePower: int | None
+    loadL2ActivePower: int | None
+    genL1ActivePower: int | None
+    genL2ActivePower: int | None
+    upsL1ActivePower: int | None
+    upsL2ActivePower: int | None
+    hybridPower: int | None
     # Smart port status
-    smartPort1Status: int
-    smartPort2Status: int
-    smartPort3Status: int
-    smartPort4Status: int
+    smartPort1Status: int | None
+    smartPort2Status: int | None
+    smartPort3Status: int | None
+    smartPort4Status: int | None
     # Frequency (÷100 for Hz)
-    phaseLockFreq: int = 0
-    gridFreq: int = 0
-    genFreq: int = 0
+    phaseLockFreq: int | None
+    gridFreq: int | None
+    genFreq: int | None
 
     # ===========================================
     # Smart Load Power Fields (watts, no scaling)
@@ -823,20 +824,20 @@ class MidboxData(BaseModel):
     # ===========================================
 
     # Smart Load 1 Power (per-phase)
-    smartLoad1L1ActivePower: int = 0
-    smartLoad1L2ActivePower: int = 0
+    smartLoad1L1ActivePower: int | None = None
+    smartLoad1L2ActivePower: int | None = None
 
     # Smart Load 2 Power (per-phase)
-    smartLoad2L1ActivePower: int = 0
-    smartLoad2L2ActivePower: int = 0
+    smartLoad2L1ActivePower: int | None = None
+    smartLoad2L2ActivePower: int | None = None
 
     # Smart Load 3 Power (per-phase)
-    smartLoad3L1ActivePower: int = 0
-    smartLoad3L2ActivePower: int = 0
+    smartLoad3L1ActivePower: int | None = None
+    smartLoad3L2ActivePower: int | None = None
 
     # Smart Load 4 Power (per-phase)
-    smartLoad4L1ActivePower: int = 0
-    smartLoad4L2ActivePower: int = 0
+    smartLoad4L1ActivePower: int | None = None
+    smartLoad4L2ActivePower: int | None = None
 
     # ===========================================
     # AC Couple Power Fields (watts, no scaling)
@@ -844,20 +845,20 @@ class MidboxData(BaseModel):
     # ===========================================
 
     # AC Couple 1 Power (per-phase)
-    acCouple1L1ActivePower: int = 0
-    acCouple1L2ActivePower: int = 0
+    acCouple1L1ActivePower: int | None = None
+    acCouple1L2ActivePower: int | None = None
 
     # AC Couple 2 Power (per-phase)
-    acCouple2L1ActivePower: int = 0
-    acCouple2L2ActivePower: int = 0
+    acCouple2L1ActivePower: int | None = None
+    acCouple2L2ActivePower: int | None = None
 
     # AC Couple 3 Power (per-phase)
-    acCouple3L1ActivePower: int = 0
-    acCouple3L2ActivePower: int = 0
+    acCouple3L1ActivePower: int | None = None
+    acCouple3L2ActivePower: int | None = None
 
     # AC Couple 4 Power (per-phase)
-    acCouple4L1ActivePower: int = 0
-    acCouple4L2ActivePower: int = 0
+    acCouple4L1ActivePower: int | None = None
+    acCouple4L2ActivePower: int | None = None
 
     # ===========================================
     # Energy Fields (÷10 for kWh)

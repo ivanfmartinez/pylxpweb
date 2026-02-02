@@ -913,14 +913,14 @@ class TestACCouplePowerLocalMode:
     ):
         """Verify _get_ac_couple_power returns 0 when runtime is None."""
         # All AC Couple power properties should return 0
-        assert mid_device_without_runtime.ac_couple1_l1_power == 0
-        assert mid_device_without_runtime.ac_couple1_l2_power == 0
-        assert mid_device_without_runtime.ac_couple2_l1_power == 0
-        assert mid_device_without_runtime.ac_couple2_l2_power == 0
-        assert mid_device_without_runtime.ac_couple3_l1_power == 0
-        assert mid_device_without_runtime.ac_couple3_l2_power == 0
-        assert mid_device_without_runtime.ac_couple4_l1_power == 0
-        assert mid_device_without_runtime.ac_couple4_l2_power == 0
+        assert mid_device_without_runtime.ac_couple1_l1_power is None
+        assert mid_device_without_runtime.ac_couple1_l2_power is None
+        assert mid_device_without_runtime.ac_couple2_l1_power is None
+        assert mid_device_without_runtime.ac_couple2_l2_power is None
+        assert mid_device_without_runtime.ac_couple3_l1_power is None
+        assert mid_device_without_runtime.ac_couple3_l2_power is None
+        assert mid_device_without_runtime.ac_couple4_l1_power is None
+        assert mid_device_without_runtime.ac_couple4_l2_power is None
 
 
 class TestFrequencyPropertiesExtended:
@@ -987,8 +987,8 @@ class TestFrequencyPropertiesExtended:
 
     def test_phase_lock_frequency_returns_default_when_none(self, mid_device_without_runtime):
         """Verify phase lock frequency returns default when runtime is None."""
-        assert mid_device_without_runtime.phase_lock_frequency == 0.0
+        assert mid_device_without_runtime.phase_lock_frequency is None
 
     def test_generator_frequency_returns_default_when_none(self, mid_device_without_runtime):
-        """Verify generator frequency returns default when runtime is None."""
-        assert mid_device_without_runtime.generator_frequency == 0.0
+        """Verify generator frequency returns None when runtime is None."""
+        assert mid_device_without_runtime.generator_frequency is None

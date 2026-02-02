@@ -23,6 +23,13 @@ if TYPE_CHECKING:
     from pylxpweb.models import MidboxRuntime
 
 
+def _safe_sum(*values: int | None) -> int | None:
+    """Sum values, returning None if all are None, treating individual Nones as 0."""
+    if all(v is None for v in values):
+        return None
+    return sum(v for v in values if v is not None)
+
+
 class MIDRuntimePropertiesMixin:
     """Mixin providing runtime property accessors for MID devices."""
 
@@ -32,7 +39,7 @@ class MIDRuntimePropertiesMixin:
     # Smart Port Power Helper Methods
     # ===========================================
 
-    def _get_ac_couple_power(self, port: int, phase: str) -> int:
+    def _get_ac_couple_power(self, port: int, phase: str) -> int | None:
         """Get AC Couple power for a port, using Smart Load data when in AC Couple mode.
 
         The EG4 API only provides power data in smartLoad*L*ActivePower fields.
@@ -50,295 +57,223 @@ class MIDRuntimePropertiesMixin:
             phase: Phase identifier ("l1" or "l2")
 
         Returns:
-            Power in watts, or 0 if no data.
+            Power in watts, or None if no data.
         """
         if self._runtime is None:
-            return 0
+            return None
 
         midbox = self._runtime.midboxData
 
-        # Check port status - 2 means AC Couple mode
-        port_status = getattr(midbox, f"smartPort{port}Status", 0)
-
-        # Get Smart Load power for this port/phase
-        smart_load_power = int(getattr(midbox, f"smartLoad{port}{phase.upper()}ActivePower", 0))
+        port_status: int | None = getattr(midbox, f"smartPort{port}Status", None)
+        smart_load_power: int | None = getattr(
+            midbox, f"smartLoad{port}{phase.upper()}ActivePower", None
+        )
 
         if port_status == 2:
-            # AC Couple mode confirmed via HTTP API - return Smart Load power
+            # AC Couple mode confirmed via HTTP API
             return smart_load_power
-        elif port_status == 0 and smart_load_power != 0:
-            # LOCAL mode: port status not available via Modbus, but Smart Load
-            # has data - return it since AC Couple uses Smart Load fields anyway
+
+        if port_status in (None, 0) and smart_load_power is not None and smart_load_power != 0:
+            # LOCAL mode: port status unavailable, but Smart Load has data
             return smart_load_power
-        else:
-            # Not in AC Couple mode - return the (likely 0) AC Couple field
-            return int(getattr(midbox, f"acCouple{port}{phase.upper()}ActivePower", 0))
+
+        # Not in AC Couple mode - return the AC Couple field
+        return getattr(midbox, f"acCouple{port}{phase.upper()}ActivePower", None)
 
     # ===========================================
     # Voltage Properties - Aggregate
     # ===========================================
 
     @property
-    def grid_voltage(self) -> float:
-        """Get aggregate grid voltage in volts.
-
-        Returns:
-            Grid RMS voltage (÷10), or 0.0 if no data.
-        """
+    def grid_voltage(self) -> float | None:
+        """Get aggregate grid voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.gridRmsVolt)
+            return None
+        val = self._runtime.midboxData.gridRmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     @property
-    def ups_voltage(self) -> float:
-        """Get aggregate UPS voltage in volts.
-
-        Returns:
-            UPS RMS voltage (÷10), or 0.0 if no data.
-        """
+    def ups_voltage(self) -> float | None:
+        """Get aggregate UPS voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.upsRmsVolt)
+            return None
+        val = self._runtime.midboxData.upsRmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     @property
-    def generator_voltage(self) -> float:
-        """Get aggregate generator voltage in volts.
-
-        Returns:
-            Generator RMS voltage (÷10), or 0.0 if no data.
-        """
+    def generator_voltage(self) -> float | None:
+        """Get aggregate generator voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.genRmsVolt)
+            return None
+        val = self._runtime.midboxData.genRmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     # ===========================================
     # Voltage Properties - Grid Per-Phase
     # ===========================================
 
     @property
-    def grid_l1_voltage(self) -> float:
-        """Get grid L1 voltage in volts.
-
-        Returns:
-            Grid L1 RMS voltage (÷10), or 0.0 if no data.
-        """
+    def grid_l1_voltage(self) -> float | None:
+        """Get grid L1 voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.gridL1RmsVolt)
+            return None
+        val = self._runtime.midboxData.gridL1RmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     @property
-    def grid_l2_voltage(self) -> float:
-        """Get grid L2 voltage in volts.
-
-        Returns:
-            Grid L2 RMS voltage (÷10), or 0.0 if no data.
-        """
+    def grid_l2_voltage(self) -> float | None:
+        """Get grid L2 voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.gridL2RmsVolt)
+            return None
+        val = self._runtime.midboxData.gridL2RmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     # ===========================================
     # Voltage Properties - UPS Per-Phase
     # ===========================================
 
     @property
-    def ups_l1_voltage(self) -> float:
-        """Get UPS L1 voltage in volts.
-
-        Returns:
-            UPS L1 RMS voltage (÷10), or 0.0 if no data.
-        """
+    def ups_l1_voltage(self) -> float | None:
+        """Get UPS L1 voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.upsL1RmsVolt)
+            return None
+        val = self._runtime.midboxData.upsL1RmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     @property
-    def ups_l2_voltage(self) -> float:
-        """Get UPS L2 voltage in volts.
-
-        Returns:
-            UPS L2 RMS voltage (÷10), or 0.0 if no data.
-        """
+    def ups_l2_voltage(self) -> float | None:
+        """Get UPS L2 voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.upsL2RmsVolt)
+            return None
+        val = self._runtime.midboxData.upsL2RmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     # ===========================================
     # Voltage Properties - Generator Per-Phase
     # ===========================================
 
     @property
-    def generator_l1_voltage(self) -> float:
-        """Get generator L1 voltage in volts.
-
-        Returns:
-            Generator L1 RMS voltage (÷10), or 0.0 if no data.
-        """
+    def generator_l1_voltage(self) -> float | None:
+        """Get generator L1 voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.genL1RmsVolt)
+            return None
+        val = self._runtime.midboxData.genL1RmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     @property
-    def generator_l2_voltage(self) -> float:
-        """Get generator L2 voltage in volts.
-
-        Returns:
-            Generator L2 RMS voltage (÷10), or 0.0 if no data.
-        """
+    def generator_l2_voltage(self) -> float | None:
+        """Get generator L2 voltage in volts."""
         if self._runtime is None:
-            return 0.0
-
-        return scale_mid_voltage(self._runtime.midboxData.genL2RmsVolt)
+            return None
+        val = self._runtime.midboxData.genL2RmsVolt
+        return scale_mid_voltage(val) if val is not None else None
 
     # ===========================================
     # Current Properties - Grid
     # ===========================================
 
     @property
-    def grid_l1_current(self) -> float:
-        """Get grid L1 current in amps.
-
-        Returns:
-            Grid L1 RMS current (÷10), or 0.0 if no data.
-        """
+    def grid_l1_current(self) -> float | None:
+        """Get grid L1 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.gridL1RmsCurr)
+            return None
+        val = self._runtime.midboxData.gridL1RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     @property
-    def grid_l2_current(self) -> float:
-        """Get grid L2 current in amps.
-
-        Returns:
-            Grid L2 RMS current (÷10), or 0.0 if no data.
-        """
+    def grid_l2_current(self) -> float | None:
+        """Get grid L2 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.gridL2RmsCurr)
+            return None
+        val = self._runtime.midboxData.gridL2RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     # ===========================================
     # Current Properties - Load
     # ===========================================
 
     @property
-    def load_l1_current(self) -> float:
-        """Get load L1 current in amps.
-
-        Returns:
-            Load L1 RMS current (÷10), or 0.0 if no data.
-        """
+    def load_l1_current(self) -> float | None:
+        """Get load L1 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.loadL1RmsCurr)
+            return None
+        val = self._runtime.midboxData.loadL1RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     @property
-    def load_l2_current(self) -> float:
-        """Get load L2 current in amps.
-
-        Returns:
-            Load L2 RMS current (÷10), or 0.0 if no data.
-        """
+    def load_l2_current(self) -> float | None:
+        """Get load L2 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.loadL2RmsCurr)
+            return None
+        val = self._runtime.midboxData.loadL2RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     # ===========================================
     # Current Properties - Generator
     # ===========================================
 
     @property
-    def generator_l1_current(self) -> float:
-        """Get generator L1 current in amps.
-
-        Returns:
-            Generator L1 RMS current (÷10), or 0.0 if no data.
-        """
+    def generator_l1_current(self) -> float | None:
+        """Get generator L1 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.genL1RmsCurr)
+            return None
+        val = self._runtime.midboxData.genL1RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     @property
-    def generator_l2_current(self) -> float:
-        """Get generator L2 current in amps.
-
-        Returns:
-            Generator L2 RMS current (÷10), or 0.0 if no data.
-        """
+    def generator_l2_current(self) -> float | None:
+        """Get generator L2 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.genL2RmsCurr)
+            return None
+        val = self._runtime.midboxData.genL2RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     # ===========================================
     # Current Properties - UPS
     # ===========================================
 
     @property
-    def ups_l1_current(self) -> float:
-        """Get UPS L1 current in amps.
-
-        Returns:
-            UPS L1 RMS current (÷10), or 0.0 if no data.
-        """
+    def ups_l1_current(self) -> float | None:
+        """Get UPS L1 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.upsL1RmsCurr)
+            return None
+        val = self._runtime.midboxData.upsL1RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     @property
-    def ups_l2_current(self) -> float:
-        """Get UPS L2 current in amps.
-
-        Returns:
-            UPS L2 RMS current (÷10), or 0.0 if no data.
-        """
+    def ups_l2_current(self) -> float | None:
+        """Get UPS L2 current in amps."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_current(self._runtime.midboxData.upsL2RmsCurr)
+            return None
+        val = self._runtime.midboxData.upsL2RmsCurr
+        return scale_mid_current(val) if val is not None else None
 
     # ===========================================
     # Power Properties - Grid
     # ===========================================
 
     @property
-    def grid_l1_power(self) -> int:
-        """Get grid L1 active power in watts.
-
-        Returns:
-            Grid L1 power, or 0 if no data.
-        """
+    def grid_l1_power(self) -> int | None:
+        """Get grid L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.gridL1ActivePower
 
     @property
-    def grid_l2_power(self) -> int:
-        """Get grid L2 active power in watts.
-
-        Returns:
-            Grid L2 power, or 0 if no data.
-        """
+    def grid_l2_power(self) -> int | None:
+        """Get grid L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.gridL2ActivePower
 
     @property
-    def grid_power(self) -> int:
-        """Get total grid power in watts (L1 + L2).
-
-        Returns:
-            Total grid power, or 0 if no data.
-        """
+    def grid_power(self) -> int | None:
+        """Get total grid power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return (
-            self._runtime.midboxData.gridL1ActivePower + self._runtime.midboxData.gridL2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.gridL1ActivePower,
+            self._runtime.midboxData.gridL2ActivePower,
         )
 
     # ===========================================
@@ -346,38 +281,27 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def load_l1_power(self) -> int:
-        """Get load L1 active power in watts.
-
-        Returns:
-            Load L1 power, or 0 if no data.
-        """
+    def load_l1_power(self) -> int | None:
+        """Get load L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.loadL1ActivePower
 
     @property
-    def load_l2_power(self) -> int:
-        """Get load L2 active power in watts.
-
-        Returns:
-            Load L2 power, or 0 if no data.
-        """
+    def load_l2_power(self) -> int | None:
+        """Get load L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.loadL2ActivePower
 
     @property
-    def load_power(self) -> int:
-        """Get total load power in watts (L1 + L2).
-
-        Returns:
-            Total load power, or 0 if no data.
-        """
+    def load_power(self) -> int | None:
+        """Get total load power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return (
-            self._runtime.midboxData.loadL1ActivePower + self._runtime.midboxData.loadL2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.loadL1ActivePower,
+            self._runtime.midboxData.loadL2ActivePower,
         )
 
     # ===========================================
@@ -385,88 +309,66 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def generator_l1_power(self) -> int:
-        """Get generator L1 active power in watts.
-
-        Returns:
-            Generator L1 power, or 0 if no data.
-        """
+    def generator_l1_power(self) -> int | None:
+        """Get generator L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.genL1ActivePower
 
     @property
-    def generator_l2_power(self) -> int:
-        """Get generator L2 active power in watts.
-
-        Returns:
-            Generator L2 power, or 0 if no data.
-        """
+    def generator_l2_power(self) -> int | None:
+        """Get generator L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.genL2ActivePower
 
     @property
-    def generator_power(self) -> int:
-        """Get total generator power in watts (L1 + L2).
-
-        Returns:
-            Total generator power, or 0 if no data.
-        """
+    def generator_power(self) -> int | None:
+        """Get total generator power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return self._runtime.midboxData.genL1ActivePower + self._runtime.midboxData.genL2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.genL1ActivePower,
+            self._runtime.midboxData.genL2ActivePower,
+        )
 
     # ===========================================
     # Power Properties - UPS
     # ===========================================
 
     @property
-    def ups_l1_power(self) -> int:
-        """Get UPS L1 active power in watts.
-
-        Returns:
-            UPS L1 power, or 0 if no data.
-        """
+    def ups_l1_power(self) -> int | None:
+        """Get UPS L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.upsL1ActivePower
 
     @property
-    def ups_l2_power(self) -> int:
-        """Get UPS L2 active power in watts.
-
-        Returns:
-            UPS L2 power, or 0 if no data.
-        """
+    def ups_l2_power(self) -> int | None:
+        """Get UPS L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.upsL2ActivePower
 
     @property
-    def ups_power(self) -> int:
-        """Get total UPS power in watts (L1 + L2).
-
-        Returns:
-            Total UPS power, or 0 if no data.
-        """
+    def ups_power(self) -> int | None:
+        """Get total UPS power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return self._runtime.midboxData.upsL1ActivePower + self._runtime.midboxData.upsL2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.upsL1ActivePower,
+            self._runtime.midboxData.upsL2ActivePower,
+        )
 
     # ===========================================
     # Power Properties - Hybrid System
     # ===========================================
 
     @property
-    def hybrid_power(self) -> int:
-        """Get hybrid system power in watts.
-
-        Returns:
-            Hybrid power (combined system power), or 0 if no data.
-        """
+    def hybrid_power(self) -> int | None:
+        """Get hybrid system power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.hybridPower
 
     # ===========================================
@@ -474,84 +376,59 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def phase_lock_frequency(self) -> float:
-        """Get PLL (phase-lock loop) frequency in Hz.
-
-        Returns:
-            Phase lock frequency (÷100), or 0.0 if no data.
-        """
+    def phase_lock_frequency(self) -> float | None:
+        """Get PLL (phase-lock loop) frequency in Hz."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_frequency(self._runtime.midboxData.phaseLockFreq)
+            return None
+        val = self._runtime.midboxData.phaseLockFreq
+        return scale_mid_frequency(val) if val is not None else None
 
     @property
-    def grid_frequency(self) -> float:
-        """Get grid frequency in Hz.
-
-        Returns:
-            Grid frequency (÷100), or 0.0 if no data.
-        """
+    def grid_frequency(self) -> float | None:
+        """Get grid frequency in Hz."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_frequency(self._runtime.midboxData.gridFreq)
+            return None
+        val = self._runtime.midboxData.gridFreq
+        return scale_mid_frequency(val) if val is not None else None
 
     @property
-    def generator_frequency(self) -> float:
-        """Get generator frequency in Hz.
-
-        Returns:
-            Generator frequency (÷100), or 0.0 if no data.
-        """
+    def generator_frequency(self) -> float | None:
+        """Get generator frequency in Hz."""
         if self._runtime is None:
-            return 0.0
-        return scale_mid_frequency(self._runtime.midboxData.genFreq)
+            return None
+        val = self._runtime.midboxData.genFreq
+        return scale_mid_frequency(val) if val is not None else None
 
     # ===========================================
     # Smart Port Status
     # ===========================================
 
     @property
-    def smart_port1_status(self) -> int:
-        """Get smart port 1 status.
-
-        Returns:
-            Port 1 status code, or 0 if no data.
-        """
+    def smart_port1_status(self) -> int | None:
+        """Get smart port 1 status."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartPort1Status
 
     @property
-    def smart_port2_status(self) -> int:
-        """Get smart port 2 status.
-
-        Returns:
-            Port 2 status code, or 0 if no data.
-        """
+    def smart_port2_status(self) -> int | None:
+        """Get smart port 2 status."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartPort2Status
 
     @property
-    def smart_port3_status(self) -> int:
-        """Get smart port 3 status.
-
-        Returns:
-            Port 3 status code, or 0 if no data.
-        """
+    def smart_port3_status(self) -> int | None:
+        """Get smart port 3 status."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartPort3Status
 
     @property
-    def smart_port4_status(self) -> int:
-        """Get smart port 4 status.
-
-        Returns:
-            Port 4 status code, or 0 if no data.
-        """
+    def smart_port4_status(self) -> int | None:
+        """Get smart port 4 status."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartPort4Status
 
     # ===========================================
@@ -559,39 +436,27 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def smart_load1_l1_power(self) -> int:
-        """Get Smart Load 1 L1 active power in watts.
-
-        Returns:
-            Smart Load 1 L1 power, or 0 if no data.
-        """
+    def smart_load1_l1_power(self) -> int | None:
+        """Get Smart Load 1 L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad1L1ActivePower
 
     @property
-    def smart_load1_l2_power(self) -> int:
-        """Get Smart Load 1 L2 active power in watts.
-
-        Returns:
-            Smart Load 1 L2 power, or 0 if no data.
-        """
+    def smart_load1_l2_power(self) -> int | None:
+        """Get Smart Load 1 L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad1L2ActivePower
 
     @property
-    def smart_load1_power(self) -> int:
-        """Get Smart Load 1 total power in watts (L1 + L2).
-
-        Returns:
-            Smart Load 1 total power, or 0 if no data.
-        """
+    def smart_load1_power(self) -> int | None:
+        """Get Smart Load 1 total power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return (
-            self._runtime.midboxData.smartLoad1L1ActivePower
-            + self._runtime.midboxData.smartLoad1L2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.smartLoad1L1ActivePower,
+            self._runtime.midboxData.smartLoad1L2ActivePower,
         )
 
     # ===========================================
@@ -599,39 +464,27 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def smart_load2_l1_power(self) -> int:
-        """Get Smart Load 2 L1 active power in watts.
-
-        Returns:
-            Smart Load 2 L1 power, or 0 if no data.
-        """
+    def smart_load2_l1_power(self) -> int | None:
+        """Get Smart Load 2 L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad2L1ActivePower
 
     @property
-    def smart_load2_l2_power(self) -> int:
-        """Get Smart Load 2 L2 active power in watts.
-
-        Returns:
-            Smart Load 2 L2 power, or 0 if no data.
-        """
+    def smart_load2_l2_power(self) -> int | None:
+        """Get Smart Load 2 L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad2L2ActivePower
 
     @property
-    def smart_load2_power(self) -> int:
-        """Get Smart Load 2 total power in watts (L1 + L2).
-
-        Returns:
-            Smart Load 2 total power, or 0 if no data.
-        """
+    def smart_load2_power(self) -> int | None:
+        """Get Smart Load 2 total power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return (
-            self._runtime.midboxData.smartLoad2L1ActivePower
-            + self._runtime.midboxData.smartLoad2L2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.smartLoad2L1ActivePower,
+            self._runtime.midboxData.smartLoad2L2ActivePower,
         )
 
     # ===========================================
@@ -639,39 +492,27 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def smart_load3_l1_power(self) -> int:
-        """Get Smart Load 3 L1 active power in watts.
-
-        Returns:
-            Smart Load 3 L1 power, or 0 if no data.
-        """
+    def smart_load3_l1_power(self) -> int | None:
+        """Get Smart Load 3 L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad3L1ActivePower
 
     @property
-    def smart_load3_l2_power(self) -> int:
-        """Get Smart Load 3 L2 active power in watts.
-
-        Returns:
-            Smart Load 3 L2 power, or 0 if no data.
-        """
+    def smart_load3_l2_power(self) -> int | None:
+        """Get Smart Load 3 L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad3L2ActivePower
 
     @property
-    def smart_load3_power(self) -> int:
-        """Get Smart Load 3 total power in watts (L1 + L2).
-
-        Returns:
-            Smart Load 3 total power, or 0 if no data.
-        """
+    def smart_load3_power(self) -> int | None:
+        """Get Smart Load 3 total power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return (
-            self._runtime.midboxData.smartLoad3L1ActivePower
-            + self._runtime.midboxData.smartLoad3L2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.smartLoad3L1ActivePower,
+            self._runtime.midboxData.smartLoad3L2ActivePower,
         )
 
     # ===========================================
@@ -679,39 +520,27 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def smart_load4_l1_power(self) -> int:
-        """Get Smart Load 4 L1 active power in watts.
-
-        Returns:
-            Smart Load 4 L1 power, or 0 if no data.
-        """
+    def smart_load4_l1_power(self) -> int | None:
+        """Get Smart Load 4 L1 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad4L1ActivePower
 
     @property
-    def smart_load4_l2_power(self) -> int:
-        """Get Smart Load 4 L2 active power in watts.
-
-        Returns:
-            Smart Load 4 L2 power, or 0 if no data.
-        """
+    def smart_load4_l2_power(self) -> int | None:
+        """Get Smart Load 4 L2 active power in watts."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.smartLoad4L2ActivePower
 
     @property
-    def smart_load4_power(self) -> int:
-        """Get Smart Load 4 total power in watts (L1 + L2).
-
-        Returns:
-            Smart Load 4 total power, or 0 if no data.
-        """
+    def smart_load4_power(self) -> int | None:
+        """Get Smart Load 4 total power in watts (L1 + L2)."""
         if self._runtime is None:
-            return 0
-        return (
-            self._runtime.midboxData.smartLoad4L1ActivePower
-            + self._runtime.midboxData.smartLoad4L2ActivePower
+            return None
+        return _safe_sum(
+            self._runtime.midboxData.smartLoad4L1ActivePower,
+            self._runtime.midboxData.smartLoad4L2ActivePower,
         )
 
     # ===========================================
@@ -719,237 +548,129 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def ac_couple1_l1_power(self) -> int:
-        """Get AC Couple 1 L1 active power in watts.
-
-        Note: When port 1 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 1 L1 power, or 0 if no data.
-        """
+    def ac_couple1_l1_power(self) -> int | None:
+        """Get AC Couple 1 L1 active power in watts."""
         return self._get_ac_couple_power(1, "l1")
 
     @property
-    def ac_couple1_l2_power(self) -> int:
-        """Get AC Couple 1 L2 active power in watts.
-
-        Note: When port 1 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 1 L2 power, or 0 if no data.
-        """
+    def ac_couple1_l2_power(self) -> int | None:
+        """Get AC Couple 1 L2 active power in watts."""
         return self._get_ac_couple_power(1, "l2")
 
     @property
-    def ac_couple1_power(self) -> int:
-        """Get AC Couple 1 total power in watts (L1 + L2).
-
-        Note: When port 1 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 1 total power, or 0 if no data.
-        """
-        return self._get_ac_couple_power(1, "l1") + self._get_ac_couple_power(1, "l2")
+    def ac_couple1_power(self) -> int | None:
+        """Get AC Couple 1 total power in watts (L1 + L2)."""
+        return _safe_sum(
+            self._get_ac_couple_power(1, "l1"),
+            self._get_ac_couple_power(1, "l2"),
+        )
 
     # ===========================================
     # Power Properties - AC Couple 2
     # ===========================================
 
     @property
-    def ac_couple2_l1_power(self) -> int:
-        """Get AC Couple 2 L1 active power in watts.
-
-        Note: When port 2 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 2 L1 power, or 0 if no data.
-        """
+    def ac_couple2_l1_power(self) -> int | None:
+        """Get AC Couple 2 L1 active power in watts."""
         return self._get_ac_couple_power(2, "l1")
 
     @property
-    def ac_couple2_l2_power(self) -> int:
-        """Get AC Couple 2 L2 active power in watts.
-
-        Note: When port 2 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 2 L2 power, or 0 if no data.
-        """
+    def ac_couple2_l2_power(self) -> int | None:
+        """Get AC Couple 2 L2 active power in watts."""
         return self._get_ac_couple_power(2, "l2")
 
     @property
-    def ac_couple2_power(self) -> int:
-        """Get AC Couple 2 total power in watts (L1 + L2).
-
-        Note: When port 2 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 2 total power, or 0 if no data.
-        """
-        return self._get_ac_couple_power(2, "l1") + self._get_ac_couple_power(2, "l2")
+    def ac_couple2_power(self) -> int | None:
+        """Get AC Couple 2 total power in watts (L1 + L2)."""
+        return _safe_sum(
+            self._get_ac_couple_power(2, "l1"),
+            self._get_ac_couple_power(2, "l2"),
+        )
 
     # ===========================================
     # Power Properties - AC Couple 3
     # ===========================================
 
     @property
-    def ac_couple3_l1_power(self) -> int:
-        """Get AC Couple 3 L1 active power in watts.
-
-        Note: When port 3 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 3 L1 power, or 0 if no data.
-        """
+    def ac_couple3_l1_power(self) -> int | None:
+        """Get AC Couple 3 L1 active power in watts."""
         return self._get_ac_couple_power(3, "l1")
 
     @property
-    def ac_couple3_l2_power(self) -> int:
-        """Get AC Couple 3 L2 active power in watts.
-
-        Note: When port 3 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 3 L2 power, or 0 if no data.
-        """
+    def ac_couple3_l2_power(self) -> int | None:
+        """Get AC Couple 3 L2 active power in watts."""
         return self._get_ac_couple_power(3, "l2")
 
     @property
-    def ac_couple3_power(self) -> int:
-        """Get AC Couple 3 total power in watts (L1 + L2).
-
-        Note: When port 3 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 3 total power, or 0 if no data.
-        """
-        return self._get_ac_couple_power(3, "l1") + self._get_ac_couple_power(3, "l2")
+    def ac_couple3_power(self) -> int | None:
+        """Get AC Couple 3 total power in watts (L1 + L2)."""
+        return _safe_sum(
+            self._get_ac_couple_power(3, "l1"),
+            self._get_ac_couple_power(3, "l2"),
+        )
 
     # ===========================================
     # Power Properties - AC Couple 4
     # ===========================================
 
     @property
-    def ac_couple4_l1_power(self) -> int:
-        """Get AC Couple 4 L1 active power in watts.
-
-        Note: When port 4 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 4 L1 power, or 0 if no data.
-        """
+    def ac_couple4_l1_power(self) -> int | None:
+        """Get AC Couple 4 L1 active power in watts."""
         return self._get_ac_couple_power(4, "l1")
 
     @property
-    def ac_couple4_l2_power(self) -> int:
-        """Get AC Couple 4 L2 active power in watts.
-
-        Note: When port 4 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 4 L2 power, or 0 if no data.
-        """
+    def ac_couple4_l2_power(self) -> int | None:
+        """Get AC Couple 4 L2 active power in watts."""
         return self._get_ac_couple_power(4, "l2")
 
     @property
-    def ac_couple4_power(self) -> int:
-        """Get AC Couple 4 total power in watts (L1 + L2).
-
-        Note: When port 4 is in AC Couple mode (status=2), this reads from
-        the Smart Load power fields since the API doesn't provide separate
-        AC Couple power data.
-
-        Returns:
-            AC Couple 4 total power, or 0 if no data.
-        """
-        return self._get_ac_couple_power(4, "l1") + self._get_ac_couple_power(4, "l2")
+    def ac_couple4_power(self) -> int | None:
+        """Get AC Couple 4 total power in watts (L1 + L2)."""
+        return _safe_sum(
+            self._get_ac_couple_power(4, "l1"),
+            self._get_ac_couple_power(4, "l2"),
+        )
 
     # ===========================================
     # System Status & Info
     # ===========================================
 
     @property
-    def status(self) -> int:
-        """Get device status code.
-
-        Returns:
-            Status code, or 0 if no data.
-        """
+    def status(self) -> int | None:
+        """Get device status code."""
         if self._runtime is None:
-            return 0
+            return None
         return self._runtime.midboxData.status
 
     @property
     def server_time(self) -> str:
-        """Get server timestamp.
-
-        Returns:
-            Server time string, or empty string if no data.
-        """
+        """Get server timestamp."""
         if self._runtime is None:
             return ""
         return self._runtime.midboxData.serverTime
 
     @property
     def device_time(self) -> str:
-        """Get device timestamp.
-
-        Returns:
-            Device time string, or empty string if no data.
-        """
+        """Get device timestamp."""
         if self._runtime is None:
             return ""
         return self._runtime.midboxData.deviceTime
 
     @property
     def firmware_version(self) -> str:
-        """Get firmware version.
-
-        Returns:
-            Firmware version string, or empty string if no data.
-        """
+        """Get firmware version."""
         if self._runtime is None:
             return ""
         return self._runtime.fwCode
 
     @property
     def has_data(self) -> bool:
-        """Check if device has runtime data.
-
-        Returns:
-            True if runtime data is available.
-        """
+        """Check if device has runtime data."""
         return self._runtime is not None
 
     @property
     def is_off_grid(self) -> bool:
-        """Check if the system is operating in off-grid/EPS mode.
-
-        Returns:
-            True if off-grid (on battery backup), False if grid is available.
-        """
+        """Check if the system is operating in off-grid/EPS mode."""
         if self._runtime is None:
             return False
         return bool(getattr(self._runtime, "isOffGrid", False))
@@ -960,11 +681,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ups_today_l1(self) -> float | None:
-        """Get UPS L1 energy today in kWh.
-
-        Returns:
-            UPS L1 energy today (÷10), or None if not available.
-        """
+        """Get UPS L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eUpsTodayL1
@@ -972,11 +689,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ups_today_l2(self) -> float | None:
-        """Get UPS L2 energy today in kWh.
-
-        Returns:
-            UPS L2 energy today (÷10), or None if not available.
-        """
+        """Get UPS L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eUpsTodayL2
@@ -984,11 +697,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ups_total_l1(self) -> float | None:
-        """Get UPS L1 lifetime energy in kWh.
-
-        Returns:
-            UPS L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get UPS L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eUpsTotalL1
@@ -996,11 +705,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ups_total_l2(self) -> float | None:
-        """Get UPS L2 lifetime energy in kWh.
-
-        Returns:
-            UPS L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get UPS L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eUpsTotalL2
@@ -1012,11 +717,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_grid_today_l1(self) -> float | None:
-        """Get grid export L1 energy today in kWh.
-
-        Returns:
-            Grid export L1 energy today (÷10), or None if not available.
-        """
+        """Get grid export L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToGridTodayL1
@@ -1024,11 +725,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_grid_today_l2(self) -> float | None:
-        """Get grid export L2 energy today in kWh.
-
-        Returns:
-            Grid export L2 energy today (÷10), or None if not available.
-        """
+        """Get grid export L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToGridTodayL2
@@ -1036,11 +733,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_grid_total_l1(self) -> float | None:
-        """Get grid export L1 lifetime energy in kWh.
-
-        Returns:
-            Grid export L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get grid export L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToGridTotalL1
@@ -1048,11 +741,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_grid_total_l2(self) -> float | None:
-        """Get grid export L2 lifetime energy in kWh.
-
-        Returns:
-            Grid export L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get grid export L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToGridTotalL2
@@ -1064,11 +753,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_user_today_l1(self) -> float | None:
-        """Get grid import L1 energy today in kWh.
-
-        Returns:
-            Grid import L1 energy today (÷10), or None if not available.
-        """
+        """Get grid import L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToUserTodayL1
@@ -1076,11 +761,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_user_today_l2(self) -> float | None:
-        """Get grid import L2 energy today in kWh.
-
-        Returns:
-            Grid import L2 energy today (÷10), or None if not available.
-        """
+        """Get grid import L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToUserTodayL2
@@ -1088,11 +769,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_user_total_l1(self) -> float | None:
-        """Get grid import L1 lifetime energy in kWh.
-
-        Returns:
-            Grid import L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get grid import L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToUserTotalL1
@@ -1100,11 +777,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_to_user_total_l2(self) -> float | None:
-        """Get grid import L2 lifetime energy in kWh.
-
-        Returns:
-            Grid import L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get grid import L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eToUserTotalL2
@@ -1116,11 +789,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_load_today_l1(self) -> float | None:
-        """Get load L1 energy today in kWh.
-
-        Returns:
-            Load L1 energy today (÷10), or None if not available.
-        """
+        """Get load L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eLoadTodayL1
@@ -1128,11 +797,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_load_today_l2(self) -> float | None:
-        """Get load L2 energy today in kWh.
-
-        Returns:
-            Load L2 energy today (÷10), or None if not available.
-        """
+        """Get load L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eLoadTodayL2
@@ -1140,11 +805,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_load_total_l1(self) -> float | None:
-        """Get load L1 lifetime energy in kWh.
-
-        Returns:
-            Load L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get load L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eLoadTotalL1
@@ -1152,11 +813,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_load_total_l2(self) -> float | None:
-        """Get load L2 lifetime energy in kWh.
-
-        Returns:
-            Load L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get load L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eLoadTotalL2
@@ -1168,11 +825,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple1_today_l1(self) -> float | None:
-        """Get AC Couple 1 L1 energy today in kWh.
-
-        Returns:
-            AC Couple 1 L1 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 1 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple1TodayL1
@@ -1180,11 +833,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple1_today_l2(self) -> float | None:
-        """Get AC Couple 1 L2 energy today in kWh.
-
-        Returns:
-            AC Couple 1 L2 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 1 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple1TodayL2
@@ -1192,11 +841,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple1_total_l1(self) -> float | None:
-        """Get AC Couple 1 L1 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 1 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 1 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple1TotalL1
@@ -1204,11 +849,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple1_total_l2(self) -> float | None:
-        """Get AC Couple 1 L2 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 1 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 1 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple1TotalL2
@@ -1220,11 +861,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple2_today_l1(self) -> float | None:
-        """Get AC Couple 2 L1 energy today in kWh.
-
-        Returns:
-            AC Couple 2 L1 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 2 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple2TodayL1
@@ -1232,11 +869,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple2_today_l2(self) -> float | None:
-        """Get AC Couple 2 L2 energy today in kWh.
-
-        Returns:
-            AC Couple 2 L2 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 2 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple2TodayL2
@@ -1244,11 +877,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple2_total_l1(self) -> float | None:
-        """Get AC Couple 2 L1 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 2 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 2 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple2TotalL1
@@ -1256,11 +885,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple2_total_l2(self) -> float | None:
-        """Get AC Couple 2 L2 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 2 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 2 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple2TotalL2
@@ -1272,11 +897,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple3_today_l1(self) -> float | None:
-        """Get AC Couple 3 L1 energy today in kWh.
-
-        Returns:
-            AC Couple 3 L1 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 3 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple3TodayL1
@@ -1284,11 +905,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple3_today_l2(self) -> float | None:
-        """Get AC Couple 3 L2 energy today in kWh.
-
-        Returns:
-            AC Couple 3 L2 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 3 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple3TodayL2
@@ -1296,11 +913,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple3_total_l1(self) -> float | None:
-        """Get AC Couple 3 L1 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 3 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 3 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple3TotalL1
@@ -1308,11 +921,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple3_total_l2(self) -> float | None:
-        """Get AC Couple 3 L2 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 3 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 3 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple3TotalL2
@@ -1324,11 +933,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple4_today_l1(self) -> float | None:
-        """Get AC Couple 4 L1 energy today in kWh.
-
-        Returns:
-            AC Couple 4 L1 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 4 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple4TodayL1
@@ -1336,11 +941,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple4_today_l2(self) -> float | None:
-        """Get AC Couple 4 L2 energy today in kWh.
-
-        Returns:
-            AC Couple 4 L2 energy today (÷10), or None if not available.
-        """
+        """Get AC Couple 4 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple4TodayL2
@@ -1348,11 +949,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple4_total_l1(self) -> float | None:
-        """Get AC Couple 4 L1 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 4 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 4 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple4TotalL1
@@ -1360,11 +957,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ac_couple4_total_l2(self) -> float | None:
-        """Get AC Couple 4 L2 lifetime energy in kWh.
-
-        Returns:
-            AC Couple 4 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get AC Couple 4 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eACcouple4TotalL2
@@ -1376,11 +969,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load1_today_l1(self) -> float | None:
-        """Get Smart Load 1 L1 energy today in kWh.
-
-        Returns:
-            Smart Load 1 L1 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 1 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad1TodayL1
@@ -1388,11 +977,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load1_today_l2(self) -> float | None:
-        """Get Smart Load 1 L2 energy today in kWh.
-
-        Returns:
-            Smart Load 1 L2 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 1 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad1TodayL2
@@ -1400,11 +985,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load1_total_l1(self) -> float | None:
-        """Get Smart Load 1 L1 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 1 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 1 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad1TotalL1
@@ -1412,11 +993,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load1_total_l2(self) -> float | None:
-        """Get Smart Load 1 L2 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 1 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 1 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad1TotalL2
@@ -1428,11 +1005,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load2_today_l1(self) -> float | None:
-        """Get Smart Load 2 L1 energy today in kWh.
-
-        Returns:
-            Smart Load 2 L1 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 2 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad2TodayL1
@@ -1440,11 +1013,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load2_today_l2(self) -> float | None:
-        """Get Smart Load 2 L2 energy today in kWh.
-
-        Returns:
-            Smart Load 2 L2 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 2 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad2TodayL2
@@ -1452,11 +1021,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load2_total_l1(self) -> float | None:
-        """Get Smart Load 2 L1 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 2 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 2 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad2TotalL1
@@ -1464,11 +1029,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load2_total_l2(self) -> float | None:
-        """Get Smart Load 2 L2 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 2 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 2 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad2TotalL2
@@ -1480,11 +1041,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load3_today_l1(self) -> float | None:
-        """Get Smart Load 3 L1 energy today in kWh.
-
-        Returns:
-            Smart Load 3 L1 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 3 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad3TodayL1
@@ -1492,11 +1049,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load3_today_l2(self) -> float | None:
-        """Get Smart Load 3 L2 energy today in kWh.
-
-        Returns:
-            Smart Load 3 L2 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 3 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad3TodayL2
@@ -1504,11 +1057,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load3_total_l1(self) -> float | None:
-        """Get Smart Load 3 L1 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 3 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 3 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad3TotalL1
@@ -1516,11 +1065,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load3_total_l2(self) -> float | None:
-        """Get Smart Load 3 L2 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 3 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 3 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad3TotalL2
@@ -1532,11 +1077,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load4_today_l1(self) -> float | None:
-        """Get Smart Load 4 L1 energy today in kWh.
-
-        Returns:
-            Smart Load 4 L1 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 4 L1 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad4TodayL1
@@ -1544,11 +1085,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load4_today_l2(self) -> float | None:
-        """Get Smart Load 4 L2 energy today in kWh.
-
-        Returns:
-            Smart Load 4 L2 energy today (÷10), or None if not available.
-        """
+        """Get Smart Load 4 L2 energy today in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad4TodayL2
@@ -1556,11 +1093,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load4_total_l1(self) -> float | None:
-        """Get Smart Load 4 L1 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 4 L1 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 4 L1 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad4TotalL1
@@ -1568,11 +1101,7 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_smart_load4_total_l2(self) -> float | None:
-        """Get Smart Load 4 L2 lifetime energy in kWh.
-
-        Returns:
-            Smart Load 4 L2 lifetime energy (÷10), or None if not available.
-        """
+        """Get Smart Load 4 L2 lifetime energy in kWh."""
         if self._runtime is None:
             return None
         val = self._runtime.midboxData.eSmartLoad4TotalL2
@@ -1583,15 +1112,7 @@ class MIDRuntimePropertiesMixin:
     # ===========================================
 
     def _sum_energy(self, l1: float | None, l2: float | None) -> float | None:
-        """Sum L1 and L2 energy values, returning None if both are None.
-
-        Args:
-            l1: L1 phase energy value or None
-            l2: L2 phase energy value or None
-
-        Returns:
-            Sum of L1 + L2, treating None as 0, or None if both are None.
-        """
+        """Sum L1 and L2 energy values, returning None if both are None."""
         if l1 is None and l2 is None:
             return None
         return (l1 or 0.0) + (l2 or 0.0)
@@ -1600,238 +1121,142 @@ class MIDRuntimePropertiesMixin:
 
     @property
     def e_ups_today(self) -> float | None:
-        """Get total UPS energy today in kWh (L1 + L2).
-
-        Returns:
-            Total UPS energy today, or None if not available.
-        """
+        """Get total UPS energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ups_today_l1, self.e_ups_today_l2)
 
     @property
     def e_ups_total(self) -> float | None:
-        """Get total UPS lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total UPS lifetime energy, or None if not available.
-        """
+        """Get total UPS lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ups_total_l1, self.e_ups_total_l2)
 
     # Grid Export Energy Aggregates
 
     @property
     def e_to_grid_today(self) -> float | None:
-        """Get total grid export energy today in kWh (L1 + L2).
-
-        Returns:
-            Total grid export energy today, or None if not available.
-        """
+        """Get total grid export energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_to_grid_today_l1, self.e_to_grid_today_l2)
 
     @property
     def e_to_grid_total(self) -> float | None:
-        """Get total grid export lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total grid export lifetime energy, or None if not available.
-        """
+        """Get total grid export lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_to_grid_total_l1, self.e_to_grid_total_l2)
 
     # Grid Import Energy Aggregates
 
     @property
     def e_to_user_today(self) -> float | None:
-        """Get total grid import energy today in kWh (L1 + L2).
-
-        Returns:
-            Total grid import energy today, or None if not available.
-        """
+        """Get total grid import energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_to_user_today_l1, self.e_to_user_today_l2)
 
     @property
     def e_to_user_total(self) -> float | None:
-        """Get total grid import lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total grid import lifetime energy, or None if not available.
-        """
+        """Get total grid import lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_to_user_total_l1, self.e_to_user_total_l2)
 
     # Load Energy Aggregates
 
     @property
     def e_load_today(self) -> float | None:
-        """Get total load energy today in kWh (L1 + L2).
-
-        Returns:
-            Total load energy today, or None if not available.
-        """
+        """Get total load energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_load_today_l1, self.e_load_today_l2)
 
     @property
     def e_load_total(self) -> float | None:
-        """Get total load lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total load lifetime energy, or None if not available.
-        """
+        """Get total load lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_load_total_l1, self.e_load_total_l2)
 
     # AC Couple 1 Energy Aggregates
 
     @property
     def e_ac_couple1_today(self) -> float | None:
-        """Get total AC Couple 1 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 1 energy today, or None if not available.
-        """
+        """Get total AC Couple 1 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple1_today_l1, self.e_ac_couple1_today_l2)
 
     @property
     def e_ac_couple1_total(self) -> float | None:
-        """Get total AC Couple 1 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 1 lifetime energy, or None if not available.
-        """
+        """Get total AC Couple 1 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple1_total_l1, self.e_ac_couple1_total_l2)
 
     # AC Couple 2 Energy Aggregates
 
     @property
     def e_ac_couple2_today(self) -> float | None:
-        """Get total AC Couple 2 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 2 energy today, or None if not available.
-        """
+        """Get total AC Couple 2 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple2_today_l1, self.e_ac_couple2_today_l2)
 
     @property
     def e_ac_couple2_total(self) -> float | None:
-        """Get total AC Couple 2 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 2 lifetime energy, or None if not available.
-        """
+        """Get total AC Couple 2 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple2_total_l1, self.e_ac_couple2_total_l2)
 
     # AC Couple 3 Energy Aggregates
 
     @property
     def e_ac_couple3_today(self) -> float | None:
-        """Get total AC Couple 3 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 3 energy today, or None if not available.
-        """
+        """Get total AC Couple 3 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple3_today_l1, self.e_ac_couple3_today_l2)
 
     @property
     def e_ac_couple3_total(self) -> float | None:
-        """Get total AC Couple 3 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 3 lifetime energy, or None if not available.
-        """
+        """Get total AC Couple 3 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple3_total_l1, self.e_ac_couple3_total_l2)
 
     # AC Couple 4 Energy Aggregates
 
     @property
     def e_ac_couple4_today(self) -> float | None:
-        """Get total AC Couple 4 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 4 energy today, or None if not available.
-        """
+        """Get total AC Couple 4 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple4_today_l1, self.e_ac_couple4_today_l2)
 
     @property
     def e_ac_couple4_total(self) -> float | None:
-        """Get total AC Couple 4 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total AC Couple 4 lifetime energy, or None if not available.
-        """
+        """Get total AC Couple 4 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_ac_couple4_total_l1, self.e_ac_couple4_total_l2)
 
     # Smart Load 1 Energy Aggregates
 
     @property
     def e_smart_load1_today(self) -> float | None:
-        """Get total Smart Load 1 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 1 energy today, or None if not available.
-        """
+        """Get total Smart Load 1 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load1_today_l1, self.e_smart_load1_today_l2)
 
     @property
     def e_smart_load1_total(self) -> float | None:
-        """Get total Smart Load 1 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 1 lifetime energy, or None if not available.
-        """
+        """Get total Smart Load 1 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load1_total_l1, self.e_smart_load1_total_l2)
 
     # Smart Load 2 Energy Aggregates
 
     @property
     def e_smart_load2_today(self) -> float | None:
-        """Get total Smart Load 2 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 2 energy today, or None if not available.
-        """
+        """Get total Smart Load 2 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load2_today_l1, self.e_smart_load2_today_l2)
 
     @property
     def e_smart_load2_total(self) -> float | None:
-        """Get total Smart Load 2 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 2 lifetime energy, or None if not available.
-        """
+        """Get total Smart Load 2 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load2_total_l1, self.e_smart_load2_total_l2)
 
     # Smart Load 3 Energy Aggregates
 
     @property
     def e_smart_load3_today(self) -> float | None:
-        """Get total Smart Load 3 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 3 energy today, or None if not available.
-        """
+        """Get total Smart Load 3 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load3_today_l1, self.e_smart_load3_today_l2)
 
     @property
     def e_smart_load3_total(self) -> float | None:
-        """Get total Smart Load 3 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 3 lifetime energy, or None if not available.
-        """
+        """Get total Smart Load 3 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load3_total_l1, self.e_smart_load3_total_l2)
 
     # Smart Load 4 Energy Aggregates
 
     @property
     def e_smart_load4_today(self) -> float | None:
-        """Get total Smart Load 4 energy today in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 4 energy today, or None if not available.
-        """
+        """Get total Smart Load 4 energy today in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load4_today_l1, self.e_smart_load4_today_l2)
 
     @property
     def e_smart_load4_total(self) -> float | None:
-        """Get total Smart Load 4 lifetime energy in kWh (L1 + L2).
-
-        Returns:
-            Total Smart Load 4 lifetime energy, or None if not available.
-        """
+        """Get total Smart Load 4 lifetime energy in kWh (L1 + L2)."""
         return self._sum_energy(self.e_smart_load4_total_l1, self.e_smart_load4_total_l2)

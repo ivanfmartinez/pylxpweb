@@ -109,10 +109,10 @@ class TestVoltagePropertiesAggregate:
         assert mid_device_with_runtime.generator_voltage == 239.0
 
     def test_aggregate_voltages_return_defaults_when_none(self, mid_device_without_runtime):
-        """Verify aggregate voltages return defaults when runtime is None."""
-        assert mid_device_without_runtime.grid_voltage == 0.0
-        assert mid_device_without_runtime.ups_voltage == 0.0
-        assert mid_device_without_runtime.generator_voltage == 0.0
+        """Verify aggregate voltages return None when runtime is None."""
+        assert mid_device_without_runtime.grid_voltage is None
+        assert mid_device_without_runtime.ups_voltage is None
+        assert mid_device_without_runtime.generator_voltage is None
 
 
 class TestVoltagePropertiesPerPhase:
@@ -135,12 +135,12 @@ class TestVoltagePropertiesPerPhase:
 
     def test_phase_voltages_return_defaults_when_none(self, mid_device_without_runtime):
         """Verify phase voltages return defaults when runtime is None."""
-        assert mid_device_without_runtime.grid_l1_voltage == 0.0
-        assert mid_device_without_runtime.grid_l2_voltage == 0.0
-        assert mid_device_without_runtime.ups_l1_voltage == 0.0
-        assert mid_device_without_runtime.ups_l2_voltage == 0.0
-        assert mid_device_without_runtime.generator_l1_voltage == 0.0
-        assert mid_device_without_runtime.generator_l2_voltage == 0.0
+        assert mid_device_without_runtime.grid_l1_voltage is None
+        assert mid_device_without_runtime.grid_l2_voltage is None
+        assert mid_device_without_runtime.ups_l1_voltage is None
+        assert mid_device_without_runtime.ups_l2_voltage is None
+        assert mid_device_without_runtime.generator_l1_voltage is None
+        assert mid_device_without_runtime.generator_l2_voltage is None
 
 
 class TestCurrentProperties:
@@ -168,10 +168,10 @@ class TestCurrentProperties:
 
     def test_currents_return_defaults_when_none(self, mid_device_without_runtime):
         """Verify currents return defaults when runtime is None."""
-        assert mid_device_without_runtime.grid_l1_current == 0.0
-        assert mid_device_without_runtime.grid_l2_current == 0.0
-        assert mid_device_without_runtime.load_l1_current == 0.0
-        assert mid_device_without_runtime.load_l2_current == 0.0
+        assert mid_device_without_runtime.grid_l1_current is None
+        assert mid_device_without_runtime.grid_l2_current is None
+        assert mid_device_without_runtime.load_l1_current is None
+        assert mid_device_without_runtime.load_l2_current is None
 
 
 class TestPowerPropertiesGrid:
@@ -243,7 +243,7 @@ class TestFrequencyProperties:
 
     def test_grid_frequency_returns_default_when_none(self, mid_device_without_runtime):
         """Verify grid frequency returns default when runtime is None."""
-        assert mid_device_without_runtime.grid_frequency == 0.0
+        assert mid_device_without_runtime.grid_frequency is None
 
 
 class TestSmartPortStatus:
@@ -258,10 +258,10 @@ class TestSmartPortStatus:
 
     def test_smart_port_status_defaults_when_none(self, mid_device_without_runtime):
         """Verify smart port status returns defaults when runtime is None."""
-        assert mid_device_without_runtime.smart_port1_status == 0
-        assert mid_device_without_runtime.smart_port2_status == 0
-        assert mid_device_without_runtime.smart_port3_status == 0
-        assert mid_device_without_runtime.smart_port4_status == 0
+        assert mid_device_without_runtime.smart_port1_status is None
+        assert mid_device_without_runtime.smart_port2_status is None
+        assert mid_device_without_runtime.smart_port3_status is None
+        assert mid_device_without_runtime.smart_port4_status is None
 
 
 class TestStatusProperties:
@@ -277,7 +277,7 @@ class TestStatusProperties:
 
     def test_status_properties_when_none(self, mid_device_without_runtime):
         """Verify status properties return defaults when runtime is None."""
-        assert mid_device_without_runtime.status == 0
+        assert mid_device_without_runtime.status is None
         assert mid_device_without_runtime.server_time == ""
         assert mid_device_without_runtime.device_time == ""
         assert mid_device_without_runtime.firmware_version == ""

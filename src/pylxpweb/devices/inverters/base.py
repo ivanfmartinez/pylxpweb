@@ -633,15 +633,13 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
                     # - Decoding bit field registers (FUNC_*, BIT_*) into individual booleans
                     all_parameters: dict[str, Any] = {}
 
-                    # Read key register groups used by control operations
-                    # Register 21: FUNC_EN register (working modes)
-                    # Registers 66-73: AC charge settings
-                    # Registers 105-106: SOC limits
-                    # Register 110: SYS_FUNC register (green mode)
+                    # Read the full holding register range to match HTTP mode
+                    # coverage. Modbus reads are cheap and local, so there's
+                    # no reason to limit to a subset of registers.
+                    # Max 125 registers per Modbus read (protocol limit).
                     register_groups = [
-                        (0, 30),  # System config + FUNC_EN (reg 21)
-                        (60, 30),  # Charging config (regs 64-67)
-                        (100, 30),  # Battery/SOC config (regs 105, 110)
+                        (0, 125),  # Registers 0-124
+                        (125, 125),  # Registers 125-249
                     ]
 
                     for start, count in register_groups:

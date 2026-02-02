@@ -1438,297 +1438,112 @@ class MidboxRuntimeData:
         Returns:
             Transport-agnostic runtime data with scaling applied
         """
+
+        def _f(v: int | None) -> float | None:
+            return float(v) if v is not None else None
+
+        def _f_div(v: int | None, divisor: float) -> float | None:
+            return float(v) / divisor if v is not None else None
+
         return cls(
             timestamp=datetime.now(),
             # Voltages (raw values are volts, no scaling needed)
-            grid_voltage=float(midbox_data.gridRmsVolt),
-            ups_voltage=float(midbox_data.upsRmsVolt),
-            gen_voltage=float(midbox_data.genRmsVolt),
-            grid_l1_voltage=float(midbox_data.gridL1RmsVolt),
-            grid_l2_voltage=float(midbox_data.gridL2RmsVolt),
-            ups_l1_voltage=float(midbox_data.upsL1RmsVolt),
-            ups_l2_voltage=float(midbox_data.upsL2RmsVolt),
-            gen_l1_voltage=float(midbox_data.genL1RmsVolt),
-            gen_l2_voltage=float(midbox_data.genL2RmsVolt),
+            grid_voltage=_f(midbox_data.gridRmsVolt),
+            ups_voltage=_f(midbox_data.upsRmsVolt),
+            gen_voltage=_f(midbox_data.genRmsVolt),
+            grid_l1_voltage=_f(midbox_data.gridL1RmsVolt),
+            grid_l2_voltage=_f(midbox_data.gridL2RmsVolt),
+            ups_l1_voltage=_f(midbox_data.upsL1RmsVolt),
+            ups_l2_voltage=_f(midbox_data.upsL2RmsVolt),
+            gen_l1_voltage=_f(midbox_data.genL1RmsVolt),
+            gen_l2_voltage=_f(midbox_data.genL2RmsVolt),
             # Currents (API returns deciamps, divide by 10)
-            grid_l1_current=float(midbox_data.gridL1RmsCurr) / 10.0,
-            grid_l2_current=float(midbox_data.gridL2RmsCurr) / 10.0,
-            load_l1_current=float(midbox_data.loadL1RmsCurr) / 10.0,
-            load_l2_current=float(midbox_data.loadL2RmsCurr) / 10.0,
-            gen_l1_current=float(midbox_data.genL1RmsCurr) / 10.0,
-            gen_l2_current=float(midbox_data.genL2RmsCurr) / 10.0,
-            ups_l1_current=float(midbox_data.upsL1RmsCurr) / 10.0,
-            ups_l2_current=float(midbox_data.upsL2RmsCurr) / 10.0,
+            grid_l1_current=_f_div(midbox_data.gridL1RmsCurr, 10.0),
+            grid_l2_current=_f_div(midbox_data.gridL2RmsCurr, 10.0),
+            load_l1_current=_f_div(midbox_data.loadL1RmsCurr, 10.0),
+            load_l2_current=_f_div(midbox_data.loadL2RmsCurr, 10.0),
+            gen_l1_current=_f_div(midbox_data.genL1RmsCurr, 10.0),
+            gen_l2_current=_f_div(midbox_data.genL2RmsCurr, 10.0),
+            ups_l1_current=_f_div(midbox_data.upsL1RmsCurr, 10.0),
+            ups_l2_current=_f_div(midbox_data.upsL2RmsCurr, 10.0),
             # Power (raw watts, no scaling)
-            grid_l1_power=float(midbox_data.gridL1ActivePower),
-            grid_l2_power=float(midbox_data.gridL2ActivePower),
-            load_l1_power=float(midbox_data.loadL1ActivePower),
-            load_l2_power=float(midbox_data.loadL2ActivePower),
-            gen_l1_power=float(midbox_data.genL1ActivePower),
-            gen_l2_power=float(midbox_data.genL2ActivePower),
-            ups_l1_power=float(midbox_data.upsL1ActivePower),
-            ups_l2_power=float(midbox_data.upsL2ActivePower),
-            hybrid_power=float(midbox_data.hybridPower),
+            grid_l1_power=_f(midbox_data.gridL1ActivePower),
+            grid_l2_power=_f(midbox_data.gridL2ActivePower),
+            load_l1_power=_f(midbox_data.loadL1ActivePower),
+            load_l2_power=_f(midbox_data.loadL2ActivePower),
+            gen_l1_power=_f(midbox_data.genL1ActivePower),
+            gen_l2_power=_f(midbox_data.genL2ActivePower),
+            ups_l1_power=_f(midbox_data.upsL1ActivePower),
+            ups_l2_power=_f(midbox_data.upsL2ActivePower),
+            hybrid_power=_f(midbox_data.hybridPower),
             # Smart Load Power
-            smart_load_1_l1_power=float(midbox_data.smartLoad1L1ActivePower),
-            smart_load_1_l2_power=float(midbox_data.smartLoad1L2ActivePower),
-            smart_load_2_l1_power=float(midbox_data.smartLoad2L1ActivePower),
-            smart_load_2_l2_power=float(midbox_data.smartLoad2L2ActivePower),
-            smart_load_3_l1_power=float(midbox_data.smartLoad3L1ActivePower),
-            smart_load_3_l2_power=float(midbox_data.smartLoad3L2ActivePower),
-            smart_load_4_l1_power=float(midbox_data.smartLoad4L1ActivePower),
-            smart_load_4_l2_power=float(midbox_data.smartLoad4L2ActivePower),
+            smart_load_1_l1_power=_f(midbox_data.smartLoad1L1ActivePower),
+            smart_load_1_l2_power=_f(midbox_data.smartLoad1L2ActivePower),
+            smart_load_2_l1_power=_f(midbox_data.smartLoad2L1ActivePower),
+            smart_load_2_l2_power=_f(midbox_data.smartLoad2L2ActivePower),
+            smart_load_3_l1_power=_f(midbox_data.smartLoad3L1ActivePower),
+            smart_load_3_l2_power=_f(midbox_data.smartLoad3L2ActivePower),
+            smart_load_4_l1_power=_f(midbox_data.smartLoad4L1ActivePower),
+            smart_load_4_l2_power=_f(midbox_data.smartLoad4L2ActivePower),
             # Smart Port Status (only available via HTTP API)
             smart_port_1_status=midbox_data.smartPort1Status,
             smart_port_2_status=midbox_data.smartPort2Status,
             smart_port_3_status=midbox_data.smartPort3Status,
             smart_port_4_status=midbox_data.smartPort4Status,
             # Frequency (API returns centihertz, divide by 100)
-            phase_lock_freq=float(midbox_data.phaseLockFreq) / 100.0,
-            grid_frequency=float(midbox_data.gridFreq) / 100.0,
-            gen_frequency=float(midbox_data.genFreq) / 100.0,
+            phase_lock_freq=_f_div(midbox_data.phaseLockFreq, 100.0),
+            grid_frequency=_f_div(midbox_data.gridFreq, 100.0),
+            gen_frequency=_f_div(midbox_data.genFreq, 100.0),
             # Energy Today (API returns 0.1 kWh units, scale to kWh)
-            load_energy_today_l1=(
-                float(midbox_data.eLoadTodayL1) / 10.0
-                if midbox_data.eLoadTodayL1 is not None
-                else 0.0
-            ),
-            load_energy_today_l2=(
-                float(midbox_data.eLoadTodayL2) / 10.0
-                if midbox_data.eLoadTodayL2 is not None
-                else 0.0
-            ),
-            ups_energy_today_l1=(
-                float(midbox_data.eUpsTodayL1) / 10.0
-                if midbox_data.eUpsTodayL1 is not None
-                else 0.0
-            ),
-            ups_energy_today_l2=(
-                float(midbox_data.eUpsTodayL2) / 10.0
-                if midbox_data.eUpsTodayL2 is not None
-                else 0.0
-            ),
-            to_grid_energy_today_l1=(
-                float(midbox_data.eToGridTodayL1) / 10.0
-                if midbox_data.eToGridTodayL1 is not None
-                else 0.0
-            ),
-            to_grid_energy_today_l2=(
-                float(midbox_data.eToGridTodayL2) / 10.0
-                if midbox_data.eToGridTodayL2 is not None
-                else 0.0
-            ),
-            to_user_energy_today_l1=(
-                float(midbox_data.eToUserTodayL1) / 10.0
-                if midbox_data.eToUserTodayL1 is not None
-                else 0.0
-            ),
-            to_user_energy_today_l2=(
-                float(midbox_data.eToUserTodayL2) / 10.0
-                if midbox_data.eToUserTodayL2 is not None
-                else 0.0
-            ),
-            ac_couple_1_energy_today_l1=(
-                float(midbox_data.eACcouple1TodayL1) / 10.0
-                if midbox_data.eACcouple1TodayL1 is not None
-                else 0.0
-            ),
-            ac_couple_1_energy_today_l2=(
-                float(midbox_data.eACcouple1TodayL2) / 10.0
-                if midbox_data.eACcouple1TodayL2 is not None
-                else 0.0
-            ),
-            ac_couple_2_energy_today_l1=(
-                float(midbox_data.eACcouple2TodayL1) / 10.0
-                if midbox_data.eACcouple2TodayL1 is not None
-                else 0.0
-            ),
-            ac_couple_2_energy_today_l2=(
-                float(midbox_data.eACcouple2TodayL2) / 10.0
-                if midbox_data.eACcouple2TodayL2 is not None
-                else 0.0
-            ),
-            ac_couple_3_energy_today_l1=(
-                float(midbox_data.eACcouple3TodayL1) / 10.0
-                if midbox_data.eACcouple3TodayL1 is not None
-                else 0.0
-            ),
-            ac_couple_3_energy_today_l2=(
-                float(midbox_data.eACcouple3TodayL2) / 10.0
-                if midbox_data.eACcouple3TodayL2 is not None
-                else 0.0
-            ),
-            ac_couple_4_energy_today_l1=(
-                float(midbox_data.eACcouple4TodayL1) / 10.0
-                if midbox_data.eACcouple4TodayL1 is not None
-                else 0.0
-            ),
-            ac_couple_4_energy_today_l2=(
-                float(midbox_data.eACcouple4TodayL2) / 10.0
-                if midbox_data.eACcouple4TodayL2 is not None
-                else 0.0
-            ),
-            smart_load_1_energy_today_l1=(
-                float(midbox_data.eSmartLoad1TodayL1) / 10.0
-                if midbox_data.eSmartLoad1TodayL1 is not None
-                else 0.0
-            ),
-            smart_load_1_energy_today_l2=(
-                float(midbox_data.eSmartLoad1TodayL2) / 10.0
-                if midbox_data.eSmartLoad1TodayL2 is not None
-                else 0.0
-            ),
-            smart_load_2_energy_today_l1=(
-                float(midbox_data.eSmartLoad2TodayL1) / 10.0
-                if midbox_data.eSmartLoad2TodayL1 is not None
-                else 0.0
-            ),
-            smart_load_2_energy_today_l2=(
-                float(midbox_data.eSmartLoad2TodayL2) / 10.0
-                if midbox_data.eSmartLoad2TodayL2 is not None
-                else 0.0
-            ),
-            smart_load_3_energy_today_l1=(
-                float(midbox_data.eSmartLoad3TodayL1) / 10.0
-                if midbox_data.eSmartLoad3TodayL1 is not None
-                else 0.0
-            ),
-            smart_load_3_energy_today_l2=(
-                float(midbox_data.eSmartLoad3TodayL2) / 10.0
-                if midbox_data.eSmartLoad3TodayL2 is not None
-                else 0.0
-            ),
-            smart_load_4_energy_today_l1=(
-                float(midbox_data.eSmartLoad4TodayL1) / 10.0
-                if midbox_data.eSmartLoad4TodayL1 is not None
-                else 0.0
-            ),
-            smart_load_4_energy_today_l2=(
-                float(midbox_data.eSmartLoad4TodayL2) / 10.0
-                if midbox_data.eSmartLoad4TodayL2 is not None
-                else 0.0
-            ),
+            load_energy_today_l1=_f_div(midbox_data.eLoadTodayL1, 10.0),
+            load_energy_today_l2=_f_div(midbox_data.eLoadTodayL2, 10.0),
+            ups_energy_today_l1=_f_div(midbox_data.eUpsTodayL1, 10.0),
+            ups_energy_today_l2=_f_div(midbox_data.eUpsTodayL2, 10.0),
+            to_grid_energy_today_l1=_f_div(midbox_data.eToGridTodayL1, 10.0),
+            to_grid_energy_today_l2=_f_div(midbox_data.eToGridTodayL2, 10.0),
+            to_user_energy_today_l1=_f_div(midbox_data.eToUserTodayL1, 10.0),
+            to_user_energy_today_l2=_f_div(midbox_data.eToUserTodayL2, 10.0),
+            ac_couple_1_energy_today_l1=_f_div(midbox_data.eACcouple1TodayL1, 10.0),
+            ac_couple_1_energy_today_l2=_f_div(midbox_data.eACcouple1TodayL2, 10.0),
+            ac_couple_2_energy_today_l1=_f_div(midbox_data.eACcouple2TodayL1, 10.0),
+            ac_couple_2_energy_today_l2=_f_div(midbox_data.eACcouple2TodayL2, 10.0),
+            ac_couple_3_energy_today_l1=_f_div(midbox_data.eACcouple3TodayL1, 10.0),
+            ac_couple_3_energy_today_l2=_f_div(midbox_data.eACcouple3TodayL2, 10.0),
+            ac_couple_4_energy_today_l1=_f_div(midbox_data.eACcouple4TodayL1, 10.0),
+            ac_couple_4_energy_today_l2=_f_div(midbox_data.eACcouple4TodayL2, 10.0),
+            smart_load_1_energy_today_l1=_f_div(midbox_data.eSmartLoad1TodayL1, 10.0),
+            smart_load_1_energy_today_l2=_f_div(midbox_data.eSmartLoad1TodayL2, 10.0),
+            smart_load_2_energy_today_l1=_f_div(midbox_data.eSmartLoad2TodayL1, 10.0),
+            smart_load_2_energy_today_l2=_f_div(midbox_data.eSmartLoad2TodayL2, 10.0),
+            smart_load_3_energy_today_l1=_f_div(midbox_data.eSmartLoad3TodayL1, 10.0),
+            smart_load_3_energy_today_l2=_f_div(midbox_data.eSmartLoad3TodayL2, 10.0),
+            smart_load_4_energy_today_l1=_f_div(midbox_data.eSmartLoad4TodayL1, 10.0),
+            smart_load_4_energy_today_l2=_f_div(midbox_data.eSmartLoad4TodayL2, 10.0),
             # Energy Total (API returns 0.1 kWh units, scale to kWh)
-            load_energy_total_l1=(
-                float(midbox_data.eLoadTotalL1) / 10.0
-                if midbox_data.eLoadTotalL1 is not None
-                else 0.0
-            ),
-            load_energy_total_l2=(
-                float(midbox_data.eLoadTotalL2) / 10.0
-                if midbox_data.eLoadTotalL2 is not None
-                else 0.0
-            ),
-            ups_energy_total_l1=(
-                float(midbox_data.eUpsTotalL1) / 10.0
-                if midbox_data.eUpsTotalL1 is not None
-                else 0.0
-            ),
-            ups_energy_total_l2=(
-                float(midbox_data.eUpsTotalL2) / 10.0
-                if midbox_data.eUpsTotalL2 is not None
-                else 0.0
-            ),
-            to_grid_energy_total_l1=(
-                float(midbox_data.eToGridTotalL1) / 10.0
-                if midbox_data.eToGridTotalL1 is not None
-                else 0.0
-            ),
-            to_grid_energy_total_l2=(
-                float(midbox_data.eToGridTotalL2) / 10.0
-                if midbox_data.eToGridTotalL2 is not None
-                else 0.0
-            ),
-            to_user_energy_total_l1=(
-                float(midbox_data.eToUserTotalL1) / 10.0
-                if midbox_data.eToUserTotalL1 is not None
-                else 0.0
-            ),
-            to_user_energy_total_l2=(
-                float(midbox_data.eToUserTotalL2) / 10.0
-                if midbox_data.eToUserTotalL2 is not None
-                else 0.0
-            ),
-            ac_couple_1_energy_total_l1=(
-                float(midbox_data.eACcouple1TotalL1) / 10.0
-                if midbox_data.eACcouple1TotalL1 is not None
-                else 0.0
-            ),
-            ac_couple_1_energy_total_l2=(
-                float(midbox_data.eACcouple1TotalL2) / 10.0
-                if midbox_data.eACcouple1TotalL2 is not None
-                else 0.0
-            ),
-            ac_couple_2_energy_total_l1=(
-                float(midbox_data.eACcouple2TotalL1) / 10.0
-                if midbox_data.eACcouple2TotalL1 is not None
-                else 0.0
-            ),
-            ac_couple_2_energy_total_l2=(
-                float(midbox_data.eACcouple2TotalL2) / 10.0
-                if midbox_data.eACcouple2TotalL2 is not None
-                else 0.0
-            ),
-            ac_couple_3_energy_total_l1=(
-                float(midbox_data.eACcouple3TotalL1) / 10.0
-                if midbox_data.eACcouple3TotalL1 is not None
-                else 0.0
-            ),
-            ac_couple_3_energy_total_l2=(
-                float(midbox_data.eACcouple3TotalL2) / 10.0
-                if midbox_data.eACcouple3TotalL2 is not None
-                else 0.0
-            ),
-            ac_couple_4_energy_total_l1=(
-                float(midbox_data.eACcouple4TotalL1) / 10.0
-                if midbox_data.eACcouple4TotalL1 is not None
-                else 0.0
-            ),
-            ac_couple_4_energy_total_l2=(
-                float(midbox_data.eACcouple4TotalL2) / 10.0
-                if midbox_data.eACcouple4TotalL2 is not None
-                else 0.0
-            ),
-            smart_load_1_energy_total_l1=(
-                float(midbox_data.eSmartLoad1TotalL1) / 10.0
-                if midbox_data.eSmartLoad1TotalL1 is not None
-                else 0.0
-            ),
-            smart_load_1_energy_total_l2=(
-                float(midbox_data.eSmartLoad1TotalL2) / 10.0
-                if midbox_data.eSmartLoad1TotalL2 is not None
-                else 0.0
-            ),
-            smart_load_2_energy_total_l1=(
-                float(midbox_data.eSmartLoad2TotalL1) / 10.0
-                if midbox_data.eSmartLoad2TotalL1 is not None
-                else 0.0
-            ),
-            smart_load_2_energy_total_l2=(
-                float(midbox_data.eSmartLoad2TotalL2) / 10.0
-                if midbox_data.eSmartLoad2TotalL2 is not None
-                else 0.0
-            ),
-            smart_load_3_energy_total_l1=(
-                float(midbox_data.eSmartLoad3TotalL1) / 10.0
-                if midbox_data.eSmartLoad3TotalL1 is not None
-                else 0.0
-            ),
-            smart_load_3_energy_total_l2=(
-                float(midbox_data.eSmartLoad3TotalL2) / 10.0
-                if midbox_data.eSmartLoad3TotalL2 is not None
-                else 0.0
-            ),
-            smart_load_4_energy_total_l1=(
-                float(midbox_data.eSmartLoad4TotalL1) / 10.0
-                if midbox_data.eSmartLoad4TotalL1 is not None
-                else 0.0
-            ),
-            smart_load_4_energy_total_l2=(
-                float(midbox_data.eSmartLoad4TotalL2) / 10.0
-                if midbox_data.eSmartLoad4TotalL2 is not None
-                else 0.0
-            ),
+            load_energy_total_l1=_f_div(midbox_data.eLoadTotalL1, 10.0),
+            load_energy_total_l2=_f_div(midbox_data.eLoadTotalL2, 10.0),
+            ups_energy_total_l1=_f_div(midbox_data.eUpsTotalL1, 10.0),
+            ups_energy_total_l2=_f_div(midbox_data.eUpsTotalL2, 10.0),
+            to_grid_energy_total_l1=_f_div(midbox_data.eToGridTotalL1, 10.0),
+            to_grid_energy_total_l2=_f_div(midbox_data.eToGridTotalL2, 10.0),
+            to_user_energy_total_l1=_f_div(midbox_data.eToUserTotalL1, 10.0),
+            to_user_energy_total_l2=_f_div(midbox_data.eToUserTotalL2, 10.0),
+            ac_couple_1_energy_total_l1=_f_div(midbox_data.eACcouple1TotalL1, 10.0),
+            ac_couple_1_energy_total_l2=_f_div(midbox_data.eACcouple1TotalL2, 10.0),
+            ac_couple_2_energy_total_l1=_f_div(midbox_data.eACcouple2TotalL1, 10.0),
+            ac_couple_2_energy_total_l2=_f_div(midbox_data.eACcouple2TotalL2, 10.0),
+            ac_couple_3_energy_total_l1=_f_div(midbox_data.eACcouple3TotalL1, 10.0),
+            ac_couple_3_energy_total_l2=_f_div(midbox_data.eACcouple3TotalL2, 10.0),
+            ac_couple_4_energy_total_l1=_f_div(midbox_data.eACcouple4TotalL1, 10.0),
+            ac_couple_4_energy_total_l2=_f_div(midbox_data.eACcouple4TotalL2, 10.0),
+            smart_load_1_energy_total_l1=_f_div(midbox_data.eSmartLoad1TotalL1, 10.0),
+            smart_load_1_energy_total_l2=_f_div(midbox_data.eSmartLoad1TotalL2, 10.0),
+            smart_load_2_energy_total_l1=_f_div(midbox_data.eSmartLoad2TotalL1, 10.0),
+            smart_load_2_energy_total_l2=_f_div(midbox_data.eSmartLoad2TotalL2, 10.0),
+            smart_load_3_energy_total_l1=_f_div(midbox_data.eSmartLoad3TotalL1, 10.0),
+            smart_load_3_energy_total_l2=_f_div(midbox_data.eSmartLoad3TotalL2, 10.0),
+            smart_load_4_energy_total_l1=_f_div(midbox_data.eSmartLoad4TotalL1, 10.0),
+            smart_load_4_energy_total_l2=_f_div(midbox_data.eSmartLoad4TotalL2, 10.0),
         )
 
     @classmethod

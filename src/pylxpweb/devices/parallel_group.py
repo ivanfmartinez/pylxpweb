@@ -98,22 +98,85 @@ class ParallelGroup:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    def _has_local_energy(self) -> bool:
+        """Check if all inverters have local transport energy data.
+
+        Returns:
+            True if every inverter has transport energy data available.
+        """
+        if not self.inverters:
+            return False
+        return all(inv._transport_energy is not None for inv in self.inverters)
+
+    def _compute_energy_from_inverters(self) -> EnergyInfo:
+        """Compute parallel group energy by summing individual inverter energy.
+
+        Sums energy properties from all inverters' local transport data.
+        Returns an EnergyInfo in raw API format (0.1 kWh units) so existing
+        properties that call scale_energy_value work unchanged.
+
+        Returns:
+            Synthetic EnergyInfo with summed values.
+        """
+
+        def _sum_field(attr: str) -> int:
+            """Sum a transport energy field across inverters, converting kWh to 0.1 kWh."""
+            total = 0.0
+            for inv in self.inverters:
+                val = getattr(inv._transport_energy, attr, None)
+                if val is not None:
+                    total += float(val)
+            # Convert kWh back to raw API units (0.1 kWh)
+            return int(round(total * 10))
+
+        from pylxpweb.models import EnergyInfo as EnergyInfoModel
+
+        return EnergyInfoModel(
+            success=True,
+            todayYielding=_sum_field("pv_energy_today"),
+            todayCharging=_sum_field("charge_energy_today"),
+            todayDischarging=_sum_field("discharge_energy_today"),
+            todayImport=_sum_field("grid_import_today"),
+            todayExport=_sum_field("grid_export_today"),
+            todayUsage=_sum_field("load_energy_today"),
+            totalYielding=_sum_field("pv_energy_total"),
+            totalCharging=_sum_field("charge_energy_total"),
+            totalDischarging=_sum_field("discharge_energy_total"),
+            totalImport=_sum_field("grid_import_total"),
+            totalExport=_sum_field("grid_export_total"),
+            totalUsage=_sum_field("load_energy_total"),
+        )
+
     async def _fetch_energy_data(self, serial_number: str) -> None:
         """Fetch parallel group energy data.
+
+        Prefers computing from local inverter transport data when available,
+        falling back to the cloud API. This eliminates a cloud API call in
+        hybrid and local-only modes.
 
         Args:
             serial_number: Serial number of first inverter in group.
         """
         import logging
 
-        from pylxpweb.exceptions import LuxpowerAPIError, LuxpowerConnectionError
-
         _logger = logging.getLogger(__name__)
+
+        # Prefer local computation from inverter transport data
+        if self._has_local_energy():
+            self._energy = self._compute_energy_from_inverters()
+            _logger.debug(
+                "Parallel group %s energy computed from local inverters: todayYielding=%s",
+                self.name,
+                self._energy.todayYielding,
+            )
+            return
+
+        from pylxpweb.exceptions import LuxpowerAPIError, LuxpowerConnectionError
 
         try:
             self._energy = await self._client.api.devices.get_parallel_energy(serial_number)
             _logger.debug(
-                "Parallel group %s energy data fetched: todayYielding=%s",
+                "Parallel group %s energy data fetched from cloud: todayYielding=%s",
                 self.name,
                 self._energy.todayYielding if self._energy else None,
             )

@@ -514,6 +514,8 @@ class LuxpowerClient:
             "Accept": "application/json",
         }
 
+        _LOGGER.debug("API %s %s (data_keys=%s)", method, endpoint, list(data) if data else [])
+
         try:
             async with session.request(method, url, data=data, headers=headers) as response:
                 response.raise_for_status()
