@@ -135,6 +135,15 @@ class TransportConfig:
     serial_stopbits: int = field(default=1)
     """Serial stop bits: 1 or 2."""
 
+    retries: int = field(default=2)
+    """Application-level retries per register read."""
+
+    retry_delay: float = field(default=0.5)
+    """Initial delay between retries in seconds (doubles each attempt)."""
+
+    inter_register_delay: float = field(default=0.05)
+    """Delay between register group reads in seconds."""
+
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         self.validate()
@@ -198,6 +207,9 @@ class TransportConfig:
             "serial_baudrate": self.serial_baudrate,
             "serial_parity": self.serial_parity,
             "serial_stopbits": self.serial_stopbits,
+            "retries": self.retries,
+            "retry_delay": self.retry_delay,
+            "inter_register_delay": self.inter_register_delay,
         }
 
     @classmethod
@@ -235,6 +247,9 @@ class TransportConfig:
         instance.serial_baudrate = data.get("serial_baudrate", 19200)
         instance.serial_parity = data.get("serial_parity", "N")
         instance.serial_stopbits = data.get("serial_stopbits", 1)
+        instance.retries = data.get("retries", 2)
+        instance.retry_delay = data.get("retry_delay", 0.5)
+        instance.inter_register_delay = data.get("inter_register_delay", 0.05)
 
         # Validate the restored config
         instance.validate()

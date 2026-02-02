@@ -293,12 +293,12 @@ class TestInverterProperties:
         assert inverter.power_output == 0.0
 
     def test_power_output_without_data(self, mock_client: LuxpowerClient) -> None:
-        """Test power_output returns 0 without data."""
+        """Test power_output returns None without data."""
         inverter = ConcreteInverter(
             client=mock_client, serial_number="1234567890", model="TestModel"
         )
 
-        assert inverter.power_output == 0.0
+        assert inverter.power_output is None
 
     def test_total_energy_today(
         self, mock_client: LuxpowerClient, sample_energy: EnergyInfo
@@ -312,12 +312,12 @@ class TestInverterProperties:
         assert inverter.total_energy_today == 25.5
 
     def test_total_energy_today_without_data(self, mock_client: LuxpowerClient) -> None:
-        """Test total_energy_today returns 0 without data."""
+        """Test total_energy_today returns None without data."""
         inverter = ConcreteInverter(
             client=mock_client, serial_number="1234567890", model="TestModel"
         )
 
-        assert inverter.total_energy_today == 0.0
+        assert inverter.total_energy_today is None
 
     def test_total_energy_lifetime(
         self, mock_client: LuxpowerClient, sample_energy: EnergyInfo
@@ -331,12 +331,12 @@ class TestInverterProperties:
         assert inverter.total_energy_lifetime == 5000.0
 
     def test_total_energy_lifetime_without_data(self, mock_client: LuxpowerClient) -> None:
-        """Test total_energy_lifetime returns 0 without data."""
+        """Test total_energy_lifetime returns None without data."""
         inverter = ConcreteInverter(
             client=mock_client, serial_number="1234567890", model="TestModel"
         )
 
-        assert inverter.total_energy_lifetime == 0.0
+        assert inverter.total_energy_lifetime is None
 
     def test_battery_soc(
         self, mock_client: LuxpowerClient, sample_runtime: InverterRuntime
@@ -479,24 +479,24 @@ class TestInverterProperties:
         assert inverter.energy_lifetime_usage == 3000.0
 
     def test_all_energy_properties_without_data(self, mock_client: LuxpowerClient) -> None:
-        """Test all energy properties return 0.0 without data."""
+        """Test all energy properties return None without data."""
         inverter = ConcreteInverter(
             client=mock_client, serial_number="1234567890", model="TestModel"
         )
 
         # Today's energy
-        assert inverter.energy_today_charging == 0.0
-        assert inverter.energy_today_discharging == 0.0
-        assert inverter.energy_today_import == 0.0
-        assert inverter.energy_today_export == 0.0
-        assert inverter.energy_today_usage == 0.0
+        assert inverter.energy_today_charging is None
+        assert inverter.energy_today_discharging is None
+        assert inverter.energy_today_import is None
+        assert inverter.energy_today_export is None
+        assert inverter.energy_today_usage is None
 
         # Lifetime energy
-        assert inverter.energy_lifetime_charging == 0.0
-        assert inverter.energy_lifetime_discharging == 0.0
-        assert inverter.energy_lifetime_import == 0.0
-        assert inverter.energy_lifetime_export == 0.0
-        assert inverter.energy_lifetime_usage == 0.0
+        assert inverter.energy_lifetime_charging is None
+        assert inverter.energy_lifetime_discharging is None
+        assert inverter.energy_lifetime_import is None
+        assert inverter.energy_lifetime_export is None
+        assert inverter.energy_lifetime_usage is None
 
 
 class TestInverterBatteries:

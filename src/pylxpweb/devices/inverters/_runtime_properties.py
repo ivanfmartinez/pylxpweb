@@ -4,6 +4,13 @@ This mixin provides properly-scaled property accessors for all runtime
 sensor data from the inverter. All properties return typed, scaled values
 with graceful None handling.
 
+Properties prefer transport data (Modbus/Dongle) when available, falling
+back to HTTP cloud data. Transport data uses InverterRuntimeData with
+pythonic field names; cloud data uses InverterRuntime with raw API names.
+
+Transport fields return None when a register read fails, allowing Home
+Assistant to show "unavailable" state instead of recording false zeros.
+
 Properties are organized by category:
 - PV (Solar Panel) Properties
 - AC Grid Properties
@@ -39,80 +46,99 @@ class InverterRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def pv1_voltage(self) -> float:
+    def pv1_voltage(self) -> float | None:
         """Get PV string 1 voltage in volts.
 
         Returns:
-            PV1 voltage (÷10), or 0.0 if no data.
+            PV1 voltage (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.pv1_voltage
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
         return scale_runtime_value("vpv1", self._runtime.vpv1)
 
     @property
-    def pv2_voltage(self) -> float:
+    def pv2_voltage(self) -> float | None:
         """Get PV string 2 voltage in volts.
 
         Returns:
-            PV2 voltage (÷10), or 0.0 if no data.
+            PV2 voltage (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.pv2_voltage
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vpv2", self._runtime.vpv2)
 
     @property
-    def pv3_voltage(self) -> float:
+    def pv3_voltage(self) -> float | None:
         """Get PV string 3 voltage in volts (if available).
 
         Returns:
-            PV3 voltage (÷10), or 0.0 if no data or not supported.
+            PV3 voltage (÷10), None if unavailable, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.pv3_voltage
+            return float(val) if val is not None else None
         if self._runtime is None or self._runtime.vpv3 is None:
             return 0.0
-
         return scale_runtime_value("vpv3", self._runtime.vpv3)
 
     @property
-    def pv1_power(self) -> int:
+    def pv1_power(self) -> int | None:
         """Get PV string 1 power in watts.
 
         Returns:
-            PV1 power in watts, or 0 if no data.
+            PV1 power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.pv1_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.ppv1
 
     @property
-    def pv2_power(self) -> int:
+    def pv2_power(self) -> int | None:
         """Get PV string 2 power in watts.
 
         Returns:
-            PV2 power in watts, or 0 if no data.
+            PV2 power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.pv2_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.ppv2
 
     @property
-    def pv3_power(self) -> int:
+    def pv3_power(self) -> int | None:
         """Get PV string 3 power in watts (if available).
 
         Returns:
-            PV3 power in watts, or 0 if no data or not supported.
+            PV3 power in watts, None if unavailable, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.pv3_power
+            return int(val) if val is not None else None
         if self._runtime is None or self._runtime.ppv3 is None:
             return 0
         return self._runtime.ppv3
 
     @property
-    def pv_total_power(self) -> int:
+    def pv_total_power(self) -> int | None:
         """Get total PV power from all strings in watts.
 
         Returns:
-            Total PV power in watts, or 0 if no data.
+            Total PV power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.pv_total_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.ppv
@@ -122,60 +148,71 @@ class InverterRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def grid_voltage_r(self) -> float:
+    def grid_voltage_r(self) -> float | None:
         """Get grid AC voltage phase R in volts.
 
         Returns:
-            AC grid voltage R phase (÷10), or 0.0 if no data.
+            AC grid voltage R phase (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.grid_voltage_r
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vacr", self._runtime.vacr)
 
     @property
-    def grid_voltage_s(self) -> float:
+    def grid_voltage_s(self) -> float | None:
         """Get grid AC voltage phase S in volts.
 
         Returns:
-            AC grid voltage S phase (÷10), or 0.0 if no data.
+            AC grid voltage S phase (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.grid_voltage_s
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vacs", self._runtime.vacs)
 
     @property
-    def grid_voltage_t(self) -> float:
+    def grid_voltage_t(self) -> float | None:
         """Get grid AC voltage phase T in volts.
 
         Returns:
-            AC grid voltage T phase (÷10), or 0.0 if no data.
+            AC grid voltage T phase (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.grid_voltage_t
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vact", self._runtime.vact)
 
     @property
-    def grid_frequency(self) -> float:
+    def grid_frequency(self) -> float | None:
         """Get grid AC frequency in Hz.
 
         Returns:
-            Grid frequency (÷100), or 0.0 if no data.
+            Grid frequency (÷100), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.grid_frequency
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("fac", self._runtime.fac)
 
     @property
-    def power_factor(self) -> str:
+    def power_factor(self) -> str | None:
         """Get power factor.
 
         Returns:
-            Power factor as string, or empty string if no data.
+            Power factor as string, None if transport read failed, or empty string if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.power_factor
+            return str(val) if val is not None else None
         if self._runtime is None:
             return ""
         return self._runtime.pf
@@ -185,60 +222,71 @@ class InverterRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def eps_voltage_r(self) -> float:
+    def eps_voltage_r(self) -> float | None:
         """Get EPS voltage phase R in volts.
 
         Returns:
-            EPS voltage R phase (÷10), or 0.0 if no data.
+            EPS voltage R phase (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.eps_voltage_r
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vepsr", self._runtime.vepsr)
 
     @property
-    def eps_voltage_s(self) -> float:
+    def eps_voltage_s(self) -> float | None:
         """Get EPS voltage phase S in volts.
 
         Returns:
-            EPS voltage S phase (÷10), or 0.0 if no data.
+            EPS voltage S phase (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.eps_voltage_s
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vepss", self._runtime.vepss)
 
     @property
-    def eps_voltage_t(self) -> float:
+    def eps_voltage_t(self) -> float | None:
         """Get EPS voltage phase T in volts.
 
         Returns:
-            EPS voltage T phase (÷10), or 0.0 if no data.
+            EPS voltage T phase (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.eps_voltage_t
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vepst", self._runtime.vepst)
 
     @property
-    def eps_frequency(self) -> float:
+    def eps_frequency(self) -> float | None:
         """Get EPS frequency in Hz.
 
         Returns:
-            EPS frequency (÷100), or 0.0 if no data.
+            EPS frequency (÷100), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.eps_frequency
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("feps", self._runtime.feps)
 
     @property
-    def eps_power(self) -> int:
+    def eps_power(self) -> int | None:
         """Get EPS power in watts.
 
         Returns:
-            EPS power in watts, or 0 if no data.
+            EPS power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.eps_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.peps
@@ -270,34 +318,43 @@ class InverterRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def power_to_grid(self) -> int:
+    def power_to_grid(self) -> int | None:
         """Get power flowing to grid in watts.
 
         Returns:
-            Power to grid in watts, or 0 if no data.
+            Power to grid in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.power_to_grid
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.pToGrid
 
     @property
-    def power_to_user(self) -> int:
+    def power_to_user(self) -> int | None:
         """Get power flowing to user loads in watts.
 
         Returns:
-            Power to user in watts, or 0 if no data.
+            Power to user in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.load_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.pToUser
 
     @property
-    def inverter_power(self) -> int:
+    def inverter_power(self) -> int | None:
         """Get inverter power in watts.
 
         Returns:
-            Inverter power in watts, or 0 if no data.
+            Inverter power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.inverter_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.pinv
@@ -321,83 +378,104 @@ class InverterRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def battery_voltage(self) -> float:
+    def battery_voltage(self) -> float | None:
         """Get battery voltage in volts.
 
         Returns:
-            Battery voltage (÷10), or 0.0 if no data.
+            Battery voltage (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.battery_voltage
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vBat", self._runtime.vBat)
 
     @property
-    def battery_charge_power(self) -> int:
+    def battery_charge_power(self) -> int | None:
         """Get battery charging power in watts.
 
         Returns:
-            Battery charge power in watts, or 0 if no data.
+            Battery charge power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.battery_charge_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.pCharge
 
     @property
-    def battery_discharge_power(self) -> int:
+    def battery_discharge_power(self) -> int | None:
         """Get battery discharging power in watts.
 
         Returns:
-            Battery discharge power in watts, or 0 if no data.
+            Battery discharge power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.battery_discharge_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.pDisCharge
 
     @property
-    def battery_power(self) -> int:
+    def battery_power(self) -> int | None:
         """Get net battery power in watts (positive = charging, negative = discharging).
 
         Returns:
-            Battery power in watts, or 0 if no data.
+            Battery power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            charge = self._transport_runtime.battery_charge_power
+            discharge = self._transport_runtime.battery_discharge_power
+            if charge is None or discharge is None:
+                return None
+            return int(charge) - int(discharge)
         if self._runtime is None:
             return 0
         return self._runtime.batPower
 
     @property
-    def battery_temperature(self) -> int:
+    def battery_temperature(self) -> int | None:
         """Get battery temperature in Celsius.
 
         Returns:
-            Battery temperature in °C, or 0 if no data.
+            Battery temperature in °C, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.battery_temperature
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.tBat
 
     @property
-    def max_charge_current(self) -> float:
+    def max_charge_current(self) -> float | None:
         """Get maximum charge current in amps.
 
         Returns:
-            Max charge current (÷100), or 0.0 if no data.
+            Max charge current (÷100), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.bms_charge_current_limit
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("maxChgCurr", self._runtime.maxChgCurr)
 
     @property
-    def max_discharge_current(self) -> float:
+    def max_discharge_current(self) -> float | None:
         """Get maximum discharge current in amps.
 
         Returns:
-            Max discharge current (÷100), or 0.0 if no data.
+            Max discharge current (÷100), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.bms_discharge_current_limit
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("maxDischgCurr", self._runtime.maxDischgCurr)
 
     # ===========================================
@@ -405,34 +483,43 @@ class InverterRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def inverter_temperature(self) -> int:
+    def inverter_temperature(self) -> int | None:
         """Get inverter internal temperature in Celsius.
 
         Returns:
-            Internal temperature in °C, or 0 if no data.
+            Internal temperature in °C, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.internal_temperature
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.tinner
 
     @property
-    def radiator1_temperature(self) -> int:
+    def radiator1_temperature(self) -> int | None:
         """Get radiator 1 temperature in Celsius.
 
         Returns:
-            Radiator 1 temperature in °C, or 0 if no data.
+            Radiator 1 temperature in °C, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.radiator_temperature_1
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.tradiator1
 
     @property
-    def radiator2_temperature(self) -> int:
+    def radiator2_temperature(self) -> int | None:
         """Get radiator 2 temperature in Celsius.
 
         Returns:
-            Radiator 2 temperature in °C, or 0 if no data.
+            Radiator 2 temperature in °C, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.radiator_temperature_2
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.tradiator2
@@ -442,27 +529,31 @@ class InverterRuntimePropertiesMixin:
     # ===========================================
 
     @property
-    def bus1_voltage(self) -> float:
+    def bus1_voltage(self) -> float | None:
         """Get bus 1 voltage in volts.
 
         Returns:
-            Bus 1 voltage (÷100), or 0.0 if no data.
+            Bus 1 voltage (÷100), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.bus_voltage_1
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vBus1", self._runtime.vBus1)
 
     @property
-    def bus2_voltage(self) -> float:
+    def bus2_voltage(self) -> float | None:
         """Get bus 2 voltage in volts.
 
         Returns:
-            Bus 2 voltage (÷100), or 0.0 if no data.
+            Bus 2 voltage (÷100), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.bus_voltage_2
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("vBus2", self._runtime.vBus2)
 
     # ===========================================
@@ -481,36 +572,43 @@ class InverterRuntimePropertiesMixin:
         return self._runtime.acCouplePower
 
     @property
-    def generator_voltage(self) -> float:
+    def generator_voltage(self) -> float | None:
         """Get generator voltage in volts.
 
         Returns:
-            Generator voltage (÷10), or 0.0 if no data.
+            Generator voltage (÷10), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.generator_voltage
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("genVolt", self._runtime.genVolt)
 
     @property
-    def generator_frequency(self) -> float:
+    def generator_frequency(self) -> float | None:
         """Get generator frequency in Hz.
 
         Returns:
-            Generator frequency (÷100), or 0.0 if no data.
+            Generator frequency (÷100), None if transport read failed, or 0.0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.generator_frequency
+            return float(val) if val is not None else None
         if self._runtime is None:
             return 0.0
-
         return scale_runtime_value("genFreq", self._runtime.genFreq)
 
     @property
-    def generator_power(self) -> int:
+    def generator_power(self) -> int | None:
         """Get generator power in watts.
 
         Returns:
-            Generator power in watts, or 0 if no data.
+            Generator power in watts, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.generator_power
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.genPower
@@ -522,6 +620,9 @@ class InverterRuntimePropertiesMixin:
         Returns:
             True if using generator, False otherwise.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.generator_power
+            return val is not None and int(val) > 0
         if self._runtime is None:
             return False
         return self._runtime._12KUsingGenerator
@@ -568,12 +669,15 @@ class InverterRuntimePropertiesMixin:
         return self._runtime.fwCode
 
     @property
-    def status(self) -> int:
+    def status(self) -> int | None:
         """Get inverter status code.
 
         Returns:
-            Status code, or 0 if no data.
+            Status code, None if transport read failed, or 0 if no data.
         """
+        if self._transport_runtime is not None:
+            val = self._transport_runtime.device_status
+            return int(val) if val is not None else None
         if self._runtime is None:
             return 0
         return self._runtime.status
@@ -596,6 +700,8 @@ class InverterRuntimePropertiesMixin:
         Returns:
             True if connection lost, False otherwise.
         """
+        if self._transport_runtime is not None:
+            return False  # Transport connected = not lost
         if self._runtime is None:
             return True  # No data means lost
         return self._runtime.lost

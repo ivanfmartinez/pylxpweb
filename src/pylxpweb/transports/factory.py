@@ -601,6 +601,9 @@ def create_transport_from_config(config: TransportConfig) -> BaseTransport:
             unit_id=config.unit_id,
             timeout=config.timeout,
             inverter_family=config.inverter_family,
+            retries=config.retries,
+            retry_delay=config.retry_delay,
+            inter_register_delay=config.inter_register_delay,
         )
     elif config.transport_type == TransportType.MODBUS_SERIAL:
         # serial_port is guaranteed to be set after validate() for MODBUS_SERIAL
@@ -614,6 +617,9 @@ def create_transport_from_config(config: TransportConfig) -> BaseTransport:
             unit_id=config.unit_id,
             timeout=config.timeout,
             inverter_family=config.inverter_family,
+            retries=config.retries,
+            retry_delay=config.retry_delay,
+            inter_register_delay=config.inter_register_delay,
         )
     elif config.transport_type == TransportType.WIFI_DONGLE:
         # dongle_serial is guaranteed to be set after validate() for WIFI_DONGLE

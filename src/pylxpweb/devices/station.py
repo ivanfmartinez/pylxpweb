@@ -1374,6 +1374,13 @@ class Station(BaseDevice):
                 device._transport = transport
                 result.matched += 1
                 device_type = "MID device" if isinstance(device, MIDDevice) else "inverter"
+
+                # Adjust cache TTLs for local transport speed
+                from .inverters.base import BaseInverter
+
+                if isinstance(device, BaseInverter):
+                    device.set_transport_cache_ttls()
+
                 _LOGGER.info(
                     "Attached %s transport to %s %s (%s:%d)",
                     config.transport_type.value,

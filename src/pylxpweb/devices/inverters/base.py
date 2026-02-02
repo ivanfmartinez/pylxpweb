@@ -176,6 +176,32 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             return True
         return (datetime.now() - cache_time) > ttl
 
+    def set_transport_cache_ttls(self) -> None:
+        """Adjust cache TTLs based on attached transport type.
+
+        Modbus TCP/Serial transports can be polled every 5s (local network).
+        WiFi Dongle transports use 30s (slower protocol).
+        Cloud (no transport) keeps defaults (runtime=30s, energy=5min, battery=30s).
+        """
+        if self._transport is None:
+            return
+        transport_type = getattr(self._transport, "transport_type", "")
+        if transport_type in ("modbus_tcp", "modbus_serial"):
+            ttl = timedelta(seconds=5)
+        elif transport_type == "wifi_dongle":
+            ttl = timedelta(seconds=30)
+        else:
+            return  # Keep defaults for unknown transport types
+        self._runtime_cache_ttl = ttl
+        self._energy_cache_ttl = ttl
+        self._battery_cache_ttl = ttl
+        _LOGGER.debug(
+            "Set cache TTLs to %ss for %s (transport: %s)",
+            ttl.total_seconds(),
+            self.serial_number,
+            transport_type,
+        )
+
     # ============================================================================
     # Factory Methods
     # ============================================================================
@@ -496,7 +522,6 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             try:
                 if self._transport is not None:
                     # Use transport for direct local communication
-
                     transport_data = await self._transport.read_runtime()
                     # Store transport data directly - we'll expose via properties
                     self._transport_runtime = transport_data
@@ -719,38 +744,40 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         return self._runtime is not None or self._transport_runtime is not None
 
     @property
-    def power_output(self) -> float:
+    def power_output(self) -> float | None:
         """Get current power output in watts.
 
         Returns:
-            Current AC power output in watts, or 0.0 if no data.
+            Current AC power output in watts, or None if unavailable.
         """
         # Check transport data first
         if self._transport_runtime is not None:
-            return float(self._transport_runtime.inverter_power)
+            val = self._transport_runtime.inverter_power
+            return float(val) if val is not None else None
 
         # Fall back to HTTP data
         if self._runtime is None:
-            return 0.0
+            return None
         return float(getattr(self._runtime, "pinv", 0))
 
     @property
-    def total_energy_today(self) -> float:
+    def total_energy_today(self) -> float | None:
         """Get total energy produced today in kWh.
 
         This is a daily value that resets at midnight (API server time).
         Home Assistant's SensorStateClass.TOTAL_INCREASING handles resets.
 
         Returns:
-            Energy produced today in kWh, or 0.0 if no data.
+            Energy produced today in kWh, or None if unavailable.
         """
         # Check transport data first
         if self._transport_energy is not None:
-            return float(self._transport_energy.pv_energy_today)
+            val = self._transport_energy.pv_energy_today
+            return float(val) if val is not None else None
 
         # Fall back to HTTP data
         if self._energy is None:
-            return 0.0
+            return None
 
         from pylxpweb.constants import scale_energy_value
 
@@ -758,19 +785,20 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         return scale_energy_value("todayYielding", raw_value, to_kwh=True)
 
     @property
-    def total_energy_lifetime(self) -> float:
+    def total_energy_lifetime(self) -> float | None:
         """Get total energy produced lifetime in kWh.
 
         Returns:
-            Total lifetime energy in kWh, or 0.0 if no data.
+            Total lifetime energy in kWh, or None if unavailable.
         """
         # Check transport data first
         if self._transport_energy is not None:
-            return float(self._transport_energy.pv_energy_total)
+            val = self._transport_energy.pv_energy_total
+            return float(val) if val is not None else None
 
         # Fall back to HTTP data
         if self._energy is None:
-            return 0.0
+            return None
 
         from pylxpweb.constants import scale_energy_value
 
@@ -786,8 +814,8 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         """
         # Check transport data first
         if self._transport_runtime is not None:
-            # InverterRuntimeData.battery_soc is int
-            return int(self._transport_runtime.battery_soc)
+            val = self._transport_runtime.battery_soc
+            return int(val) if val is not None else None
 
         # Fall back to HTTP data
         if self._runtime is None:
@@ -808,131 +836,161 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
     # ============================================================================
 
     @property
-    def energy_today_charging(self) -> float:
+    def energy_today_charging(self) -> float | None:
         """Get battery charging energy today in kWh.
 
         Returns:
-            Energy charged to battery today in kWh, or 0.0 if no data.
+            Energy charged to battery today in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.charge_energy_today
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("todayCharging", self._energy.todayCharging, to_kwh=True)
 
     @property
-    def energy_today_discharging(self) -> float:
+    def energy_today_discharging(self) -> float | None:
         """Get battery discharging energy today in kWh.
 
         Returns:
-            Energy discharged from battery today in kWh, or 0.0 if no data.
+            Energy discharged from battery today in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.discharge_energy_today
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("todayDischarging", self._energy.todayDischarging, to_kwh=True)
 
     @property
-    def energy_today_import(self) -> float:
+    def energy_today_import(self) -> float | None:
         """Get grid import energy today in kWh.
 
         Returns:
-            Energy imported from grid today in kWh, or 0.0 if no data.
+            Energy imported from grid today in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.grid_import_today
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("todayImport", self._energy.todayImport, to_kwh=True)
 
     @property
-    def energy_today_export(self) -> float:
+    def energy_today_export(self) -> float | None:
         """Get grid export energy today in kWh.
 
         Returns:
-            Energy exported to grid today in kWh, or 0.0 if no data.
+            Energy exported to grid today in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.grid_export_today
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("todayExport", self._energy.todayExport, to_kwh=True)
 
     @property
-    def energy_today_usage(self) -> float:
+    def energy_today_usage(self) -> float | None:
         """Get energy consumption today in kWh.
 
         Returns:
-            Energy consumed by loads today in kWh, or 0.0 if no data.
+            Energy consumed by loads today in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.load_energy_today
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("todayUsage", self._energy.todayUsage, to_kwh=True)
 
     @property
-    def energy_lifetime_charging(self) -> float:
+    def energy_lifetime_charging(self) -> float | None:
         """Get total battery charging energy lifetime in kWh.
 
         Returns:
-            Total energy charged to battery lifetime in kWh, or 0.0 if no data.
+            Total energy charged to battery lifetime in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.charge_energy_total
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("totalCharging", self._energy.totalCharging, to_kwh=True)
 
     @property
-    def energy_lifetime_discharging(self) -> float:
+    def energy_lifetime_discharging(self) -> float | None:
         """Get total battery discharging energy lifetime in kWh.
 
         Returns:
-            Total energy discharged from battery lifetime in kWh, or 0.0 if no data.
+            Total energy discharged from battery lifetime in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.discharge_energy_total
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("totalDischarging", self._energy.totalDischarging, to_kwh=True)
 
     @property
-    def energy_lifetime_import(self) -> float:
+    def energy_lifetime_import(self) -> float | None:
         """Get total grid import energy lifetime in kWh.
 
         Returns:
-            Total energy imported from grid lifetime in kWh, or 0.0 if no data.
+            Total energy imported from grid lifetime in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.grid_import_total
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("totalImport", self._energy.totalImport, to_kwh=True)
 
     @property
-    def energy_lifetime_export(self) -> float:
+    def energy_lifetime_export(self) -> float | None:
         """Get total grid export energy lifetime in kWh.
 
         Returns:
-            Total energy exported to grid lifetime in kWh, or 0.0 if no data.
+            Total energy exported to grid lifetime in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.grid_export_total
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("totalExport", self._energy.totalExport, to_kwh=True)
 
     @property
-    def energy_lifetime_usage(self) -> float:
+    def energy_lifetime_usage(self) -> float | None:
         """Get total energy consumption lifetime in kWh.
 
         Returns:
-            Total energy consumed by loads lifetime in kWh, or 0.0 if no data.
+            Total energy consumed by loads lifetime in kWh, or None if unavailable.
         """
+        if self._transport_energy is not None:
+            val = self._transport_energy.load_energy_total
+            return float(val) if val is not None else None
         if self._energy is None:
-            return 0.0
+            return None
         from pylxpweb.constants import scale_energy_value
 
         return scale_energy_value("totalUsage", self._energy.totalUsage, to_kwh=True)
