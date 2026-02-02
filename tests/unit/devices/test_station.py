@@ -917,3 +917,321 @@ class TestStationFromLocalDiscovery:
             assert len(station.standalone_inverters) == 1
             assert station.standalone_inverters[0].serial_number == "CE1"
             mock_create.assert_called_once()
+
+
+class TestFindParallelGroupDevice:
+    """Test _find_parallel_group_device method."""
+
+    def test_find_parallel_group_device_returns_first_device_with_parallel_group(
+        self, mock_client: LuxpowerClient, sample_location: Location
+    ) -> None:
+        """Test finding a device with parallelGroup set."""
+        from pylxpweb.models import InverterOverviewItem, InverterOverviewResponse
+
+        station = Station(
+            client=mock_client,
+            plant_id=12345,
+            name="Test Station",
+            location=sample_location,
+            timezone="America/New_York",
+            created_date=datetime(2024, 1, 1),
+        )
+
+        # Two inverters with parallelGroup set (no GridBOSS)
+        devices_response = InverterOverviewResponse(
+            success=True,
+            total=2,
+            rows=[
+                InverterOverviewItem.model_construct(
+                    serialNum="1111111111",
+                    statusText="Online",
+                    deviceType=6,  # Inverter
+                    subDeviceType=0,
+                    parallelGroup="A",
+                    deviceTypeText="18KPV",
+                    phase=1,
+                    plantId=12345,
+                    plantName="Test Station",
+                    ppv=0,
+                    ppvText="0 W",
+                    pCharge=0,
+                    pChargeText="0 W",
+                    pDisCharge=0,
+                    pDisChargeText="0 W",
+                    pConsumption=0,
+                    pConsumptionText="0 W",
+                    soc="0 %",
+                    vBat=0,
+                    vBatText="0 V",
+                    totalYielding=0,
+                    totalYieldingText="0 kWh",
+                    totalDischarging=0,
+                    totalDischargingText="0 kWh",
+                    totalExport=0,
+                    totalExportText="0 kWh",
+                    totalUsage=0,
+                    totalUsageText="0 kWh",
+                    parallelIndex="1",
+                ),
+                InverterOverviewItem.model_construct(
+                    serialNum="2222222222",
+                    statusText="Online",
+                    deviceType=6,
+                    subDeviceType=0,
+                    parallelGroup="A",
+                    deviceTypeText="18KPV",
+                    phase=1,
+                    plantId=12345,
+                    plantName="Test Station",
+                    ppv=0,
+                    ppvText="0 W",
+                    pCharge=0,
+                    pChargeText="0 W",
+                    pDisCharge=0,
+                    pDisChargeText="0 W",
+                    pConsumption=0,
+                    pConsumptionText="0 W",
+                    soc="0 %",
+                    vBat=0,
+                    vBatText="0 V",
+                    totalYielding=0,
+                    totalYieldingText="0 kWh",
+                    totalDischarging=0,
+                    totalDischargingText="0 kWh",
+                    totalExport=0,
+                    totalExportText="0 kWh",
+                    totalUsage=0,
+                    totalUsageText="0 kWh",
+                    parallelIndex="2",
+                ),
+            ],
+        )
+
+        result = station._find_parallel_group_device(devices_response)
+        assert result == "1111111111"
+
+    def test_find_parallel_group_device_returns_none_for_no_parallel_devices(
+        self, mock_client: LuxpowerClient, sample_location: Location
+    ) -> None:
+        """Test returns None when no devices have parallelGroup set."""
+        from pylxpweb.models import InverterOverviewItem, InverterOverviewResponse
+
+        station = Station(
+            client=mock_client,
+            plant_id=12345,
+            name="Test Station",
+            location=sample_location,
+            timezone="America/New_York",
+            created_date=datetime(2024, 1, 1),
+        )
+
+        # Standalone inverter with empty parallelGroup
+        devices_response = InverterOverviewResponse(
+            success=True,
+            total=1,
+            rows=[
+                InverterOverviewItem.model_construct(
+                    serialNum="1111111111",
+                    statusText="Online",
+                    deviceType=6,
+                    subDeviceType=0,
+                    parallelGroup="",  # Empty = not in parallel group
+                    deviceTypeText="18KPV",
+                    phase=1,
+                    plantId=12345,
+                    plantName="Test Station",
+                    ppv=0,
+                    ppvText="0 W",
+                    pCharge=0,
+                    pChargeText="0 W",
+                    pDisCharge=0,
+                    pDisChargeText="0 W",
+                    pConsumption=0,
+                    pConsumptionText="0 W",
+                    soc="0 %",
+                    vBat=0,
+                    vBatText="0 V",
+                    totalYielding=0,
+                    totalYieldingText="0 kWh",
+                    totalDischarging=0,
+                    totalDischargingText="0 kWh",
+                    totalExport=0,
+                    totalExportText="0 kWh",
+                    totalUsage=0,
+                    totalUsageText="0 kWh",
+                    parallelIndex="",
+                ),
+            ],
+        )
+
+        result = station._find_parallel_group_device(devices_response)
+        assert result is None
+
+    def test_find_parallel_group_device_returns_none_for_empty_response(
+        self, mock_client: LuxpowerClient, sample_location: Location
+    ) -> None:
+        """Test returns None when device list is empty."""
+        from pylxpweb.models import InverterOverviewResponse
+
+        station = Station(
+            client=mock_client,
+            plant_id=12345,
+            name="Test Station",
+            location=sample_location,
+            timezone="America/New_York",
+            created_date=datetime(2024, 1, 1),
+        )
+
+        devices_response = InverterOverviewResponse(success=True, total=0, rows=[])
+
+        result = station._find_parallel_group_device(devices_response)
+        assert result is None
+
+
+class TestLoadDevicesParallelInvertersOnly:
+    """Test _load_devices with parallel inverters (no GridBOSS)."""
+
+    @pytest.mark.asyncio
+    async def test_load_devices_parallel_inverters_only(
+        self, mock_client: LuxpowerClient, sample_location: Location
+    ) -> None:
+        """Test parallel group discovery with inverters only (no GridBOSS).
+
+        This is the key fix for issue #120/#126 where LuxPower systems without
+        GridBOSS couldn't discover parallel groups.
+        """
+        from pylxpweb.models import (
+            InverterOverviewItem,
+            InverterOverviewResponse,
+            ParallelGroupDetailsResponse,
+            ParallelGroupDeviceItem,
+        )
+
+        station = Station(
+            client=mock_client,
+            plant_id=12345,
+            name="Test Station",
+            location=sample_location,
+            timezone="America/New_York",
+            created_date=datetime(2024, 1, 1),
+        )
+
+        # Two inverters in parallel group "A" - NO GRIDBOSS
+        devices_response = InverterOverviewResponse(
+            success=True,
+            total=2,
+            rows=[
+                InverterOverviewItem.model_construct(
+                    serialNum="1111111111",
+                    statusText="Online",
+                    deviceType=6,  # Inverter
+                    subDeviceType=0,
+                    parallelGroup="A",
+                    deviceTypeText="18KPV",
+                    phase=1,
+                    plantId=12345,
+                    plantName="Test Station",
+                    ppv=0,
+                    ppvText="0 W",
+                    pCharge=0,
+                    pChargeText="0 W",
+                    pDisCharge=0,
+                    pDisChargeText="0 W",
+                    pConsumption=0,
+                    pConsumptionText="0 W",
+                    soc="0 %",
+                    vBat=0,
+                    vBatText="0 V",
+                    totalYielding=0,
+                    totalYieldingText="0 kWh",
+                    totalDischarging=0,
+                    totalDischargingText="0 kWh",
+                    totalExport=0,
+                    totalExportText="0 kWh",
+                    totalUsage=0,
+                    totalUsageText="0 kWh",
+                    parallelIndex="1",
+                ),
+                InverterOverviewItem.model_construct(
+                    serialNum="2222222222",
+                    statusText="Online",
+                    deviceType=6,  # Inverter
+                    subDeviceType=0,
+                    parallelGroup="A",
+                    deviceTypeText="18KPV",
+                    phase=1,
+                    plantId=12345,
+                    plantName="Test Station",
+                    ppv=0,
+                    ppvText="0 W",
+                    pCharge=0,
+                    pChargeText="0 W",
+                    pDisCharge=0,
+                    pDisChargeText="0 W",
+                    pConsumption=0,
+                    pConsumptionText="0 W",
+                    soc="0 %",
+                    vBat=0,
+                    vBatText="0 V",
+                    totalYielding=0,
+                    totalYieldingText="0 kWh",
+                    totalDischarging=0,
+                    totalDischargingText="0 kWh",
+                    totalExport=0,
+                    totalExportText="0 kWh",
+                    totalUsage=0,
+                    totalUsageText="0 kWh",
+                    parallelIndex="2",
+                ),
+            ],
+        )
+
+        # API returns parallel group data using inverter serial
+        group_data = ParallelGroupDetailsResponse.model_construct(
+            success=True,
+            deviceType=6,
+            total=2,
+            devices=[
+                ParallelGroupDeviceItem.model_construct(
+                    serialNum="1111111111",
+                    deviceType=6,
+                    subDeviceType=0,
+                    phase=1,
+                    dtc="2024-01-01 00:00:00",
+                    machineType="18KPV",
+                    parallelIndex="1",
+                    parallelNumText="1",
+                    lost=False,
+                    roleText="Master",
+                ),
+                ParallelGroupDeviceItem.model_construct(
+                    serialNum="2222222222",
+                    deviceType=6,
+                    subDeviceType=0,
+                    phase=1,
+                    dtc="2024-01-01 00:00:00",
+                    machineType="18KPV",
+                    parallelIndex="2",
+                    parallelNumText="2",
+                    lost=False,
+                    roleText="Slave",
+                ),
+            ],
+        )
+
+        mock_client.api.devices.get_devices = AsyncMock(return_value=devices_response)
+        mock_client.api.devices.get_parallel_group_details = AsyncMock(return_value=group_data)
+
+        # Load devices
+        await station._load_devices()
+
+        # Verify parallel group created with inverters only
+        assert len(station.parallel_groups) == 1
+        assert station.parallel_groups[0].name == "A"
+        # Master device should be first_device_serial
+        assert station.parallel_groups[0].first_device_serial == "1111111111"
+
+        # Verify API was called with inverter serial (not GridBOSS)
+        mock_client.api.devices.get_parallel_group_details.assert_called_once_with(
+            "1111111111"
+        )

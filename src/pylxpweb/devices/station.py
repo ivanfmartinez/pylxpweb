@@ -946,31 +946,31 @@ class Station(BaseDevice):
 
         This method orchestrates device loading by:
         1. Getting device list from API
-        2. Finding GridBOSS to query parallel group configuration
-        3. If GridBOSS found but no parallel groups, trigger auto-sync
+        2. Finding any device with parallelGroup to query parallel group configuration
+        3. If device has parallelGroup but no group data, trigger auto-sync
         4. Creating ParallelGroup objects
         5. Assigning inverters and MID devices to groups or standalone list
         """
         try:
             # Get device list and parallel group configuration
             devices_response = await self._get_device_list()
-            gridboss_serial = self._find_gridboss(devices_response)
-            group_data = await self._get_parallel_groups(gridboss_serial)
+            parallel_device_serial = self._find_parallel_group_device(devices_response)
+            group_data = await self._get_parallel_groups(parallel_device_serial)
 
-            # If GridBOSS detected but no parallel group data, trigger auto-sync
-            if gridboss_serial and (not group_data or not group_data.devices):
+            # If device has parallelGroup but API returns no data, trigger auto-sync
+            if parallel_device_serial and (not group_data or not group_data.devices):
                 _LOGGER.info(
-                    "GridBOSS %s detected but no parallel groups found, triggering auto-sync",
-                    gridboss_serial,
+                    "Device %s has parallelGroup but no group data returned, triggering auto-sync",
+                    parallel_device_serial,
                 )
                 sync_success = await self._client.api.devices.sync_parallel_groups(self.id)
                 if sync_success:
                     _LOGGER.info("Parallel group sync successful, re-fetching group data")
                     # Re-fetch parallel group data after sync
-                    group_data = await self._get_parallel_groups(gridboss_serial)
+                    group_data = await self._get_parallel_groups(parallel_device_serial)
                 else:
                     _LOGGER.warning(
-                        "Parallel group sync failed for station %s - GridBOSS may not appear",
+                        "Parallel group sync failed for station %s",
                         self.id,
                     )
 
@@ -993,41 +993,51 @@ class Station(BaseDevice):
         """
         return await self._client.api.devices.get_devices(self.id)
 
-    def _find_gridboss(self, devices_response: InverterOverviewResponse) -> str | None:
-        """Find GridBOSS device in device list.
+    def _find_parallel_group_device(self, devices_response: InverterOverviewResponse) -> str | None:
+        """Find any device that belongs to a parallel group.
+
+        The getParallelGroupDetails API accepts any device serial from a parallel group
+        and returns the same data regardless of device type (GridBOSS or inverter).
 
         Args:
             devices_response: Device list response from API.
 
         Returns:
-            GridBOSS serial number if found, None otherwise.
+            Serial number of a device in a parallel group, or None if no parallel devices.
         """
         if not devices_response.rows:
             return None
 
         for device in devices_response.rows:
-            if device.deviceType == DEVICE_TYPE_GRIDBOSS:
-                _LOGGER.debug("Found GridBOSS device: %s", device.serialNum)
+            if device.parallelGroup:
+                _LOGGER.debug(
+                    "Found device %s in parallel group '%s'",
+                    device.serialNum,
+                    device.parallelGroup,
+                )
                 return device.serialNum
 
         return None
 
     async def _get_parallel_groups(
-        self, gridboss_serial: str | None
+        self, device_serial: str | None
     ) -> ParallelGroupDetailsResponse | None:
-        """Get parallel group details if GridBOSS exists.
+        """Get parallel group details using any device serial from the group.
+
+        The API accepts any device serial from a parallel group (GridBOSS or inverter)
+        and returns the complete parallel group configuration.
 
         Args:
-            gridboss_serial: GridBOSS serial number or None.
+            device_serial: Serial of any device in a parallel group, or None.
 
         Returns:
             Parallel group details or None if not available.
         """
-        if not gridboss_serial:
+        if not device_serial:
             return None
 
         try:
-            return await self._client.api.devices.get_parallel_group_details(gridboss_serial)
+            return await self._client.api.devices.get_parallel_group_details(device_serial)
         except (LuxpowerAPIError, LuxpowerConnectionError, LuxpowerDeviceError) as e:
             _LOGGER.debug("Could not load parallel group details: %s", str(e))
             return None
