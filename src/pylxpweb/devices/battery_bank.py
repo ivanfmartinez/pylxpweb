@@ -52,6 +52,7 @@ class BatteryBank(BaseDevice):
         client: LuxpowerClient,
         inverter_serial: str,
         battery_info: BatteryInfo,
+        bat_parallel_num: int | None = None,
     ) -> None:
         """Initialize battery bank.
 
@@ -59,12 +60,20 @@ class BatteryBank(BaseDevice):
             client: LuxpowerClient instance for API access
             inverter_serial: Serial number of parent inverter
             battery_info: BatteryInfo data from API
+            bat_parallel_num: Battery count from runtime data (more reliable than
+                totalNumber for LXP-EU devices where CAN bus BMS communication
+                may fail and return 0)
         """
         # Use inverter serial + "_battery_bank" as unique ID
         super().__init__(client, f"{inverter_serial}_battery_bank", "Battery Bank")
 
         self.inverter_serial = inverter_serial
         self.data = battery_info
+
+        # Cache batParallelNum from runtime for accurate battery count
+        # getBatteryInfo.totalNumber returns 0 when CAN bus BMS communication fails
+        # but batParallelNum from runtime is always correct
+        self._bat_parallel_num = bat_parallel_num
 
         # Individual battery modules in this bank
         self.batteries: list[Battery] = []  # Will be Battery objects
@@ -403,11 +412,21 @@ class BatteryBank(BaseDevice):
     def battery_count(self) -> int:
         """Get number of batteries in the bank.
 
+        Battery count priority (same logic as HTTPTransport.read_battery()):
+        1. _bat_parallel_num from runtime (most reliable for LXP-EU devices)
+        2. totalNumber from getBatteryInfo (can be 0 if CAN bus BMS communication fails)
+        3. len(batteryArray) as fallback
+
         Returns:
             Number of battery modules.
         """
-        if self.data.totalNumber is not None:
+        # Prefer batParallelNum from runtime - most reliable
+        if self._bat_parallel_num is not None and self._bat_parallel_num > 0:
+            return self._bat_parallel_num
+        # Fall back to totalNumber from API
+        if self.data.totalNumber is not None and self.data.totalNumber > 0:
             return self.data.totalNumber
+        # Last resort: count batteries in array
         return len(self.data.batteryArray)
 
     async def refresh(self) -> None:

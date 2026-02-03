@@ -694,3 +694,139 @@ class TestBatteryBankCrossBatteryDiagnostics:
             ],
         )
         assert bank.temp_delta == 7.0
+
+
+class TestBatteryBankBatParallelNum:
+    """Test BatteryBank battery_count with batParallelNum from runtime.
+
+    For LXP-EU devices, getBatteryInfo.totalNumber can return 0 when
+    CAN bus communication with battery BMS isn't established.
+    The batParallelNum from runtime is always correct.
+    """
+
+    def test_battery_count_uses_bat_parallel_num(self, mock_client):
+        """Test battery_count prefers bat_parallel_num over totalNumber."""
+        # totalNumber=0 simulates CAN bus communication failure
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Idle",
+            soc=50,
+            vBat=520,
+            pCharge=0,
+            pDisCharge=0,
+            maxBatteryCharge=150,
+            currentBatteryCharge=75.0,
+            batteryArray=[],  # Empty array
+            totalNumber=0,  # BMS communication failed
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+            bat_parallel_num=3,  # Correct count from runtime
+        )
+
+        # Should use bat_parallel_num instead of totalNumber
+        assert battery_bank.battery_count == 3
+
+    def test_battery_count_fallback_to_total_number(self, mock_client):
+        """Test battery_count falls back to totalNumber when no bat_parallel_num."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Idle",
+            soc=50,
+            vBat=520,
+            pCharge=0,
+            pDisCharge=0,
+            maxBatteryCharge=150,
+            currentBatteryCharge=75.0,
+            batteryArray=[],
+            totalNumber=2,
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+            # No bat_parallel_num
+        )
+
+        # Should fall back to totalNumber
+        assert battery_bank.battery_count == 2
+
+    def test_battery_count_fallback_to_array_length(self, mock_client):
+        """Test battery_count falls back to array length when both are zero."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Idle",
+            soc=50,
+            vBat=520,
+            pCharge=0,
+            pDisCharge=0,
+            maxBatteryCharge=150,
+            currentBatteryCharge=75.0,
+            batteryArray=[{"batteryKey": "bat1"}, {"batteryKey": "bat2"}],
+            totalNumber=0,
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+            bat_parallel_num=0,  # Zero from runtime too
+        )
+
+        # Should fall back to len(batteryArray)
+        assert battery_bank.battery_count == 2
+
+    def test_battery_count_ignores_zero_bat_parallel_num(self, mock_client):
+        """Test battery_count ignores bat_parallel_num=0."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Idle",
+            soc=50,
+            vBat=520,
+            pCharge=0,
+            pDisCharge=0,
+            maxBatteryCharge=150,
+            currentBatteryCharge=75.0,
+            batteryArray=[],
+            totalNumber=3,  # Valid totalNumber
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+            bat_parallel_num=0,  # Zero should be ignored
+        )
+
+        # Should fall back to totalNumber
+        assert battery_bank.battery_count == 3
+
+    def test_bat_parallel_num_can_be_updated(self, mock_client):
+        """Test _bat_parallel_num can be updated after creation."""
+        battery_info = BatteryInfo.model_construct(
+            batStatus="Idle",
+            soc=50,
+            vBat=520,
+            pCharge=0,
+            pDisCharge=0,
+            maxBatteryCharge=150,
+            currentBatteryCharge=75.0,
+            batteryArray=[],
+            totalNumber=0,  # BMS communication failed
+        )
+
+        battery_bank = BatteryBank(
+            client=mock_client,
+            inverter_serial="1234567890",
+            battery_info=battery_info,
+            # No bat_parallel_num initially
+        )
+
+        # Initially uses fallback (array length)
+        assert battery_bank.battery_count == 0
+
+        # Update after runtime data becomes available
+        battery_bank._bat_parallel_num = 3
+
+        # Now should use the updated value
+        assert battery_bank.battery_count == 3

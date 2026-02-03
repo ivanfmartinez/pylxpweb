@@ -1075,16 +1075,30 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
         """
         from ..battery_bank import BatteryBank
 
+        # Get batParallelNum from runtime data if available
+        # This is more reliable than totalNumber for LXP-EU devices where
+        # CAN bus BMS communication may fail and return 0
+        bat_parallel_num: int | None = None
+        if self._runtime is not None and hasattr(self._runtime, "batParallelNum"):
+            try:
+                if self._runtime.batParallelNum is not None:
+                    bat_parallel_num = int(self._runtime.batParallelNum)
+            except (ValueError, TypeError):
+                pass
+
         # Create or update battery bank with aggregate data
         if self._battery_bank is None:
             self._battery_bank = BatteryBank(
                 client=self._client,
                 inverter_serial=self.serial_number,
                 battery_info=battery_info,
+                bat_parallel_num=bat_parallel_num,
             )
         else:
-            # Update existing battery bank data
+            # Update existing battery bank data and bat_parallel_num
             self._battery_bank.data = battery_info
+            if bat_parallel_num is not None:
+                self._battery_bank._bat_parallel_num = bat_parallel_num
 
     async def _update_batteries(self, battery_modules: list[Any]) -> None:
         """Update battery objects from API data.
