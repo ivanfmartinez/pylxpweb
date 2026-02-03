@@ -372,10 +372,10 @@ class InverterRuntimePropertiesMixin:
 
     @property
     def power_to_user(self) -> int | None:
-        """Get power flowing to user loads in watts.
+        """Get power imported from grid in watts (Ptouser).
 
         Returns:
-            Power to user in watts, None if transport read failed, or 0 if no data.
+            Grid import power in watts, None if transport read failed, or 0 if no data.
         """
         if self._transport_runtime is not None:
             val = self._transport_runtime.load_power
@@ -400,10 +400,13 @@ class InverterRuntimePropertiesMixin:
 
     @property
     def rectifier_power(self) -> int | None:
-        """Get rectifier power (AC→DC from grid) in watts.
+        """Get AC charging rectifier power (Prec) in watts.
+
+        This is the power from grid used specifically for AC battery charging,
+        NOT the total grid import power. See power_to_user for grid import.
 
         Returns:
-            Rectifier power in watts, or None if no data.
+            AC charge rectifier power in watts, or None if no data.
         """
         if self._transport_runtime is not None:
             val = self._transport_runtime.grid_power

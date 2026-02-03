@@ -414,37 +414,58 @@ class ParallelGroup:
         return total
 
     @property
+    def inverter_power(self) -> int:
+        """Get total inverter output power across all inverters in watts.
+
+        Aggregates inverter_power (Pinv) from all inverters.
+
+        Returns:
+            Total inverter output power in watts, or 0 if no data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            power = inverter.inverter_power
+            if power is not None:
+                total += power
+        return total
+
+    @property
     def grid_power(self) -> int:
-        """Get total grid power across all inverters in watts.
+        """Get net grid power across all inverters in watts.
 
         Positive = importing from grid, negative = exporting to grid.
-        Aggregates rectifier_power from all inverters.
+
+        Calculated as: Ptouser - Ptogrid (import - export) per inverter.
 
         Returns:
             Net grid power in watts, or 0 if no data.
         """
         total = 0
         for inverter in self.inverters:
-            grid = inverter.rectifier_power
-            if grid is not None:
-                total += grid
+            import_power = inverter.power_to_user or 0
+            export_power = inverter.power_to_grid or 0
+            total += import_power - export_power
         return total
 
     @property
     def load_power(self) -> int:
-        """Get total load power across all inverters in watts.
+        """Get total load power (user consumption) across all inverters in watts.
 
-        Aggregates power_to_user from all inverters.
+        Calculated from energy balance:
+            Load = PV + Discharge - Charge + Grid_import - Grid_export
 
         Returns:
-            Total load power in watts, or 0 if no data.
+            Total load consumption in watts, or 0 if no data.
         """
-        total = 0
+        pv = self.pv_total_power
+        discharge = self.battery_discharge_power
+        charge = self.battery_charge_power
+        grid_import = 0
+        grid_export = 0
         for inverter in self.inverters:
-            load = inverter.power_to_user
-            if load is not None:
-                total += load
-        return total
+            grid_import += inverter.power_to_user or 0
+            grid_export += inverter.power_to_grid or 0
+        return pv + discharge - charge + grid_import - grid_export
 
     @property
     def eps_power(self) -> int:
@@ -460,6 +481,38 @@ class ParallelGroup:
             eps = inverter.eps_power
             if eps is not None:
                 total += eps
+        return total
+
+    @property
+    def grid_import_power(self) -> int:
+        """Get total grid import power across all inverters in watts.
+
+        Aggregates power_to_user (Ptouser) from all inverters.
+
+        Returns:
+            Total grid import power in watts, or 0 if no data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            import_power = inverter.power_to_user
+            if import_power is not None:
+                total += import_power
+        return total
+
+    @property
+    def grid_export_power(self) -> int:
+        """Get total grid export power across all inverters in watts.
+
+        Aggregates power_to_grid (Ptogrid) from all inverters.
+
+        Returns:
+            Total grid export power in watts, or 0 if no data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            export_power = inverter.power_to_grid
+            if export_power is not None:
+                total += export_power
         return total
 
     # ===========================================

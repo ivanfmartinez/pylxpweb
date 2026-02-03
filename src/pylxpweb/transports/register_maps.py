@@ -416,7 +416,7 @@ class EnergyRegisterMap:
 #   Reg 12-14: Grid voltages L1-L2, L2-L3, L3-L1 (V, scale=0.1)
 #   Reg 15:    Fac - Grid frequency (Hz, scale=0.01)
 #   Reg 16:    Pinv - Inverter output power (W, 16-bit)
-#   Reg 17:    Prec - AC charge power / Grid power (W, 16-bit)
+#   Reg 17:    Prec - AC charge rectifier power (W, 16-bit)
 #   Reg 18:    IinvRMS - Inverter RMS current (A, scale=0.01)
 #   Reg 19:    PF - Power factor (scale=0.001)
 #   Reg 20-22: Inverter output voltages L1-L2, L2-L3, L3-L1 (V, scale=0.1)
@@ -424,7 +424,7 @@ class EnergyRegisterMap:
 #   Reg 24:    Peps - EPS output power (W, 16-bit)
 #   Reg 25:    Seps - EPS apparent power (VA, 16-bit)
 #   Reg 26:    Ptogrid - Power exported to grid (W, 16-bit)
-#   Reg 27:    Ptouser - Load power / Power from grid (W, 16-bit)
+#   Reg 27:    Ptouser - Import power from grid (W, 16-bit)
 #   Reg 38-39: Bus voltages (V, scale=0.1)
 #   Reg 60-61: Fault code (32-bit)
 #   Reg 62-63: Warning code (32-bit)
@@ -454,9 +454,9 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     grid_l1_voltage=RegisterField(127, 16, ScaleFactor.SCALE_10),  # L1 ~120V
     grid_l2_voltage=RegisterField(128, 16, ScaleFactor.SCALE_10),  # L2 ~120V
     grid_frequency=RegisterField(15, 16, ScaleFactor.SCALE_100),
-    inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 16
-    grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # AC charge/Prec at reg 17
-    power_factor=RegisterField(19, 16, ScaleFactor.SCALE_1000),  # 16-bit at reg 19
+    inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # Pinv: inverter output power
+    grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # Prec: AC charge power
+    power_factor=RegisterField(19, 16, ScaleFactor.SCALE_1000),  # PF: power factor (0.001 scale)
     # EPS - voltages at regs 20-22, frequency at reg 23, power at reg 24
     eps_voltage_r=RegisterField(20, 16, ScaleFactor.SCALE_10),  # L1-L2
     eps_voltage_s=RegisterField(21, 16, ScaleFactor.SCALE_10),  # L2-L3
@@ -467,9 +467,9 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     eps_frequency=RegisterField(23, 16, ScaleFactor.SCALE_100),
     eps_power=RegisterField(24, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 24
     eps_status=RegisterField(25, 16, ScaleFactor.SCALE_NONE),  # Seps at reg 25
-    power_to_grid=RegisterField(26, 16, ScaleFactor.SCALE_NONE),  # Ptogrid at reg 26
-    # Load
-    load_power=RegisterField(27, 16, ScaleFactor.SCALE_NONE),  # Ptouser at reg 27
+    power_to_grid=RegisterField(26, 16, ScaleFactor.SCALE_NONE),  # Ptogrid: export power TO grid
+    # Ptouser - import power from grid (field named load_power for HTTP API compatibility)
+    load_power=RegisterField(27, 16, ScaleFactor.SCALE_NONE),  # Ptouser: import power FROM grid
     # Output power (FlexBOSS21) - confirmed via Modbus testing, tracks with discharge
     output_power=RegisterField(170, 16, ScaleFactor.SCALE_NONE, signed=True),  # W
     # Internal - bus voltages at regs 38-39
@@ -586,9 +586,9 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
     grid_voltage_s=RegisterField(13, 16, ScaleFactor.SCALE_10),  # Was reg 17
     grid_voltage_t=RegisterField(14, 16, ScaleFactor.SCALE_10),  # Was reg 18
     grid_frequency=RegisterField(15, 16, ScaleFactor.SCALE_100),  # Was reg 19
-    inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 16
-    grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 17
-    power_factor=RegisterField(18, 16, ScaleFactor.SCALE_1000),  # 16-bit at reg 18
+    inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # Pinv: inverter output power
+    grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # Prec: AC charge power
+    power_factor=RegisterField(18, 16, ScaleFactor.SCALE_1000),  # PF: power factor
     # EPS - offset continues
     eps_voltage_r=RegisterField(20, 16, ScaleFactor.SCALE_10),  # Was reg 26
     eps_voltage_s=RegisterField(21, 16, ScaleFactor.SCALE_10),  # Was reg 27
