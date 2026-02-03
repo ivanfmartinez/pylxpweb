@@ -96,9 +96,9 @@ class TestInverterRuntimeScaling:
         assert scale_runtime_value("vBat", 5300) == 530.0
 
     def test_bus_voltage_scaling(self) -> None:
-        """Test bus voltage scaling (÷100) - different from other voltages."""
-        assert scale_runtime_value("vBus1", 3703) == 37.03
-        assert scale_runtime_value("vBus2", 3228) == 32.28
+        """Test bus voltage scaling (÷10) - same as other voltages."""
+        assert scale_runtime_value("vBus1", 3703) == 370.3
+        assert scale_runtime_value("vBus2", 3228) == 322.8
 
     def test_frequency_scaling(self) -> None:
         """Test frequency scaling (÷100)."""
@@ -283,9 +283,9 @@ class TestRealWorldData:
         assert scale_runtime_value("tinner", 39) == 39.0  # 39°C
         assert scale_runtime_value("tradiator1", 45) == 45.0  # 45°C
 
-        # Bus voltages (÷100)
-        assert scale_runtime_value("vBus1", 3703) == 37.03
-        assert scale_runtime_value("vBus2", 3228) == 32.28
+        # Bus voltages (÷10)
+        assert scale_runtime_value("vBus1", 3703) == 370.3
+        assert scale_runtime_value("vBus2", 3228) == 322.8
 
         # SOC (no scaling)
         assert scale_runtime_value("soc", 71) == 71.0  # 71%

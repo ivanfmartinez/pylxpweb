@@ -65,8 +65,8 @@ class TestInverterRuntimeData:
         runtime.peps = 300
         runtime.seps = 1
         runtime.pToUser = 1500
-        runtime.vBus1 = 3700  # 37.0V after /100 scaling
-        runtime.vBus2 = 3650
+        runtime.vBus1 = 3700  # 370.0V after /10 scaling
+        runtime.vBus2 = 3650  # 365.0V after /10 scaling
         runtime.tinner = 35
         runtime.tradiator1 = 40
         runtime.tradiator2 = 38
@@ -84,7 +84,7 @@ class TestInverterRuntimeData:
         assert data.grid_voltage_r == 241.0
         assert data.grid_frequency == 59.98
         assert data.eps_status == 1
-        assert data.bus_voltage_1 == 37.0
+        assert data.bus_voltage_1 == 370.0
 
     def test_from_modbus_registers(self) -> None:
         """Test conversion from Modbus registers.

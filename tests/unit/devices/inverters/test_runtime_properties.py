@@ -73,9 +73,9 @@ def inverter_with_runtime() -> GenericInverter:
         tinner=35,  # Should be 35°C
         tradiator1=40,  # Should be 40°C
         tradiator2=42,  # Should be 42°C
-        # Bus Voltages (÷100)
-        vBus1=37003,  # Should be 370.03V
-        vBus2=37105,  # Should be 371.05V
+        # Bus Voltages (÷10)
+        vBus1=3707,  # Should be 370.7V
+        vBus2=3711,  # Should be 371.1V
         # Generator (÷10 for voltage, ÷100 for frequency, no scaling for power)
         genVolt=2400,  # Should be 240.0V
         genFreq=6000,  # Should be 60.00Hz
@@ -244,9 +244,9 @@ class TestBusVoltageProperties:
     """Test Bus Voltage properties."""
 
     def test_bus_voltages_scaled_correctly(self, inverter_with_runtime):
-        """Verify bus voltages use ÷100 scaling."""
-        assert inverter_with_runtime.bus1_voltage == 370.03
-        assert inverter_with_runtime.bus2_voltage == 371.05
+        """Verify bus voltages use ÷10 scaling."""
+        assert inverter_with_runtime.bus1_voltage == 370.7
+        assert inverter_with_runtime.bus2_voltage == 371.1
 
 
 class TestGeneratorProperties:

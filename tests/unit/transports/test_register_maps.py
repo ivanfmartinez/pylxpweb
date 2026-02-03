@@ -688,15 +688,16 @@ class TestExtendedSensorsDataParsing:
     def test_bms_limits_parsing(self) -> None:
         """Test BMS limit sensor data parsing.
 
-        Per Yippy's docs: BMS current limits use 0.01A scale (SCALE_100).
+        BMS current limits use 0.1A scale (SCALE_10).
+        Note: Yippy's docs claim 0.01A (SCALE_100) but empirical testing confirms SCALE_10.
         """
         from pylxpweb.transports.data import InverterRuntimeData
 
         registers = {
-            81: 10000,  # BMS charge current limit (×100 = 100.0A)
-            82: 10000,  # BMS discharge current limit (×100 = 100.0A)
-            83: 560,  # BMS charge voltage ref (×10 = 56.0V)
-            84: 480,  # BMS discharge cutoff (×10 = 48.0V)
+            81: 1000,  # BMS charge current limit (÷10 = 100.0A)
+            82: 1000,  # BMS discharge current limit (÷10 = 100.0A)
+            83: 560,  # BMS charge voltage ref (÷10 = 56.0V)
+            84: 480,  # BMS discharge cutoff (÷10 = 48.0V)
         }
 
         result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
