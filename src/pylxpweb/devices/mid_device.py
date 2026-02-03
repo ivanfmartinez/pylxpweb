@@ -348,6 +348,146 @@ class MIDDevice(FirmwareUpdateMixin, MIDRuntimePropertiesMixin, BaseDevice):
 
     # All properties are provided by MIDRuntimePropertiesMixin
 
+    # ============================================================================
+    # Smart Port Controls
+    # ============================================================================
+
+    async def set_smart_port_mode(self, port: int, mode: int) -> bool:
+        """Set a smart port mode.
+
+        Args:
+            port: Smart port number (1-4)
+            mode: Port mode (0=Off, 1=Smart Load, 2=AC Couple)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.set_smart_port_mode(self.serial_number, port, mode)
+        return result.success
+
+    async def enable_smart_load(self, port: int) -> bool:
+        """Enable a smart load on the specified port.
+
+        Args:
+            port: Smart port number (1-4)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.enable_smart_load(self.serial_number, port)
+        return result.success
+
+    async def disable_smart_load(self, port: int) -> bool:
+        """Disable a smart load on the specified port.
+
+        Args:
+            port: Smart port number (1-4)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.disable_smart_load(self.serial_number, port)
+        return result.success
+
+    async def enable_ac_couple(self, port: int) -> bool:
+        """Enable AC coupling on the specified port.
+
+        Args:
+            port: Smart port number (1-4)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.enable_ac_couple(self.serial_number, port)
+        return result.success
+
+    async def disable_ac_couple(self, port: int) -> bool:
+        """Disable AC coupling on the specified port.
+
+        Args:
+            port: Smart port number (1-4)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.disable_ac_couple(self.serial_number, port)
+        return result.success
+
+    async def set_smart_load_start_soc(self, port: int, percent: int) -> bool:
+        """Set the Smart Load start SOC threshold for a smart port.
+
+        Args:
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.set_smart_load_start_soc(
+            self.serial_number, port, percent
+        )
+        return result.success
+
+    async def set_smart_load_end_soc(self, port: int, percent: int) -> bool:
+        """Set the Smart Load end SOC threshold for a smart port.
+
+        Args:
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.set_smart_load_end_soc(
+            self.serial_number, port, percent
+        )
+        return result.success
+
+    async def set_ac_couple_start_soc(self, port: int, percent: int) -> bool:
+        """Set the AC Couple start SOC threshold for a smart port.
+
+        Args:
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.set_ac_couple_start_soc(
+            self.serial_number, port, percent
+        )
+        return result.success
+
+    async def set_ac_couple_end_soc(self, port: int, percent: int) -> bool:
+        """Set the AC Couple end SOC threshold for a smart port.
+
+        Args:
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.set_ac_couple_end_soc(
+            self.serial_number, port, percent
+        )
+        return result.success
+
+    async def set_smart_load_grid_on(self, port: int, enable: bool) -> bool:
+        """Set whether a smart load stays powered when grid is available.
+
+        Args:
+            port: Smart port number (1-4)
+            enable: True to keep load on when grid is up
+
+        Returns:
+            True if successful
+        """
+        result = await self._client.api.control.set_smart_load_grid_on(
+            self.serial_number, port, enable
+        )
+        return result.success
+
     def to_device_info(self) -> DeviceInfo:
         """Convert to device info model.
 
