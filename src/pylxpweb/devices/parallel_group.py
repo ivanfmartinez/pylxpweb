@@ -392,6 +392,77 @@ class ParallelGroup:
         return scale_energy_value("totalUsage", self._energy.totalUsage, to_kwh=True)
 
     # ===========================================
+    # Aggregate Power Properties
+    # ===========================================
+    # These properties aggregate power values from all inverters in the group.
+    # Computed from each inverter's runtime data, not from a single API call.
+
+    @property
+    def pv_total_power(self) -> int:
+        """Get total PV power across all inverters in watts.
+
+        Aggregates pv_total_power from all inverters.
+
+        Returns:
+            Total PV power in watts, or 0 if no data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            pv = inverter.pv_total_power
+            if pv is not None:
+                total += pv
+        return total
+
+    @property
+    def grid_power(self) -> int:
+        """Get total grid power across all inverters in watts.
+
+        Positive = importing from grid, negative = exporting to grid.
+        Aggregates rectifier_power from all inverters.
+
+        Returns:
+            Net grid power in watts, or 0 if no data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            grid = inverter.rectifier_power
+            if grid is not None:
+                total += grid
+        return total
+
+    @property
+    def load_power(self) -> int:
+        """Get total load power across all inverters in watts.
+
+        Aggregates power_to_user from all inverters.
+
+        Returns:
+            Total load power in watts, or 0 if no data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            load = inverter.power_to_user
+            if load is not None:
+                total += load
+        return total
+
+    @property
+    def eps_power(self) -> int:
+        """Get total EPS (backup) power across all inverters in watts.
+
+        Aggregates eps_power from all inverters.
+
+        Returns:
+            Total EPS power in watts, or 0 if no data.
+        """
+        total = 0
+        for inverter in self.inverters:
+            eps = inverter.eps_power
+            if eps is not None:
+                total += eps
+        return total
+
+    # ===========================================
     # Aggregate Battery Properties
     # ===========================================
     # These properties aggregate battery data from all inverters in the group.
