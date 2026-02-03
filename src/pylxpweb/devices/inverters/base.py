@@ -578,11 +578,10 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             try:
                 if self._transport is not None:
                     # Use transport for direct local communication
-                    # Transport returns aggregate BMS data from input registers
+                    # Transport returns BatteryBankData with both aggregate and
+                    # individual battery data from Modbus registers (5000+)
                     transport_battery = await self._transport.read_battery()
                     if transport_battery is not None:
-                        # Store transport battery data in battery bank format
-                        # Note: Transport doesn't have individual battery details
                         self._transport_battery = transport_battery
                     self._battery_cache_time = datetime.now()
                 else:

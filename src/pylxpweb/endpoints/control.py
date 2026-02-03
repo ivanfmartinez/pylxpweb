@@ -295,6 +295,66 @@ class ControlEndpoints(BaseEndpoint):
 
         return result
 
+    async def control_bit_param(
+        self,
+        inverter_sn: str,
+        bit_param: str,
+        value: int,
+        client_type: str = "WEB",
+        remote_set_type: str = "NORMAL",
+    ) -> SuccessResponse:
+        """Set a bit-level parameter on a device.
+
+         WARNING: This changes device configuration!
+
+        Bit parameters control individual feature toggles that are distinct
+        from hold register writes and function controls. Used primarily for
+        GridBOSS/MID device smart port mode configuration.
+
+        Common bit parameters:
+        - BIT_MIDBOX_SP_MODE_1: Smart Port 1 mode (0=Off, 1=Smart Load, 2=AC Couple)
+        - BIT_MIDBOX_SP_MODE_2: Smart Port 2 mode
+        - BIT_MIDBOX_SP_MODE_3: Smart Port 3 mode
+        - BIT_MIDBOX_SP_MODE_4: Smart Port 4 mode
+
+        Args:
+            inverter_sn: Device serial number (GridBOSS or inverter)
+            bit_param: Bit parameter name (e.g., "BIT_MIDBOX_SP_MODE_1")
+            value: Value to set
+            client_type: Client type (WEB/APP)
+            remote_set_type: Set type (NORMAL/QUICK)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Example:
+            # Set Smart Port 1 to AC Couple mode
+            await client.control.control_bit_param(
+                "1234567890",
+                "BIT_MIDBOX_SP_MODE_1",
+                2
+            )
+        """
+        await self.client._ensure_authenticated()
+
+        data = {
+            "inverterSn": inverter_sn,
+            "bitParam": bit_param,
+            "value": value,
+            "clientType": client_type,
+            "remoteSetType": remote_set_type,
+        }
+
+        response = await self.client._request(
+            "POST", "/WManage/web/maintain/remoteSet/bitParamControl", data=data
+        )
+        result = SuccessResponse.model_validate(response)
+
+        if result.success:
+            self.client.invalidate_cache_for_device(inverter_sn)
+
+        return result
+
     async def start_quick_charge(
         self, inverter_sn: str, client_type: str = "WEB"
     ) -> SuccessResponse:
@@ -1282,3 +1342,327 @@ class ControlEndpoints(BaseEndpoint):
         """
         params = await self.read_device_parameters_ranges(inverter_sn)
         return int(params.get("HOLD_SYSTEM_CHARGE_SOC_LIMIT", 100))
+
+    # ============================================================================
+    # GridBOSS/MID Smart Port Controls
+    # ============================================================================
+
+    async def set_smart_port_mode(
+        self,
+        midbox_sn: str,
+        port: int,
+        mode: int,
+    ) -> SuccessResponse:
+        """Set a GridBOSS smart port mode.
+
+         WARNING: This changes device configuration!
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+            mode: Port mode (0=Off, 1=Smart Load, 2=AC Couple)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port or mode is out of range
+
+        Example:
+            >>> # Set Smart Port 1 to AC Couple
+            >>> await client.control.set_smart_port_mode("1234567890", 1, 2)
+
+            >>> # Disable Smart Port 2
+            >>> await client.control.set_smart_port_mode("1234567890", 2, 0)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        if mode not in (0, 1, 2):
+            raise ValueError(
+                f"Smart port mode must be 0 (Off), 1 (Smart Load), "
+                f"or 2 (AC Couple), got {mode}"
+            )
+
+        return await self.control_bit_param(
+            midbox_sn, f"BIT_MIDBOX_SP_MODE_{port}", mode
+        )
+
+    async def set_ac_couple_start_soc(
+        self,
+        midbox_sn: str,
+        port: int,
+        percent: int,
+    ) -> SuccessResponse:
+        """Set the AC Couple start SOC threshold for a smart port.
+
+        When battery SOC drops below this threshold, the AC-coupled source
+        on the specified port will be activated.
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port or percent is out of range
+
+        Example:
+            >>> # Start AC Couple 1 when SOC drops below 20%
+            >>> await client.control.set_ac_couple_start_soc("1234567890", 1, 20)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        if not (0 <= percent <= 100):
+            raise ValueError(f"SOC percent must be 0-100, got {percent}")
+
+        return await self.write_parameter(
+            midbox_sn, f"MIDBOX_HOLD_AC_START_SOC_{port}", str(percent)
+        )
+
+    async def set_ac_couple_end_soc(
+        self,
+        midbox_sn: str,
+        port: int,
+        percent: int,
+    ) -> SuccessResponse:
+        """Set the AC Couple end SOC threshold for a smart port.
+
+        When battery SOC rises above this threshold, the AC-coupled source
+        on the specified port will be deactivated.
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port or percent is out of range
+
+        Example:
+            >>> # Stop AC Couple 1 when SOC reaches 95%
+            >>> await client.control.set_ac_couple_end_soc("1234567890", 1, 95)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        if not (0 <= percent <= 100):
+            raise ValueError(f"SOC percent must be 0-100, got {percent}")
+
+        return await self.write_parameter(
+            midbox_sn, f"MIDBOX_HOLD_AC_END_SOC_{port}", str(percent)
+        )
+
+    async def set_smart_load_start_soc(
+        self,
+        midbox_sn: str,
+        port: int,
+        percent: int,
+    ) -> SuccessResponse:
+        """Set the Smart Load start SOC threshold for a smart port.
+
+        When battery SOC rises above this threshold, the smart load
+        on the specified port will be activated.
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port or percent is out of range
+
+        Example:
+            >>> # Enable Smart Load 1 when SOC exceeds 80%
+            >>> await client.control.set_smart_load_start_soc("1234567890", 1, 80)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        if not (0 <= percent <= 100):
+            raise ValueError(f"SOC percent must be 0-100, got {percent}")
+
+        return await self.write_parameter(
+            midbox_sn, f"MIDBOX_HOLD_SL_START_SOC_{port}", str(percent)
+        )
+
+    async def set_smart_load_end_soc(
+        self,
+        midbox_sn: str,
+        port: int,
+        percent: int,
+    ) -> SuccessResponse:
+        """Set the Smart Load end SOC threshold for a smart port.
+
+        When battery SOC drops below this threshold, the smart load
+        on the specified port will be deactivated.
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+            percent: SOC percentage threshold (0-100)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port or percent is out of range
+
+        Example:
+            >>> # Disable Smart Load 1 when SOC drops below 50%
+            >>> await client.control.set_smart_load_end_soc("1234567890", 1, 50)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        if not (0 <= percent <= 100):
+            raise ValueError(f"SOC percent must be 0-100, got {percent}")
+
+        return await self.write_parameter(
+            midbox_sn, f"MIDBOX_HOLD_SL_END_SOC_{port}", str(percent)
+        )
+
+    async def enable_smart_load(
+        self,
+        midbox_sn: str,
+        port: int,
+    ) -> SuccessResponse:
+        """Enable a smart load on the specified port.
+
+        This uses the functionControl endpoint to set FUNC_SMART_LOAD_EN_{n}.
+        The port must already be configured as Smart Load mode via
+        set_smart_port_mode().
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port is out of range
+
+        Example:
+            >>> await client.control.enable_smart_load("1234567890", 3)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        return await self.control_function(
+            midbox_sn, f"FUNC_SMART_LOAD_EN_{port}", True
+        )
+
+    async def disable_smart_load(
+        self,
+        midbox_sn: str,
+        port: int,
+    ) -> SuccessResponse:
+        """Disable a smart load on the specified port.
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port is out of range
+
+        Example:
+            >>> await client.control.disable_smart_load("1234567890", 3)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        return await self.control_function(
+            midbox_sn, f"FUNC_SMART_LOAD_EN_{port}", False
+        )
+
+    async def enable_ac_couple(
+        self,
+        midbox_sn: str,
+        port: int,
+    ) -> SuccessResponse:
+        """Enable AC coupling on the specified port.
+
+        This uses the functionControl endpoint to set FUNC_AC_COUPLE_EN_{n}.
+        The port must already be configured as AC Couple mode via
+        set_smart_port_mode().
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port is out of range
+
+        Example:
+            >>> await client.control.enable_ac_couple("1234567890", 1)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        return await self.control_function(
+            midbox_sn, f"FUNC_AC_COUPLE_EN_{port}", True
+        )
+
+    async def disable_ac_couple(
+        self,
+        midbox_sn: str,
+        port: int,
+    ) -> SuccessResponse:
+        """Disable AC coupling on the specified port.
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port is out of range
+
+        Example:
+            >>> await client.control.disable_ac_couple("1234567890", 1)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        return await self.control_function(
+            midbox_sn, f"FUNC_AC_COUPLE_EN_{port}", False
+        )
+
+    async def set_smart_load_grid_on(
+        self,
+        midbox_sn: str,
+        port: int,
+        enable: bool,
+    ) -> SuccessResponse:
+        """Set whether a smart load stays powered when grid is available.
+
+        Args:
+            midbox_sn: GridBOSS/MID device serial number
+            port: Smart port number (1-4)
+            enable: True to keep load on when grid is up
+
+        Returns:
+            SuccessResponse: Operation result
+
+        Raises:
+            ValueError: If port is out of range
+
+        Example:
+            >>> await client.control.set_smart_load_grid_on("1234567890", 2, True)
+        """
+        if port not in (1, 2, 3, 4):
+            raise ValueError(f"Smart port must be 1-4, got {port}")
+        return await self.control_function(
+            midbox_sn, f"FUNC_SMART_LOAD_GRID_ON_{port}", enable
+        )
