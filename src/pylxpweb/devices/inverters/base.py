@@ -1093,12 +1093,16 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
                 inverter_serial=self.serial_number,
                 battery_info=battery_info,
                 bat_parallel_num=bat_parallel_num,
+                inverter=self,  # Pass inverter ref for transport runtime access
             )
         else:
             # Update existing battery bank data and bat_parallel_num
             self._battery_bank.data = battery_info
             if bat_parallel_num is not None:
                 self._battery_bank._bat_parallel_num = bat_parallel_num
+            # Ensure inverter reference is set (in case it was created before)
+            if self._battery_bank._inverter is None:
+                self._battery_bank._inverter = self
 
     async def _update_batteries(self, battery_modules: list[Any]) -> None:
         """Update battery objects from API data.

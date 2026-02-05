@@ -7,7 +7,7 @@ for all batteries connected to an inverter.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pylxpweb.constants import ScaleFactor, apply_scale
 
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pylxpweb.models import BatteryInfo
 
     from .battery import Battery
+    from .inverters.base import BaseInverter
 
 
 class BatteryBank(BaseDevice):
@@ -53,6 +54,7 @@ class BatteryBank(BaseDevice):
         inverter_serial: str,
         battery_info: BatteryInfo,
         bat_parallel_num: int | None = None,
+        inverter: BaseInverter | None = None,
     ) -> None:
         """Initialize battery bank.
 
@@ -63,6 +65,9 @@ class BatteryBank(BaseDevice):
             bat_parallel_num: Battery count from runtime data (more reliable than
                 totalNumber for LXP-EU devices where CAN bus BMS communication
                 may fail and return 0)
+            inverter: Parent inverter reference for accessing transport runtime data.
+                When provided, real-time properties (charge_power, discharge_power,
+                voltage, soc) will use transport data when available for faster updates.
         """
         # Use inverter serial + "_battery_bank" as unique ID
         super().__init__(client, f"{inverter_serial}_battery_bank", "Battery Bank")
@@ -75,8 +80,22 @@ class BatteryBank(BaseDevice):
         # but batParallelNum from runtime is always correct
         self._bat_parallel_num = bat_parallel_num
 
+        # Parent inverter reference for transport runtime data access
+        # This enables real-time data from Modbus/Dongle when available
+        self._inverter: BaseInverter | None = inverter
+
         # Individual battery modules in this bank
         self.batteries: list[Battery] = []  # Will be Battery objects
+
+    def _get_transport_runtime(self) -> Any | None:
+        """Get transport runtime data from parent inverter if available.
+
+        Returns:
+            InverterRuntimeData from transport, or None if not available.
+        """
+        if self._inverter is not None:
+            return getattr(self._inverter, "_transport_runtime", None)
+        return None
 
     # ========== Status Properties ==========
 
@@ -122,9 +141,17 @@ class BatteryBank(BaseDevice):
     def soc(self) -> int:
         """Get aggregate state of charge for battery bank.
 
+        Uses transport runtime data when available for real-time values,
+        falling back to cloud API data.
+
         Returns:
             State of charge percentage (0-100).
         """
+        transport = self._get_transport_runtime()
+        if transport is not None:
+            val = getattr(transport, "battery_soc", None)
+            if val is not None:
+                return int(val)
         return self.data.soc
 
     @property
@@ -260,9 +287,17 @@ class BatteryBank(BaseDevice):
     def voltage(self) -> float:
         """Get battery bank voltage in volts.
 
+        Uses transport runtime data when available for real-time values,
+        falling back to cloud API data.
+
         Returns:
             Battery voltage (scaled from vBat ÷10).
         """
+        transport = self._get_transport_runtime()
+        if transport is not None:
+            val = getattr(transport, "battery_voltage", None)
+            if val is not None:
+                return float(val)
         return apply_scale(self.data.vBat, ScaleFactor.SCALE_10)
 
     @property
@@ -280,27 +315,52 @@ class BatteryBank(BaseDevice):
     def charge_power(self) -> int:
         """Get total charging power in watts.
 
+        Uses transport runtime data when available for real-time values,
+        falling back to cloud API data.
+
         Returns:
             Charging power in watts.
         """
+        transport = self._get_transport_runtime()
+        if transport is not None:
+            val = getattr(transport, "battery_charge_power", None)
+            if val is not None:
+                return int(val)
         return self.data.pCharge
 
     @property
     def discharge_power(self) -> int:
         """Get total discharging power in watts.
 
+        Uses transport runtime data when available for real-time values,
+        falling back to cloud API data.
+
         Returns:
             Discharging power in watts.
         """
+        transport = self._get_transport_runtime()
+        if transport is not None:
+            val = getattr(transport, "battery_discharge_power", None)
+            if val is not None:
+                return int(val)
         return self.data.pDisCharge
 
     @property
     def battery_power(self) -> int | None:
         """Get net battery power in watts (positive = charging, negative = discharging).
 
+        Uses transport runtime data when available for real-time values,
+        falling back to cloud API data.
+
         Returns:
             Net battery power in watts, or None if not available.
         """
+        transport = self._get_transport_runtime()
+        if transport is not None:
+            charge = getattr(transport, "battery_charge_power", None)
+            discharge = getattr(transport, "battery_discharge_power", None)
+            if charge is not None and discharge is not None:
+                return int(charge) - int(discharge)
         return self.data.batPower
 
     @property
@@ -354,9 +414,20 @@ class BatteryBank(BaseDevice):
     def current_capacity(self) -> float:
         """Get current battery bank capacity in amp-hours.
 
+        When transport runtime data is available, calculates from real-time
+        SOC and max capacity for more accurate values. Falls back to cloud
+        API data.
+
         Returns:
             Current capacity in Ah, rounded to 1 decimal place.
         """
+        transport = self._get_transport_runtime()
+        if transport is not None:
+            soc_val = getattr(transport, "battery_soc", None)
+            if soc_val is not None:
+                # Calculate current capacity from real-time SOC and max capacity
+                max_cap = self.data.maxBatteryCharge
+                return round((float(soc_val) / 100.0) * max_cap, 1)
         return round(self.data.currentBatteryCharge, 1)
 
     @property

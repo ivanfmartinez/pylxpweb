@@ -257,6 +257,8 @@ class Battery(BaseDevice):
         Returns:
             State of charge percentage (0-100).
         """
+        if self._transport_data is not None:
+            return self._transport_data.soc
         return self._data.soc
 
     @property
@@ -266,6 +268,8 @@ class Battery(BaseDevice):
         Returns:
             State of health percentage (0-100).
         """
+        if self._transport_data is not None:
+            return self._transport_data.soh
         return self._data.soh
 
     # ========== Capacity Properties ==========
@@ -346,6 +350,9 @@ class Battery(BaseDevice):
         Returns:
             Cell number (0-indexed), or None if not available.
         """
+        if self._transport_data is not None:
+            val = self._transport_data.max_cell_num_temp
+            return val if val > 0 else None
         return self._data.batMaxCellNumTemp
 
     @property
@@ -355,6 +362,9 @@ class Battery(BaseDevice):
         Returns:
             Cell number (0-indexed), or None if not available.
         """
+        if self._transport_data is not None:
+            val = self._transport_data.min_cell_num_temp
+            return val if val > 0 else None
         return self._data.batMinCellNumTemp
 
     @property
@@ -401,6 +411,9 @@ class Battery(BaseDevice):
         Returns:
             Cell number (0-indexed), or None if not available.
         """
+        if self._transport_data is not None:
+            val = self._transport_data.max_cell_num_voltage
+            return val if val > 0 else None
         return self._data.batMaxCellNumVolt
 
     @property
@@ -410,6 +423,9 @@ class Battery(BaseDevice):
         Returns:
             Cell number (0-indexed), or None if not available.
         """
+        if self._transport_data is not None:
+            val = self._transport_data.min_cell_num_voltage
+            return val if val > 0 else None
         return self._data.batMinCellNumVolt
 
     @property
@@ -464,6 +480,8 @@ class Battery(BaseDevice):
         Returns:
             Number of charge/discharge cycles.
         """
+        if self._transport_data is not None:
+            return self._transport_data.cycle_count
         return self._data.cycleCnt
 
     @property

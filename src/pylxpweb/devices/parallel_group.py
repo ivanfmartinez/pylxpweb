@@ -539,7 +539,8 @@ class ParallelGroup:
     # Aggregate Battery Properties
     # ===========================================
     # These properties aggregate battery data from all inverters in the group.
-    # Data is calculated from each inverter's battery_bank, not from a single API call.
+    # Data is calculated from each inverter's battery_bank, which uses
+    # transport data (Modbus/Dongle) when available, falling back to cloud API.
 
     @property
     def battery_charge_power(self) -> int:
