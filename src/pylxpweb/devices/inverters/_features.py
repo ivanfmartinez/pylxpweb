@@ -351,7 +351,7 @@ class InverterModelInfo:
             Power rating codes are interpreted differently by device family:
             - EG4 Off-Grid (DEVICE_TYPE_CODE_SNA=54): 6=12kW, 8=18kW
             - PV Series (DEVICE_TYPE_CODE_PV_SERIES=2092): 2=12kW, 6=18kW
-            - FlexBOSS (DEVICE_TYPE_CODE_FLEXBOSS=10284): 6=18kW, 8=21kW
+            - FlexBOSS (DEVICE_TYPE_CODE_FLEXBOSS=10284): 8=21kW, 9=18kW
         """
         # EG4 PV Series (12KPV, 18KPV)
         if device_type_code == DEVICE_TYPE_CODE_PV_SERIES:
@@ -360,7 +360,7 @@ class InverterModelInfo:
 
         # EG4 FlexBOSS Series
         if device_type_code == DEVICE_TYPE_CODE_FLEXBOSS:
-            flexboss_rating_map = {6: 18, 8: 21}
+            flexboss_rating_map = {8: 21, 9: 18}
             return flexboss_rating_map.get(self.power_rating, 0)
 
         # EG4 Off-Grid Series (SNA) and others - use default mapping
@@ -404,7 +404,7 @@ class InverterModelInfo:
 
         # EG4 FlexBOSS Series
         if device_type_code == DEVICE_TYPE_CODE_FLEXBOSS:
-            flexboss_models = {6: "FlexBOSS18", 8: "FlexBOSS21"}
+            flexboss_models = {8: "FlexBOSS21", 9: "FlexBOSS18"}
             return flexboss_models.get(
                 self.power_rating, f"FlexBOSS{kw}" if kw else "FlexBOSS-Unknown"
             )

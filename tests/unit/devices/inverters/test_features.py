@@ -184,8 +184,8 @@ class TestInverterModelInfo:
 
     def test_get_power_rating_kw_flexboss_series(self) -> None:
         """Test family-aware power rating for FlexBOSS Series (10284)."""
-        # FlexBOSS18: powerRating=6 -> 18kW
-        model = InverterModelInfo(power_rating=6)
+        # FlexBOSS18: powerRating=9 -> 18kW
+        model = InverterModelInfo(power_rating=9)
         assert model.get_power_rating_kw(10284) == 18
 
         # FlexBOSS21: powerRating=8 -> 21kW
@@ -208,7 +208,7 @@ class TestInverterModelInfo:
 
     def test_get_model_name_flexboss_series(self) -> None:
         """Test model name detection for FlexBOSS Series."""
-        model = InverterModelInfo(power_rating=6)
+        model = InverterModelInfo(power_rating=9)
         assert model.get_model_name(10284) == "FlexBOSS18"
 
         model = InverterModelInfo(power_rating=8)
