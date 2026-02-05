@@ -639,9 +639,9 @@ class TestExtendedSensors:
 
     def test_pv_series_inverter_operational(self) -> None:
         """Test PV_SERIES has inverter operational registers."""
-        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current is not None
-        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current.address == 18
-        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current.scale_factor == ScaleFactor.SCALE_100
+        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current_r is not None
+        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current_r.address == 18
+        assert PV_SERIES_RUNTIME_MAP.inverter_rms_current_r.scale_factor == ScaleFactor.SCALE_100
 
         assert PV_SERIES_RUNTIME_MAP.inverter_apparent_power is not None
         assert PV_SERIES_RUNTIME_MAP.inverter_apparent_power.address == 25
@@ -790,7 +790,7 @@ class TestExtendedSensorsDataParsing:
 
         result = InverterRuntimeData.from_modbus_registers(registers, PV_SERIES_RUNTIME_MAP)
 
-        assert result.inverter_rms_current == 5.0
+        assert result.inverter_rms_current_r == 5.0
         assert result.inverter_apparent_power == 1000.0
         assert result.inverter_on_time == 1000
         assert result.ac_input_type == 1

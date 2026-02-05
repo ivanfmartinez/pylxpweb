@@ -166,7 +166,9 @@ class RuntimeRegisterMap:
     # -------------------------------------------------------------------------
     # Extended Sensors - Inverter RMS Current & Power Factor
     # -------------------------------------------------------------------------
-    inverter_rms_current: RegisterField | None = None  # A (scale 0.01)
+    inverter_rms_current_r: RegisterField | None = None  # A (scale 0.01) - R phase
+    inverter_rms_current_s: RegisterField | None = None  # A (scale 0.01) - S phase
+    inverter_rms_current_t: RegisterField | None = None  # A (scale 0.01) - T phase
     inverter_apparent_power: RegisterField | None = None  # VA
 
     # -------------------------------------------------------------------------
@@ -489,7 +491,7 @@ EG4_HYBRID_RUNTIME_MAP = RuntimeRegisterMap(
     bms_fault_code=RegisterField(99, 16, ScaleFactor.SCALE_NONE),
     bms_warning_code=RegisterField(100, 16, ScaleFactor.SCALE_NONE),
     # Extended sensors - Inverter RMS Current
-    inverter_rms_current=RegisterField(18, 16, ScaleFactor.SCALE_100),  # 0.01A resolution
+    inverter_rms_current_r=RegisterField(18, 16, ScaleFactor.SCALE_100),  # 0.01A resolution
     inverter_apparent_power=RegisterField(25, 16, ScaleFactor.SCALE_NONE),  # VA (Seps)
     # Generator input (regs 121-125)
     generator_voltage=RegisterField(121, 16, ScaleFactor.SCALE_10),  # V
@@ -590,7 +592,7 @@ LXP_RUNTIME_MAP = RuntimeRegisterMap(
     grid_frequency=RegisterField(15, 16, ScaleFactor.SCALE_100),  # Was reg 19
     inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # Pinv: inverter output power
     grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # Prec: AC charge power
-    power_factor=RegisterField(18, 16, ScaleFactor.SCALE_1000),  # PF: power factor
+    # Note: Register 18 is inverter_rms_current_r (I_IINV_RMS), not power_factor
     # EPS - offset continues
     eps_voltage_r=RegisterField(20, 16, ScaleFactor.SCALE_10),  # Was reg 26
     eps_voltage_s=RegisterField(21, 16, ScaleFactor.SCALE_10),  # Was reg 27
@@ -614,8 +616,11 @@ LXP_RUNTIME_MAP = RuntimeRegisterMap(
     inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE),
     bms_fault_code=RegisterField(99, 16, ScaleFactor.SCALE_NONE),
     bms_warning_code=RegisterField(100, 16, ScaleFactor.SCALE_NONE),
-    # Extended sensors - same as PV_SERIES
-    inverter_rms_current=RegisterField(18, 16, ScaleFactor.SCALE_100),
+    # Extended sensors - Inverter RMS current for 3-phase systems (R/S/T)
+    # I_IINV_RMS = 18 (R-phase), I_IINV_RMS_S = 190 (S-phase), I_IINV_RMS_T = 191 (T-phase)
+    inverter_rms_current_r=RegisterField(18, 16, ScaleFactor.SCALE_100),  # 0.01A
+    inverter_rms_current_s=RegisterField(190, 16, ScaleFactor.SCALE_100),  # 0.01A
+    inverter_rms_current_t=RegisterField(191, 16, ScaleFactor.SCALE_100),  # 0.01A
     inverter_apparent_power=RegisterField(25, 16, ScaleFactor.SCALE_NONE),
     generator_voltage=RegisterField(121, 16, ScaleFactor.SCALE_10),
     generator_frequency=RegisterField(122, 16, ScaleFactor.SCALE_100),

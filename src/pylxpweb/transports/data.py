@@ -266,9 +266,11 @@ class InverterRuntimeData:
     warning_code: int | None = None  # Warning code
 
     # -------------------------------------------------------------------------
-    # Extended Sensors - Inverter RMS Current & Power
+    # Extended Sensors - Inverter RMS Current & Power (3-phase R/S/T)
     # -------------------------------------------------------------------------
-    inverter_rms_current: float | None = None  # A (Inverter RMS current)
+    inverter_rms_current_r: float | None = None  # A (Inverter RMS current R-phase)
+    inverter_rms_current_s: float | None = None  # A (Inverter RMS current S-phase)
+    inverter_rms_current_t: float | None = None  # A (Inverter RMS current T-phase)
     inverter_apparent_power: float | None = None  # VA (Inverter apparent power)
 
     # -------------------------------------------------------------------------
@@ -505,9 +507,15 @@ class InverterRuntimeData:
             device_status=_read_register_field(input_registers, register_map.device_status),
             fault_code=fault_code,
             warning_code=warning_code,
-            # Extended sensors - Inverter RMS Current & Power
-            inverter_rms_current=_read_and_scale_field(
-                input_registers, register_map.inverter_rms_current
+            # Extended sensors - Inverter RMS Current (3-phase R/S/T) & Power
+            inverter_rms_current_r=_read_and_scale_field(
+                input_registers, register_map.inverter_rms_current_r
+            ),
+            inverter_rms_current_s=_read_and_scale_field(
+                input_registers, register_map.inverter_rms_current_s
+            ),
+            inverter_rms_current_t=_read_and_scale_field(
+                input_registers, register_map.inverter_rms_current_t
             ),
             inverter_apparent_power=_read_and_scale_field(
                 input_registers, register_map.inverter_apparent_power
