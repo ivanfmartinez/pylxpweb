@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-02-04
+
+### Changed
+
+- **BREAKING: Inverter family rename** - Family names updated for clarity:
+  - `SNA` → `EG4_OFFGRID` (12000XP, 6000XP - off-grid, no grid sellback)
+  - `PV_SERIES` → `EG4_HYBRID` (18kPV, 12kPV, FlexBOSS - grid-tied hybrid)
+  - `LXP_EU` → `LXP` (merged with LXP_LV - all Luxpower use same registers)
+  - `LXP_LV` → `LXP` (merged - identical register maps)
+  - Old names remain as deprecated aliases for backwards compatibility
+
+### Added
+
+- **Deprecation warnings** for legacy family names via `resolve_family()` helper
+- **LXP-LB-BR 10kW support** - Brazil model (device type code 44) now recognized
+- `resolve_family()` function for migrating legacy family names with warnings
+
+### Deprecated
+
+- `InverterFamily.SNA` - use `InverterFamily.EG4_OFFGRID` instead
+- `InverterFamily.PV_SERIES` - use `InverterFamily.EG4_HYBRID` instead
+- `InverterFamily.LXP_EU` - use `InverterFamily.LXP` instead
+- `InverterFamily.LXP_LV` - use `InverterFamily.LXP` instead
+
+### Fixed
+
+- Discovery API `get_model_family_name()` returns new family names
+- Documentation updated throughout to use new naming convention
+
 ## [0.6.7] - 2026-01-31
 
 ### Added
