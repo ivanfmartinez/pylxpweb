@@ -130,7 +130,7 @@ class TestNetworkScanner:
         assert len(results) == 1
         assert results[0].device_type == DeviceType.MODBUS_VERIFIED
         assert results[0].serial == "4512345678"
-        assert results[0].model_family == "PV_SERIES"
+        assert results[0].model_family == "EG4_HYBRID"
 
     async def test_scan_modbus_verification_unknown_code(self):
         """Unknown device type code → MODBUS_UNVERIFIED."""

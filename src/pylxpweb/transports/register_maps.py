@@ -2,12 +2,13 @@
 
 This module provides register map definitions that account for the different
 Modbus register layouts between inverter model families:
-- PV_SERIES (EG4-18KPV): 32-bit power values, standard register addresses
-- LXP_EU (LXP-EU 12K): 16-bit power values, 4-register offset for grid/EPS
+- EG4_HYBRID (18kPV, 12kPV, FlexBOSS): 32-bit power values, standard register addresses
+- EG4_OFFGRID (12000XP, 6000XP): Same as EG4_HYBRID
+- LXP (LXP-EU, LXP-LB-BR, LXP-LV): 16-bit power values, 4-register offset for grid/EPS
 
 The key differences are:
-| Field | PV_SERIES (18KPV) | LXP_EU (12K) |
-|-------|-------------------|--------------|
+| Field | EG4_HYBRID (18kPV) | LXP (EU 12K) |
+|-------|--------------------|--------------|
 | pv1_power | 32-bit: regs 6-7 | 16-bit: reg 7 |
 | pv2_power | 32-bit: regs 8-9 | 16-bit: reg 8 |
 | pv3_power | 32-bit: regs 10-11 | 16-bit: reg 9 |
@@ -431,7 +432,7 @@ class EnergyRegisterMap:
 #   Reg 62-63: Warning code (32-bit)
 #   Reg 64-67: Temperatures (°C, signed)
 
-PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
+EG4_HYBRID_RUNTIME_MAP = RuntimeRegisterMap(
     # Status
     device_status=RegisterField(0, 16, ScaleFactor.SCALE_NONE),
     # PV Input - voltages at regs 1-3, power as 16-bit at regs 7-9
@@ -523,7 +524,7 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     parallel_config=RegisterField(113, 16, ScaleFactor.SCALE_NONE),
 )
 
-PV_SERIES_ENERGY_MAP = EnergyRegisterMap(
+EG4_HYBRID_ENERGY_MAP = EnergyRegisterMap(
     # Daily energy - 16-bit single registers, scale 0.1 kWh
     # Source: galets/eg4-modbus-monitor registers-18kpv.yaml
     pv1_energy_today=RegisterField(28, 16, ScaleFactor.SCALE_10),  # Epv1_day
@@ -567,7 +568,7 @@ PV_SERIES_ENERGY_MAP = EnergyRegisterMap(
 # Source: Yippy's LXP-EU 12K corrections from issue #52
 # Key differences: 16-bit power values, 4-register offset for grid/EPS
 
-LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
+LXP_RUNTIME_MAP = RuntimeRegisterMap(
     # Status
     device_status=RegisterField(0, 16, ScaleFactor.SCALE_NONE),
     # PV Input - voltages same, but power is 16-bit (not 32-bit)
@@ -641,7 +642,7 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
     parallel_config=RegisterField(113, 16, ScaleFactor.SCALE_NONE),
 )
 
-LXP_EU_ENERGY_MAP = EnergyRegisterMap(
+LXP_ENERGY_MAP = EnergyRegisterMap(
     # Daily energy - same as PV_SERIES per luxpower-ha-integration
     # Source: https://github.com/ant0nkr/luxpower-ha-integration/blob/main/custom_components/lxp_modbus/constants/input_registers.py
     pv1_energy_today=RegisterField(28, 16, ScaleFactor.SCALE_10),  # I_EPV1_DAY
@@ -682,7 +683,7 @@ LXP_EU_ENERGY_MAP = EnergyRegisterMap(
 # Source: poldim's EG4-Inverter-Modbus and EG4-18KPV-12LV Modbus Protocol
 # https://github.com/poldim/EG4-Inverter-Modbus
 
-PV_SERIES_HOLDING_MAP = HoldingRegisterMap(
+EG4_HYBRID_HOLDING_MAP = HoldingRegisterMap(
     # System Information (read-only)
     com_version=HoldingRegisterField(9, 16, ScaleFactor.SCALE_NONE),
     controller_version=HoldingRegisterField(10, 16, ScaleFactor.SCALE_NONE),
@@ -839,7 +840,7 @@ PV_SERIES_HOLDING_MAP = HoldingRegisterMap(
 )
 
 # LXP_EU uses same holding register layout as PV_SERIES
-LXP_EU_HOLDING_MAP = PV_SERIES_HOLDING_MAP
+LXP_HOLDING_MAP = EG4_HYBRID_HOLDING_MAP
 
 
 # =============================================================================
@@ -856,11 +857,11 @@ def _get_family_runtime_maps() -> dict[InverterFamily, RuntimeRegisterMap]:
     from pylxpweb.devices.inverters._features import InverterFamily
 
     return {
-        InverterFamily.EG4_HYBRID: PV_SERIES_RUNTIME_MAP,
-        InverterFamily.EG4_OFFGRID: PV_SERIES_RUNTIME_MAP,
-        InverterFamily.LXP: LXP_EU_RUNTIME_MAP,
+        InverterFamily.EG4_HYBRID: EG4_HYBRID_RUNTIME_MAP,
+        InverterFamily.EG4_OFFGRID: EG4_HYBRID_RUNTIME_MAP,
+        InverterFamily.LXP: LXP_RUNTIME_MAP,
         # Unknown defaults to EG4_HYBRID (backward compatible)
-        InverterFamily.UNKNOWN: PV_SERIES_RUNTIME_MAP,
+        InverterFamily.UNKNOWN: EG4_HYBRID_RUNTIME_MAP,
     }
 
 
@@ -1177,10 +1178,10 @@ def _get_family_energy_maps() -> dict[InverterFamily, EnergyRegisterMap]:
     from pylxpweb.devices.inverters._features import InverterFamily
 
     return {
-        InverterFamily.EG4_HYBRID: PV_SERIES_ENERGY_MAP,
-        InverterFamily.EG4_OFFGRID: PV_SERIES_ENERGY_MAP,
-        InverterFamily.LXP: LXP_EU_ENERGY_MAP,
-        InverterFamily.UNKNOWN: PV_SERIES_ENERGY_MAP,
+        InverterFamily.EG4_HYBRID: EG4_HYBRID_ENERGY_MAP,
+        InverterFamily.EG4_OFFGRID: EG4_HYBRID_ENERGY_MAP,
+        InverterFamily.LXP: LXP_ENERGY_MAP,
+        InverterFamily.UNKNOWN: EG4_HYBRID_ENERGY_MAP,
     }
 
 
@@ -1194,10 +1195,10 @@ def get_runtime_map(family: InverterFamily | None = None) -> RuntimeRegisterMap:
         RuntimeRegisterMap for the specified family
     """
     if family is None:
-        return PV_SERIES_RUNTIME_MAP
+        return EG4_HYBRID_RUNTIME_MAP
 
     family_maps = _get_family_runtime_maps()
-    return family_maps.get(family, PV_SERIES_RUNTIME_MAP)
+    return family_maps.get(family, EG4_HYBRID_RUNTIME_MAP)
 
 
 def get_energy_map(family: InverterFamily | None = None) -> EnergyRegisterMap:
@@ -1210,10 +1211,10 @@ def get_energy_map(family: InverterFamily | None = None) -> EnergyRegisterMap:
         EnergyRegisterMap for the specified family
     """
     if family is None:
-        return PV_SERIES_ENERGY_MAP
+        return EG4_HYBRID_ENERGY_MAP
 
     family_maps = _get_family_energy_maps()
-    return family_maps.get(family, PV_SERIES_ENERGY_MAP)
+    return family_maps.get(family, EG4_HYBRID_ENERGY_MAP)
 
 
 def _get_family_holding_maps() -> dict[InverterFamily, HoldingRegisterMap]:
@@ -1221,10 +1222,10 @@ def _get_family_holding_maps() -> dict[InverterFamily, HoldingRegisterMap]:
     from pylxpweb.devices.inverters._features import InverterFamily
 
     return {
-        InverterFamily.EG4_HYBRID: PV_SERIES_HOLDING_MAP,
-        InverterFamily.EG4_OFFGRID: PV_SERIES_HOLDING_MAP,
-        InverterFamily.LXP: LXP_EU_HOLDING_MAP,
-        InverterFamily.UNKNOWN: PV_SERIES_HOLDING_MAP,
+        InverterFamily.EG4_HYBRID: EG4_HYBRID_HOLDING_MAP,
+        InverterFamily.EG4_OFFGRID: EG4_HYBRID_HOLDING_MAP,
+        InverterFamily.LXP: LXP_HOLDING_MAP,
+        InverterFamily.UNKNOWN: EG4_HYBRID_HOLDING_MAP,
     }
 
 
@@ -1238,10 +1239,10 @@ def get_holding_map(family: InverterFamily | None = None) -> HoldingRegisterMap:
         HoldingRegisterMap for the specified family
     """
     if family is None:
-        return PV_SERIES_HOLDING_MAP
+        return EG4_HYBRID_HOLDING_MAP
 
     family_maps = _get_family_holding_maps()
-    return family_maps.get(family, PV_SERIES_HOLDING_MAP)
+    return family_maps.get(family, EG4_HYBRID_HOLDING_MAP)
 
 
 # =============================================================================
@@ -1338,13 +1339,13 @@ __all__ = [
     "HoldingRegisterField",
     "RuntimeRegisterMap",
     "EnergyRegisterMap",
-    "PV_SERIES_RUNTIME_MAP",
-    "PV_SERIES_ENERGY_MAP",
-    "LXP_EU_RUNTIME_MAP",
-    "LXP_EU_ENERGY_MAP",
+    "EG4_HYBRID_RUNTIME_MAP",
+    "EG4_HYBRID_ENERGY_MAP",
+    "LXP_RUNTIME_MAP",
+    "LXP_ENERGY_MAP",
     "HoldingRegisterMap",
-    "PV_SERIES_HOLDING_MAP",
-    "LXP_EU_HOLDING_MAP",
+    "EG4_HYBRID_HOLDING_MAP",
+    "LXP_HOLDING_MAP",
     "get_runtime_map",
     "get_energy_map",
     "get_holding_map",
@@ -1360,4 +1361,22 @@ __all__ = [
     "INDIVIDUAL_BATTERY_BASE_ADDRESS",
     "INDIVIDUAL_BATTERY_REGISTER_COUNT",
     "INDIVIDUAL_BATTERY_MAX_COUNT",
+    # Deprecated aliases (for backwards compatibility)
+    "PV_SERIES_RUNTIME_MAP",
+    "PV_SERIES_ENERGY_MAP",
+    "PV_SERIES_HOLDING_MAP",
+    "LXP_EU_RUNTIME_MAP",
+    "LXP_EU_ENERGY_MAP",
+    "LXP_EU_HOLDING_MAP",
 ]
+
+# =============================================================================
+# DEPRECATED ALIASES - Will be removed in a future version
+# Use the new names: EG4_HYBRID_* and LXP_* instead of PV_SERIES_* and LXP_EU_*
+# =============================================================================
+PV_SERIES_RUNTIME_MAP = EG4_HYBRID_RUNTIME_MAP
+PV_SERIES_ENERGY_MAP = EG4_HYBRID_ENERGY_MAP
+PV_SERIES_HOLDING_MAP = EG4_HYBRID_HOLDING_MAP
+LXP_EU_RUNTIME_MAP = LXP_RUNTIME_MAP
+LXP_EU_ENERGY_MAP = LXP_ENERGY_MAP
+LXP_EU_HOLDING_MAP = LXP_HOLDING_MAP
