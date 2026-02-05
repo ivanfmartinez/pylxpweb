@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-02-05
+
+### Added
+
+- **LXP-LB series support**: US and non-US regional detection for LuxPower LB models
+- **12KPV/18KPV/FlexBOSS model differentiation**: Better model identification based on power ratings
+- **Brazil COUNTRY_MAP entry**: Support for Brazilian accounts in API responses
+
+### Fixed
+
+- **Installer account plant listing**: Use correct endpoint for installer accounts
+- **Inverters without batteries**: Support devices that have no battery bank attached
+
+### Changed
+
+- Linting improvements and removal of unused type ignores
+
 ## [0.8.0] - 2026-02-04
 
 ### Changed
