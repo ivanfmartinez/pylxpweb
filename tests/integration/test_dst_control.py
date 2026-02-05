@@ -1,5 +1,10 @@
 """Integration tests for DST control functionality."""
 
+import pytest
+
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
+
 # Import redaction helper
 import sys
 import zoneinfo

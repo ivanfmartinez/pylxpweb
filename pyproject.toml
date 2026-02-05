@@ -1,6 +1,6 @@
 [project]
 name = "pylxpweb"
-version = "0.8.0"
+version = "0.8.1"
 description = "Python client library for Luxpower/EG4 inverter web monitoring API"
 readme = "README.md"
 authors = [
@@ -114,9 +114,10 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
+    "-m", "not integration",  # Skip integration tests by default
 ]
 markers = [
-    "integration: Integration tests that require real API access",
+    "integration: Integration tests that require real API access (run with: pytest -m integration)",
 ]
 timeout = 60  # Per-test timeout in seconds (prevents hanging)
 

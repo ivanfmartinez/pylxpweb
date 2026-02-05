@@ -217,15 +217,17 @@ class TestEnergyRegisterMap:
         assert LXP_EU_ENERGY_MAP.inverter_energy_today.bit_width == 16
         assert LXP_EU_ENERGY_MAP.inverter_energy_today.address == 31  # Same as PV_SERIES
 
-    def test_pv_series_lifetime_energy_16bit(self) -> None:
-        """Test PV_SERIES lifetime energy uses 16-bit registers (empirically validated).
+    def test_pv_series_lifetime_energy_32bit(self) -> None:
+        """Test PV_SERIES lifetime energy uses 32-bit little-endian registers.
 
-        Note: galets/eg4-modbus-monitor claims 32-bit pairs, but empirical testing
-        shows these are 16-bit registers that match HTTP API values exactly.
+        Validated via Modbus testing: systems with >6553.5 kWh lifetime energy
+        show high words > 0, confirming 32-bit format with little-endian word order
+        (low word at base address, high word at base+1).
         """
         assert PV_SERIES_ENERGY_MAP.inverter_energy_total is not None
-        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.bit_width == 16
+        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.bit_width == 32
         assert PV_SERIES_ENERGY_MAP.inverter_energy_total.address == 46
+        assert PV_SERIES_ENERGY_MAP.inverter_energy_total.little_endian is True
         # Scale 0.1 = SCALE_10
         assert PV_SERIES_ENERGY_MAP.inverter_energy_total.scale_factor == ScaleFactor.SCALE_10
 
@@ -407,17 +409,17 @@ class TestRegisterMapIntegration:
 
         # Sample registers for PV_SERIES energy
         # Daily energy: 16-bit at regs 28-37, scale 0.1 kWh
-        # Lifetime energy: 16-bit registers (not 32-bit pairs as docs claim), scale 0.1 kWh
+        # Lifetime energy: 32-bit little-endian pairs, scale 0.1 kWh
         registers = {
             31: 184,  # Inverter energy today (18.4 kWh after scaling)
-            46: 50000,  # Inverter energy total (5000.0 kWh) - 16-bit register
+            46: 50000, 47: 0,  # Inverter energy total (5000.0 kWh) - 32-bit LE
         }
 
         result = InverterEnergyData.from_modbus_registers(registers, PV_SERIES_ENERGY_MAP)
 
         # Daily: raw / 10 = kWh
         assert result.inverter_energy_today == pytest.approx(18.4, rel=0.01)
-        # Lifetime: 16-bit value / 10 = kWh
+        # Lifetime: 32-bit LE value / 10 = kWh
         assert result.inverter_energy_total == pytest.approx(5000.0, rel=0.01)
 
     def test_backward_compatibility_no_register_map(self) -> None:
@@ -465,16 +467,20 @@ class TestDataHelperFunctions:
         assert result == -32768
 
     def test_read_register_field_signed_32bit_negative(self) -> None:
-        """Test _read_register_field handles signed 32-bit negative values."""
+        """Test _read_register_field handles signed 32-bit negative values.
+
+        32-bit fields default to little-endian (low word at base address).
+        """
         from pylxpweb.transports.data import _read_register_field
 
-        # 0xFFFFFFFF in unsigned 32-bit is -1 in signed
+        # 0xFFFFFFFF in unsigned 32-bit is -1 in signed (symmetric, same for LE/BE)
         field = RegisterField(address=0, bit_width=32, signed=True)
         result = _read_register_field({0: 0xFFFF, 1: 0xFFFF}, field)
         assert result == -1
 
         # 0x80000000 in unsigned 32-bit is -2147483648 in signed
-        result = _read_register_field({0: 0x8000, 1: 0x0000}, field)
+        # LE format: low word (0x0000) at reg 0, high word (0x8000) at reg 1
+        result = _read_register_field({0: 0x0000, 1: 0x8000}, field)
         assert result == -2147483648
 
     def test_read_and_scale_field_none_returns_none(self) -> None:
@@ -651,11 +657,12 @@ class TestExtendedSensors:
         """Test PV_SERIES has generator energy registers."""
         assert PV_SERIES_ENERGY_MAP.generator_energy_today is not None
         assert PV_SERIES_ENERGY_MAP.generator_energy_today.address == 124
-        assert PV_SERIES_ENERGY_MAP.generator_energy_today.bit_width == 16
+        assert PV_SERIES_ENERGY_MAP.generator_energy_today.bit_width == 16  # Daily: 16-bit
 
         assert PV_SERIES_ENERGY_MAP.generator_energy_total is not None
         assert PV_SERIES_ENERGY_MAP.generator_energy_total.address == 125
-        assert PV_SERIES_ENERGY_MAP.generator_energy_total.bit_width == 16  # 16-bit, not 32-bit
+        assert PV_SERIES_ENERGY_MAP.generator_energy_total.bit_width == 32  # Total: 32-bit LE
+        assert PV_SERIES_ENERGY_MAP.generator_energy_total.little_endian is True
 
     def test_lxp_eu_generator_energy(self) -> None:
         """Test LXP_EU has generator energy registers."""
@@ -688,8 +695,9 @@ class TestExtendedSensorsDataParsing:
     def test_bms_limits_parsing(self) -> None:
         """Test BMS limit sensor data parsing.
 
-        BMS current limits use 0.1A scale (SCALE_10).
-        Note: Yippy's docs claim 0.01A (SCALE_100) but empirical testing confirms SCALE_10.
+        BMS current limits use 0.1A scale (SCALE_10) based on empirical testing.
+        (Docs say 0.01A but real values show SCALE_10 is correct)
+        Voltage references use 0.1V scale (SCALE_10).
         """
         from pylxpweb.transports.data import InverterRuntimeData
 
@@ -776,8 +784,7 @@ class TestExtendedSensorsDataParsing:
         registers = {
             18: 500,  # Inverter RMS current (×100 = 5.00A)
             25: 1000,  # Inverter apparent power (1000VA)
-            69: 0,  # Inverter on time high word
-            70: 1000,  # Inverter on time low word (1000 hours)
+            69: 1000, 70: 0,  # Inverter on time (32-bit LE: low word at 69, high at 70) = 1000 hours
             77: 1,  # AC input type
         }
 
@@ -792,10 +799,11 @@ class TestExtendedSensorsDataParsing:
         """Test generator energy data parsing."""
         from pylxpweb.transports.data import InverterEnergyData
 
-        # Generator energy registers are 16-bit (not 32-bit pairs)
+        # Generator energy today: 16-bit
+        # Generator energy total: 32-bit little-endian
         registers = {
-            124: 50,  # Generator energy today (÷10 = 5.0 kWh)
-            125: 1000,  # Generator energy total (÷10 = 100.0 kWh) - 16-bit register
+            124: 50,  # Generator energy today (÷10 = 5.0 kWh) - 16-bit
+            125: 1000, 126: 0,  # Generator energy total (÷10 = 100.0 kWh) - 32-bit LE
         }
 
         result = InverterEnergyData.from_modbus_registers(registers, PV_SERIES_ENERGY_MAP)

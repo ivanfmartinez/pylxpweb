@@ -133,10 +133,10 @@ class TestInverterRuntimeData:
             65: 40,  # Radiator temp 1
             66: 38,  # Radiator temp 2
             67: 25,  # Battery temp
-            60: 0,  # Fault code high
-            61: 35,  # Fault code low
-            62: 0,  # Warning code high
-            63: 38,  # Warning code low (creates 32-bit warning: 38)
+            60: 35,  # Fault code low (32-bit LE: low word at base address)
+            61: 0,  # Fault code high
+            62: 38,  # Warning code low (32-bit LE: low word at base address)
+            63: 0,  # Warning code high
         }
 
         data = InverterRuntimeData.from_modbus_registers(input_regs)
@@ -202,10 +202,10 @@ class TestInverterEnergyData:
     def test_from_modbus_registers(self) -> None:
         """Test conversion from Modbus registers.
 
-        Energy register layout (corrected via empirical testing):
+        Energy register layout:
         - Daily energy: 16-bit registers 28-37, scale 0.1 kWh
-        - Lifetime energy: 16-bit registers at 40, 42, ..., 58, scale 0.1 kWh
-          (not 32-bit pairs as claimed by galets/eg4-modbus-monitor)
+        - Lifetime energy: 32-bit little-endian pairs starting at 40, 42, etc.
+          Low word at base address, high word at base+1 (validated via Modbus testing)
 
         After apply_scale(raw, SCALE_10), result is directly in kWh.
         """
@@ -221,19 +221,18 @@ class TestInverterEnergyData:
             35: 10,  # EPS today (1.0 kWh)
             36: 150,  # Grid export today (15.0 kWh)
             37: 200,  # Grid import today / Etouser_day (20.0 kWh) - matches HTTP todayImport
-            # Lifetime energy - 16-bit registers, scale 0.1 kWh
-            40: 10000,  # PV1 total (1000.0 kWh)
-            42: 8000,  # PV2 total (800.0 kWh)
-            44: 5000,  # PV3 total (500.0 kWh)
-            46: 50000,  # Inverter total (5000.0 kWh)
-            # Lifetime energy - 16-bit registers now (not 32-bit pairs)
-            # Note: registers 48, 50, etc. are the actual data; 49, 51, etc. unused
-            48: 15000,  # Load total / Erec_all (1500.0 kWh)
-            50: 10000,  # Charge total (1000.0 kWh)
-            52: 8000,  # Discharge total (800.0 kWh)
-            54: 2000,  # EPS total (200.0 kWh)
-            56: 25000,  # Grid export total (2500.0 kWh)
-            58: 40000,  # Grid import total / Etouser_all (4000.0 kWh) - matches HTTP totalImport
+            # Lifetime energy - 32-bit little-endian (low word, high word), scale 0.1 kWh
+            40: 10000, 41: 0,  # PV1 total (1000.0 kWh)
+            42: 8000, 43: 0,  # PV2 total (800.0 kWh)
+            44: 5000, 45: 0,  # PV3 total (500.0 kWh)
+            46: 50000, 47: 0,  # Inverter total (5000.0 kWh)
+            # Grid/load totals - 32-bit little-endian pairs
+            48: 15000, 49: 0,  # Load total / Erec_all (1500.0 kWh)
+            50: 10000, 51: 0,  # Charge total (1000.0 kWh)
+            52: 8000, 53: 0,  # Discharge total (800.0 kWh)
+            54: 2000, 55: 0,  # EPS total (200.0 kWh)
+            56: 25000, 57: 0,  # Grid export total (2500.0 kWh)
+            58: 40000, 59: 0,  # Grid import total / Etouser_all (4000.0 kWh)
         }
 
         data = InverterEnergyData.from_modbus_registers(input_regs)
@@ -253,7 +252,7 @@ class TestInverterEnergyData:
         assert data.pv3_energy_today == pytest.approx(0.4, rel=0.01)
         assert data.pv_energy_today == pytest.approx(18.4, rel=0.01)  # Sum
 
-        # Lifetime values: 16-bit, then / 10 = kWh
+        # Lifetime values: 32-bit LE, then / 10 = kWh
         assert data.inverter_energy_total == pytest.approx(5000.0, rel=0.01)
         # Note: grid_import/load swapped to match HTTP API naming convention
         assert data.grid_import_total == pytest.approx(4000.0, rel=0.01)  # Etouser_all (reg 58)

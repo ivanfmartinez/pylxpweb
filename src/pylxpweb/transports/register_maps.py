@@ -44,21 +44,17 @@ class RegisterField:
     - Bit width: 16-bit (single register) or 32-bit (register pair)
     - Scale factor: How to scale the raw value
     - Signed: Whether the value is signed (two's complement)
-    - Little endian: Word order for 32-bit values
+    - Little endian: Word order for 32-bit values (auto-set True for 32-bit)
 
-    For 32-bit values:
-    - little_endian=False (default): high word at address, low word at address+1
-    - little_endian=True: low word at address, high word at address+1
+    For 32-bit values, little_endian is automatically set to True (LuxPower/EG4 standard):
+    - Low word at base address, high word at base+1
 
     Example:
         # 16-bit voltage at register 16, scale by /10
         grid_voltage = RegisterField(16, 16, ScaleFactor.SCALE_10)
 
-        # 32-bit power at registers 6-7, no scaling (big-endian)
-        pv1_power = RegisterField(6, 32, ScaleFactor.SCALE_NONE)
-
-        # 32-bit energy at registers 46-47, little-endian (LuxPower style)
-        energy_total = RegisterField(46, 32, ScaleFactor.SCALE_10, little_endian=True)
+        # 32-bit energy at registers 46-47 (auto little-endian)
+        energy_total = RegisterField(46, 32, ScaleFactor.SCALE_10)
     """
 
     address: int
@@ -66,6 +62,11 @@ class RegisterField:
     scale_factor: ScaleFactor = ScaleFactor.SCALE_NONE
     signed: bool = False
     little_endian: bool = False  # Word order for 32-bit: low word first if True
+
+    def __post_init__(self) -> None:
+        """Auto-set little_endian=True for 32-bit fields (LuxPower/EG4 standard)."""
+        if self.bit_width == 32 and not self.little_endian:
+            object.__setattr__(self, "little_endian", True)
 
 
 @dataclass(frozen=True)
@@ -482,9 +483,9 @@ EG4_HYBRID_RUNTIME_MAP = RuntimeRegisterMap(
     radiator_temperature_1=RegisterField(65, 16, ScaleFactor.SCALE_NONE),
     radiator_temperature_2=RegisterField(66, 16, ScaleFactor.SCALE_NONE),
     battery_temperature=RegisterField(67, 16, ScaleFactor.SCALE_NONE),
-    # Fault/Warning codes
-    inverter_fault_code=RegisterField(60, 32, ScaleFactor.SCALE_NONE),  # Regs 60-61
-    inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE),  # Regs 62-63
+    # Fault/Warning codes - 32-bit little-endian (low word at base address)
+    inverter_fault_code=RegisterField(60, 32, ScaleFactor.SCALE_NONE),
+    inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE),
     bms_fault_code=RegisterField(99, 16, ScaleFactor.SCALE_NONE),
     bms_warning_code=RegisterField(100, 16, ScaleFactor.SCALE_NONE),
     # Extended sensors - Inverter RMS Current
@@ -540,25 +541,23 @@ EG4_HYBRID_ENERGY_MAP = EnergyRegisterMap(
     eps_energy_today=RegisterField(35, 16, ScaleFactor.SCALE_10),  # Eeps_day
     grid_export_today=RegisterField(36, 16, ScaleFactor.SCALE_10),  # Etogrid_day
     load_energy_today=RegisterField(32, 16, ScaleFactor.SCALE_10),  # Erec_day - AC charge from grid
-    # Lifetime energy - 16-bit single registers, scale 0.1 kWh
-    # NOTE: galets/eg4-modbus-monitor claims 32-bit pairs, but empirical testing shows
-    # these are 16-bit registers. The "odd" registers (41, 43, etc.) are always 0,
-    # and the "even" registers (40, 42, etc.) match HTTP API values exactly.
-    # Max value: 65535 * 0.1 = 6553.5 kWh per register.
-    pv1_energy_total=RegisterField(40, 16, ScaleFactor.SCALE_10),  # Epv1_all
-    pv2_energy_total=RegisterField(42, 16, ScaleFactor.SCALE_10),  # Epv2_all
-    pv3_energy_total=RegisterField(44, 16, ScaleFactor.SCALE_10),  # Epv3_all
-    inverter_energy_total=RegisterField(46, 16, ScaleFactor.SCALE_10),  # Einv_all
+    # Lifetime energy - 32-bit register pairs, scale 0.1 kWh
+    # Format: low word at base address, high word at base+1 (auto-LE for 32-bit)
+    # Validated 2025-02: values match EG4 Cloud API
+    pv1_energy_total=RegisterField(40, 32, ScaleFactor.SCALE_10),  # Epv1_all (regs 40-41)
+    pv2_energy_total=RegisterField(42, 32, ScaleFactor.SCALE_10),  # Epv2_all (regs 42-43)
+    pv3_energy_total=RegisterField(44, 32, ScaleFactor.SCALE_10),  # Epv3_all (regs 44-45)
+    inverter_energy_total=RegisterField(46, 32, ScaleFactor.SCALE_10),  # Einv_all (regs 46-47)
     # Swapped to match HTTP API (see daily energy note above)
-    grid_import_total=RegisterField(58, 16, ScaleFactor.SCALE_10),  # Etouser_all (HTTP totalImport)
-    charge_energy_total=RegisterField(50, 16, ScaleFactor.SCALE_10),  # Echg_all
-    discharge_energy_total=RegisterField(52, 16, ScaleFactor.SCALE_10),  # Edischg_all
-    eps_energy_total=RegisterField(54, 16, ScaleFactor.SCALE_10),  # Eeps_all
-    grid_export_total=RegisterField(56, 16, ScaleFactor.SCALE_10),  # Etogrid_all
-    load_energy_total=RegisterField(48, 16, ScaleFactor.SCALE_10),  # Erec_all - AC charge from grid
+    grid_import_total=RegisterField(58, 32, ScaleFactor.SCALE_10),  # Etouser_all (regs 58-59)
+    charge_energy_total=RegisterField(50, 32, ScaleFactor.SCALE_10),  # Echg_all (regs 50-51)
+    discharge_energy_total=RegisterField(52, 32, ScaleFactor.SCALE_10),  # Edischg_all (regs 52-53)
+    eps_energy_total=RegisterField(54, 32, ScaleFactor.SCALE_10),  # Eeps_all (regs 54-55)
+    grid_export_total=RegisterField(56, 32, ScaleFactor.SCALE_10),  # Etogrid_all (regs 56-57)
+    load_energy_total=RegisterField(48, 32, ScaleFactor.SCALE_10),  # Erec_all (regs 48-49)
     # Generator energy
-    generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),  # kWh
-    generator_energy_total=RegisterField(125, 16, ScaleFactor.SCALE_10),  # kWh
+    generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),  # kWh (daily)
+    generator_energy_total=RegisterField(125, 32, ScaleFactor.SCALE_10),  # kWh (lifetime)
 )
 
 
@@ -611,8 +610,8 @@ LXP_RUNTIME_MAP = RuntimeRegisterMap(
     radiator_temperature_2=RegisterField(66, 16, ScaleFactor.SCALE_NONE),
     battery_temperature=RegisterField(67, 16, ScaleFactor.SCALE_NONE),
     # Fault/Warning codes - 32-bit little-endian (L/H word pairs)
-    inverter_fault_code=RegisterField(60, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE, little_endian=True),
+    inverter_fault_code=RegisterField(60, 32, ScaleFactor.SCALE_NONE),
+    inverter_warning_code=RegisterField(62, 32, ScaleFactor.SCALE_NONE),
     bms_fault_code=RegisterField(99, 16, ScaleFactor.SCALE_NONE),
     bms_warning_code=RegisterField(100, 16, ScaleFactor.SCALE_NONE),
     # Extended sensors - same as PV_SERIES
@@ -637,7 +636,7 @@ LXP_RUNTIME_MAP = RuntimeRegisterMap(
     temperature_t3=RegisterField(110, 16, ScaleFactor.SCALE_10),  # 0.1°C
     temperature_t4=RegisterField(111, 16, ScaleFactor.SCALE_10),  # 0.1°C
     temperature_t5=RegisterField(112, 16, ScaleFactor.SCALE_10),  # 0.1°C
-    inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE, little_endian=True),
+    inverter_on_time=RegisterField(69, 32, ScaleFactor.SCALE_NONE),
     ac_input_type=RegisterField(77, 16, ScaleFactor.SCALE_NONE),
     parallel_config=RegisterField(113, 16, ScaleFactor.SCALE_NONE),
 )
@@ -660,20 +659,20 @@ LXP_ENERGY_MAP = EnergyRegisterMap(
     # Lifetime energy - 32-bit pairs per luxpower-ha-integration
     # NOTE: LuxPower uses little-endian word order (Low word at base address)
     # The _L/_H suffix in luxpower-ha-integration indicates: _L=Low word, _H=High word
-    pv1_energy_total=RegisterField(40, 32, ScaleFactor.SCALE_10, little_endian=True),
-    pv2_energy_total=RegisterField(42, 32, ScaleFactor.SCALE_10, little_endian=True),
-    pv3_energy_total=RegisterField(44, 32, ScaleFactor.SCALE_10, little_endian=True),
-    inverter_energy_total=RegisterField(46, 32, ScaleFactor.SCALE_10, little_endian=True),
+    pv1_energy_total=RegisterField(40, 32, ScaleFactor.SCALE_10),
+    pv2_energy_total=RegisterField(42, 32, ScaleFactor.SCALE_10),
+    pv3_energy_total=RegisterField(44, 32, ScaleFactor.SCALE_10),
+    inverter_energy_total=RegisterField(46, 32, ScaleFactor.SCALE_10),
     # Swapped to match HTTP API (see daily energy note above)
-    grid_import_total=RegisterField(58, 32, ScaleFactor.SCALE_10, little_endian=True),
-    charge_energy_total=RegisterField(50, 32, ScaleFactor.SCALE_10, little_endian=True),
-    discharge_energy_total=RegisterField(52, 32, ScaleFactor.SCALE_10, little_endian=True),
-    eps_energy_total=RegisterField(54, 32, ScaleFactor.SCALE_10, little_endian=True),
-    grid_export_total=RegisterField(56, 32, ScaleFactor.SCALE_10, little_endian=True),
-    load_energy_total=RegisterField(48, 32, ScaleFactor.SCALE_10, little_endian=True),
+    grid_import_total=RegisterField(58, 32, ScaleFactor.SCALE_10),
+    charge_energy_total=RegisterField(50, 32, ScaleFactor.SCALE_10),
+    discharge_energy_total=RegisterField(52, 32, ScaleFactor.SCALE_10),
+    eps_energy_total=RegisterField(54, 32, ScaleFactor.SCALE_10),
+    grid_export_total=RegisterField(56, 32, ScaleFactor.SCALE_10),
+    load_energy_total=RegisterField(48, 32, ScaleFactor.SCALE_10),
     # Generator energy
     generator_energy_today=RegisterField(124, 16, ScaleFactor.SCALE_10),  # I_EGEN_DAY
-    generator_energy_total=RegisterField(125, 32, ScaleFactor.SCALE_10, little_endian=True),
+    generator_energy_total=RegisterField(125, 32, ScaleFactor.SCALE_10),
 )
 
 
@@ -1143,33 +1142,33 @@ GRIDBOSS_ENERGY_MAP = MidboxEnergyRegisterMap(
     ac_couple_4_energy_today_l2=RegisterField(67, 16, ScaleFactor.SCALE_NONE),
     #
     # Lifetime Energy: 32-bit LO:HI (little-endian), scale /10 → kWh
-    load_energy_total_l1=RegisterField(68, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    load_energy_total_l2=RegisterField(70, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ups_energy_total_l1=RegisterField(72, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ups_energy_total_l2=RegisterField(74, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    to_grid_energy_total_l1=RegisterField(76, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    to_grid_energy_total_l2=RegisterField(78, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    to_user_energy_total_l1=RegisterField(80, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    to_user_energy_total_l2=RegisterField(82, 32, ScaleFactor.SCALE_NONE, little_endian=True),
+    load_energy_total_l1=RegisterField(68, 32, ScaleFactor.SCALE_NONE),
+    load_energy_total_l2=RegisterField(70, 32, ScaleFactor.SCALE_NONE),
+    ups_energy_total_l1=RegisterField(72, 32, ScaleFactor.SCALE_NONE),
+    ups_energy_total_l2=RegisterField(74, 32, ScaleFactor.SCALE_NONE),
+    to_grid_energy_total_l1=RegisterField(76, 32, ScaleFactor.SCALE_NONE),
+    to_grid_energy_total_l2=RegisterField(78, 32, ScaleFactor.SCALE_NONE),
+    to_user_energy_total_l1=RegisterField(80, 32, ScaleFactor.SCALE_NONE),
+    to_user_energy_total_l2=RegisterField(82, 32, ScaleFactor.SCALE_NONE),
     # Smart Load lifetime energy (registers 84-99)
-    smart_load_1_energy_total_l1=RegisterField(84, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    smart_load_1_energy_total_l2=RegisterField(86, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    smart_load_2_energy_total_l1=RegisterField(88, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    smart_load_2_energy_total_l2=RegisterField(90, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    smart_load_3_energy_total_l1=RegisterField(92, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    smart_load_3_energy_total_l2=RegisterField(94, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    smart_load_4_energy_total_l1=RegisterField(96, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    smart_load_4_energy_total_l2=RegisterField(98, 32, ScaleFactor.SCALE_NONE, little_endian=True),
+    smart_load_1_energy_total_l1=RegisterField(84, 32, ScaleFactor.SCALE_NONE),
+    smart_load_1_energy_total_l2=RegisterField(86, 32, ScaleFactor.SCALE_NONE),
+    smart_load_2_energy_total_l1=RegisterField(88, 32, ScaleFactor.SCALE_NONE),
+    smart_load_2_energy_total_l2=RegisterField(90, 32, ScaleFactor.SCALE_NONE),
+    smart_load_3_energy_total_l1=RegisterField(92, 32, ScaleFactor.SCALE_NONE),
+    smart_load_3_energy_total_l2=RegisterField(94, 32, ScaleFactor.SCALE_NONE),
+    smart_load_4_energy_total_l1=RegisterField(96, 32, ScaleFactor.SCALE_NONE),
+    smart_load_4_energy_total_l2=RegisterField(98, 32, ScaleFactor.SCALE_NONE),
     # AC Couple lifetime energy (registers 104-119)
     # Note: registers 100-103 are unassigned/unknown
-    ac_couple_1_energy_total_l1=RegisterField(104, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ac_couple_1_energy_total_l2=RegisterField(106, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ac_couple_2_energy_total_l1=RegisterField(108, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ac_couple_2_energy_total_l2=RegisterField(110, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ac_couple_3_energy_total_l1=RegisterField(112, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ac_couple_3_energy_total_l2=RegisterField(114, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ac_couple_4_energy_total_l1=RegisterField(116, 32, ScaleFactor.SCALE_NONE, little_endian=True),
-    ac_couple_4_energy_total_l2=RegisterField(118, 32, ScaleFactor.SCALE_NONE, little_endian=True),
+    ac_couple_1_energy_total_l1=RegisterField(104, 32, ScaleFactor.SCALE_NONE),
+    ac_couple_1_energy_total_l2=RegisterField(106, 32, ScaleFactor.SCALE_NONE),
+    ac_couple_2_energy_total_l1=RegisterField(108, 32, ScaleFactor.SCALE_NONE),
+    ac_couple_2_energy_total_l2=RegisterField(110, 32, ScaleFactor.SCALE_NONE),
+    ac_couple_3_energy_total_l1=RegisterField(112, 32, ScaleFactor.SCALE_NONE),
+    ac_couple_3_energy_total_l2=RegisterField(114, 32, ScaleFactor.SCALE_NONE),
+    ac_couple_4_energy_total_l1=RegisterField(116, 32, ScaleFactor.SCALE_NONE),
+    ac_couple_4_energy_total_l2=RegisterField(118, 32, ScaleFactor.SCALE_NONE),
 )
 
 

@@ -1,6 +1,6 @@
 # CLAUDE.md - Development Guidelines for pylxpweb
 
-**Last Updated**: 2026-01-30
+**Last Updated**: 2026-02-05
 **Version**: 0.6.5
 **Purpose**: Guide Claude Code development in this repository
 
@@ -337,6 +337,70 @@ LUXPOWER_BASE_URL=https://monitor.eg4electronics.com
 # Run integration tests
 pytest tests/integration/ -v -m integration
 ```
+
+### Modbus Register Map Validation
+
+**Purpose**: Validate that local Modbus readings match EG4 Cloud API values to ensure register map correctness.
+
+**Projects Involved**:
+- `pylxpweb` (`/Users/bryanli/Projects/joyfulhouse/python/pylxpweb/`) - Modbus register maps and data parsing
+- `eg4_web_monitor` (`/Users/bryanli/Projects/joyfulhouse/homeassistant-dev/eg4_web_monitor/`) - HA integration using pylxpweb
+
+**Test Environment**:
+- Docker container: `homeassistant-dev` (Home Assistant with EG4 integration)
+- Config modes: `config/` (cloud), `config-local/` (local Modbus), `config-hybrid/` (both)
+- Switch modes: `./scripts/eg4-switch-mode.sh [cloud|local|hybrid]`
+
+**Validation Script** (run from `homeassistant-dev/`):
+```bash
+# Export credentials from .env files
+eval "$(grep -E '^[a-zA-Z_][a-zA-Z0-9_]*=' eg4_web_monitor/.env | grep -v '^#')"
+eval "$(grep -E '^[a-zA-Z_][a-zA-Z0-9_]*=' ../python/pylxpweb/.env | grep -v '^#')"
+export HA_BASE_URL HA_LONG_LIVED_TOKEN LUXPOWER_USERNAME LUXPOWER_PASSWORD
+
+# Compare HA sensors (from local Modbus) with Cloud API
+uv run python3 << 'EOF'
+import asyncio, os, sys, aiohttp
+sys.path.insert(0, "../python/pylxpweb/src")
+from pylxpweb import LuxpowerClient
+
+async def main():
+    # Fetch HA sensor states via REST API
+    async with aiohttp.ClientSession() as session:
+        headers = {"Authorization": f"Bearer {os.environ['HA_LONG_LIVED_TOKEN']}"}
+        async with session.get(f"{os.environ['HA_BASE_URL']}/api/states", headers=headers) as resp:
+            ha_data = await resp.json()
+
+    # Fetch Cloud API values
+    async with LuxpowerClient(
+        os.environ["LUXPOWER_USERNAME"],
+        os.environ["LUXPOWER_PASSWORD"],
+        base_url="https://monitor.eg4electronics.com"
+    ) as client:
+        login = await client.login()
+        for plant in login.plants:
+            for inv in plant.inverters:
+                energy = await client._request("POST", "/WManage/api/inverter/getInverterEnergyInfo",
+                                               data={"serialNum": inv.serialNum})
+                # Compare cloud vs HA values...
+
+asyncio.run(main())
+EOF
+```
+
+**Key Validations** (validated 2025-02):
+| Metric | Cloud API Field | HA Sensor | Scale |
+|--------|-----------------|-----------|-------|
+| Battery Voltage | `vBat` | `battery_voltage` | ÷10 (cV→V) |
+| Battery SOC | `soc` | `state_of_charge` | Direct (%) |
+| Grid Frequency | `fac` | `grid_frequency` | ÷100 (cHz→Hz) |
+| Energy Today | `todayYielding` | `yield` | Direct (kWh) |
+| Energy Total | `totalYielding` | `yield_lifetime` | ÷10 (×10→kWh) |
+
+**32-bit Register Format** (auto little-endian via `__post_init__`):
+- All 32-bit `RegisterField` values auto-set `little_endian=True`
+- Format: Low word at base address, high word at base+1
+- Example: `RegisterField(46, 32, ScaleFactor.SCALE_10)` reads regs 46-47 as LE
 
 ### Test Fixtures (Pydantic Models)
 Use `model_construct()` to bypass validation for test data:

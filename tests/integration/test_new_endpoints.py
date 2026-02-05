@@ -1,5 +1,10 @@
 """Integration tests for newly discovered endpoints."""
 
+import pytest
+
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
+
 # Import redaction helper
 import sys
 from pathlib import Path

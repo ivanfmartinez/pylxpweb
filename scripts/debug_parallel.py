@@ -14,18 +14,15 @@ For EU LuxPower portal:
 import argparse
 import asyncio
 import json
-import sys
-from datetime import datetime, timezone
-
-import aiohttp
+from datetime import UTC, datetime
 
 
 async def main(username: str, password: str, base_url: str) -> None:
     from pylxpweb import LuxpowerClient
     from pylxpweb.devices import Station
 
-    print(f"=== Parallel Group Diagnostic ===")
-    print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
+    print("=== Parallel Group Diagnostic ===")
+    print(f"Timestamp: {datetime.now(UTC).isoformat()}")
     print(f"Base URL: {base_url}")
     print()
 
@@ -62,11 +59,11 @@ async def main(username: str, password: str, base_url: str) -> None:
                 # Detect GridBOSS (devType 5 = MID device)
                 if dev.devType == 5:
                     gridboss_serial = serial
-                    print(f"    ** GridBOSS detected **")
+                    print("    ** GridBOSS detected **")
                 print()
 
             # 3. Get parallel group details
-            print(f"--- Step 3: Parallel Group Details ---")
+            print("--- Step 3: Parallel Group Details ---")
             if gridboss_serial:
                 safe_gb = gridboss_serial[:4] + "X" * (len(gridboss_serial) - 4)
                 print(f"  Using GridBOSS serial: {safe_gb}")
@@ -82,7 +79,7 @@ async def main(username: str, password: str, base_url: str) -> None:
                                 d["serialNum"] = s[:4] + "X" * (len(s) - 4) if len(s) > 4 else s
 
                     print(f"  Total devices in response: {pg_dict.get('total', 'N/A')}")
-                    print(f"  Raw response:")
+                    print("  Raw response:")
                     print(json.dumps(pg_dict, indent=2, default=str))
                 except Exception as e:
                     print(f"  ERROR: {type(e).__name__}: {e}")
@@ -113,14 +110,14 @@ async def main(username: str, password: str, base_url: str) -> None:
                                 s = d["serialNum"]
                                 d["serialNum"] = s[:4] + "X" * (len(s) - 4) if len(s) > 4 else s
                     print(f"  Post-sync total: {pg_dict2.get('total', 'N/A')}")
-                    print(f"  Post-sync response:")
+                    print("  Post-sync response:")
                     print(json.dumps(pg_dict2, indent=2, default=str))
             except Exception as e:
                 print(f"  ERROR: {type(e).__name__}: {e}")
             print()
 
             # 5. Load station via pylxpweb high-level API
-            print(f"--- Step 5: High-Level Station Load ---")
+            print("--- Step 5: High-Level Station Load ---")
             try:
                 station = await Station.load(client, plant.id)
                 print(f"  Station: {station.name}")
