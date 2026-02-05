@@ -93,6 +93,7 @@ from .locations import (
 # REGISTERS MODULE
 # ============================================================================
 from .registers import (
+    BATTERY_STATUS_MAP,
     DEVICE_TYPE_CODE_FLEXBOSS,
     DEVICE_TYPE_CODE_GRIDBOSS,
     DEVICE_TYPE_CODE_LXP_EU,
@@ -285,6 +286,8 @@ from .scaling import (
 # Explicitly list all exported symbols for better IDE support and documentation
 
 __all__ = [
+    # Battery status
+    "BATTERY_STATUS_MAP",
     # Locations
     "TIMEZONE_MAP",
     "TIMEZONE_REVERSE_MAP",

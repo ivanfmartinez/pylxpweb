@@ -515,6 +515,26 @@ class ParallelGroup:
                 total += export_power
         return total
 
+    @property
+    def consumption_power(self) -> int:
+        """Get total consumption power across all inverters in watts.
+
+        Calculated from full energy balance:
+            consumption = pv + battery_power + grid_import - grid_export
+
+        Where battery_power is signed (positive = discharging, negative = charging).
+        This represents the total household consumption, clamped to >= 0.
+
+        Returns:
+            Total consumption power in watts (>= 0).
+        """
+        pv = self.pv_total_power
+        grid_import = self.grid_import_power
+        grid_export = self.grid_export_power
+        # Battery power: discharge adds to available power, charge subtracts
+        battery_power = self.battery_discharge_power - self.battery_charge_power
+        return max(0, pv + battery_power + grid_import - grid_export)
+
     # ===========================================
     # Aggregate Battery Properties
     # ===========================================

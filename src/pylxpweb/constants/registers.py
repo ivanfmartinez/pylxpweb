@@ -177,6 +177,16 @@ INPUT_BMS_STATUS_8 = 93  # BMS status register 8
 INPUT_BMS_STATUS_9 = 94  # BMS status register 9
 INPUT_BMS_STATUS_INV = 95  # Inverter-aggregated battery status
 
+# Register 95 raw status codes. Note: value 3 means "Active" (battery in use)
+# and does NOT indicate charge vs discharge direction. The actual battery status
+# (Charging/Discharging/Idle) is derived from Pcharge/Pdischarge registers instead.
+BATTERY_STATUS_MAP: dict[int, str] = {
+    0: "Idle",
+    1: "Unknown(1)",
+    2: "StandBy",
+    3: "Active",
+}
+
 # BMS Battery Info (Addresses 96-100)
 INPUT_BMS_PARALLEL_NUM = 96  # Number of batteries in parallel
 INPUT_BMS_CAPACITY = 97  # Battery capacity (Ah)

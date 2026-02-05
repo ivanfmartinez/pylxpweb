@@ -685,22 +685,35 @@ class InverterRuntimePropertiesMixin:
         """Get consumption power in watts.
 
         For HTTP data, uses the server-computed consumptionPower field.
-        For local transport data (Modbus/Dongle), computes as:
-            consumption = load_power + eps_power
-        where load_power is pToUser and eps_power is peps.
+        For local transport data (Modbus/Dongle), computes from energy balance:
+            consumption = pv + battery_power + grid_import - grid_export
 
-        This matches the HTTP API formula: consumptionPower = pToUser + peps
+        Where battery_power is signed (positive = discharging, negative = charging).
+        This accounts for all power sources (PV, battery, grid) flowing to loads.
+
+        The result is clamped to >= 0 to avoid negative values during edge cases.
 
         Returns:
-            Consumption power in watts, or None if no data.
+            Consumption power in watts (>= 0), or None if no data.
         """
         if self._transport_runtime is not None:
-            load = self._transport_runtime.load_power
-            eps = self._transport_runtime.eps_power
-            if load is None and eps is None:
+            pv = self._transport_runtime.pv_total_power
+            grid_import = self._transport_runtime.power_from_grid
+            grid_export = self._transport_runtime.power_to_grid
+            # Battery power: positive = discharging (adds to consumption)
+            # negative = charging (subtracts from consumption)
+            bat_discharge = self._transport_runtime.battery_discharge_power
+            bat_charge = self._transport_runtime.battery_charge_power
+
+            if all(v is None for v in [pv, grid_import, grid_export, bat_discharge, bat_charge]):
                 return None
-            # Sum available values, treating None as 0
-            return int(load or 0) + int(eps or 0)
+
+            # Full energy balance: consumption = pv + battery_power + grid_import - grid_export
+            battery_power = int(bat_discharge or 0) - int(bat_charge or 0)
+            grid_in = int(grid_import or 0)
+            grid_out = int(grid_export or 0)
+            consumption = int(pv or 0) + battery_power + grid_in - grid_out
+            return max(0, consumption)
         if self._runtime is None:
             return None
         return self._runtime.consumptionPower
@@ -709,19 +722,13 @@ class InverterRuntimePropertiesMixin:
     def total_load_power(self) -> int | None:
         """Get total load power in watts.
 
-        Computes: eps_power + consumption_power
-
-        This represents the total power being consumed by all loads
-        (both EPS-connected and non-EPS loads).
+        This is now an alias for consumption_power since consumption_power
+        represents the total power being consumed by all loads in the home.
 
         Returns:
-            Total load power in watts, or None if no data.
+            Total load power in watts (>= 0), or None if no data.
         """
-        eps = self.eps_power
-        consumption = self.consumption_power
-        if eps is None and consumption is None:
-            return None
-        return (eps or 0) + (consumption or 0)
+        return self.consumption_power
 
     # ===========================================
     # Status & Info Properties

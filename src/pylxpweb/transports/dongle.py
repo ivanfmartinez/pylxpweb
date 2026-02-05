@@ -26,6 +26,7 @@ If connection fails, check if your dongle firmware has been updated.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import struct
 from typing import TYPE_CHECKING
@@ -559,6 +560,13 @@ class DongleTransport(BaseTransport):
                     ) from err
                 except OSError as err:
                     _LOGGER.error("Socket error communicating with dongle: %s", err)
+                    # Mark as disconnected so next poll triggers reconnect
+                    self._connected = False
+                    self._reader = None
+                    if self._writer:
+                        with contextlib.suppress(Exception):
+                            self._writer.close()
+                    self._writer = None
                     raise TransportReadError(f"Socket error: {err}") from err
                 except TransportReadError as err:
                     last_error = err

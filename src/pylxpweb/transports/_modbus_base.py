@@ -57,8 +57,8 @@ INPUT_REGISTER_GROUPS = {
     "status_energy": (32, 32),  # Registers 32-63: Status, energy, fault/warning codes
     "temperatures": (64, 16),  # Registers 64-79: Temperatures, currents, fault history
     "bms_data": (80, 33),  # Registers 80-112: BMS passthrough data (Yippy's docs)
-    "extended_data": (113, 18),  # Registers 113-130: Parallel config, generator, grid L1/L2
-    "eps_split_phase": (140, 3),  # Registers 140-142: EPS L1/L2 voltages
+    "extended_data": (113, 18),  # Registers 113-130: Parallel config, generator, EPS L1N/L2N
+    # Note: Registers 140-143 are AFCI current per 18kPV docs, not EPS voltage
     "output_power": (170, 2),  # Registers 170-171: Output power
 }
 
@@ -498,16 +498,20 @@ class BaseModbusTransport(BaseTransport):
 
         all_registers: dict[int, int] = {}
 
-        # Read core battery registers (0-31)
-        power_regs = await self._read_input_registers(0, 32)
-        all_registers.update(self._registers_from_values(0, power_regs))
-
-        # Read BMS registers (80-112)
+        # Read all runtime registers (0-127) including:
+        # - Power/voltage registers (0-31)
+        # - Extended registers including battery_current at reg 75 (32-79)
+        # - BMS passthrough registers (80-112)
+        # Local Modbus reads are cheap, so read the full range
         try:
-            bms_values = await self._read_input_registers(80, 33)
-            all_registers.update(self._registers_from_values(80, bms_values))
+            # Read in two chunks due to Modbus protocol limits (max ~125 registers per read)
+            runtime_regs_1 = await self._read_input_registers(0, 64)
+            all_registers.update(self._registers_from_values(0, runtime_regs_1))
+
+            runtime_regs_2 = await self._read_input_registers(64, 64)
+            all_registers.update(self._registers_from_values(64, runtime_regs_2))
         except Exception as e:
-            _LOGGER.warning("Failed to read BMS registers 80-112: %s", e)
+            _LOGGER.warning("Failed to read runtime registers 0-127: %s", e)
 
         # Read individual battery registers (5000+) if requested
         battery_count = all_registers.get(96, 0)

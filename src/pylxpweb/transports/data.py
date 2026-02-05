@@ -473,7 +473,7 @@ class InverterRuntimeData:
             grid_frequency=_read_and_scale_field(input_registers, register_map.grid_frequency),
             grid_power=grid_power,
             power_to_grid=_read_and_scale_field(input_registers, register_map.power_to_grid),
-            power_from_grid=grid_power,
+            power_from_grid=_read_and_scale_field(input_registers, register_map.load_power),
             # Inverter
             inverter_power=inverter_power,
             # EPS
@@ -868,7 +868,8 @@ class BatteryData:
         Returns:
             Capacity percentage (0-100), or SOC if current_capacity unavailable.
         """
-        if self.max_capacity > 0 and self.current_capacity is not None and self.current_capacity > 0:
+        has_capacity = self.current_capacity is not None and self.current_capacity > 0
+        if self.max_capacity > 0 and has_capacity:
             return round((self.current_capacity / self.max_capacity) * 100)
         # Fall back to SOC if current_capacity not available
         return self.soc
@@ -994,9 +995,7 @@ class BatteryData:
 
         # Read max_capacity and compute current_capacity (no register exists for it)
         max_capacity = read_field(battery_map.full_capacity_ah)
-        current_capacity = (
-            max_capacity * soc / 100 if max_capacity and soc else None
-        )
+        current_capacity = max_capacity * soc / 100 if max_capacity and soc else None
 
         return cls(
             battery_index=battery_index,
@@ -1072,7 +1071,7 @@ class BatteryBankData:
     cycle_count: int | None = None  # Charge/discharge cycle count
 
     # Status
-    status: int | None = None
+    status: str | None = None  # "Idle", "Charging", "StandBy", "Discharging"
     fault_code: int | None = None
     warning_code: int | None = None
 
@@ -1240,6 +1239,15 @@ class BatteryBankData:
         bms_fault_code = _read_register_field(input_registers, register_map.bms_fault_code)
         bms_warning_code = _read_register_field(input_registers, register_map.bms_warning_code)
         battery_count = _read_register_field(input_registers, register_map.battery_parallel_num)
+        # Derive battery status from charge/discharge power rather than register 95,
+        # which only indicates "active" (3) vs "standby" (2) without direction info.
+        battery_status: str | None = None
+        if discharge_power is not None and discharge_power > 0:
+            battery_status = "Discharging"
+        elif charge_power is not None and charge_power > 0:
+            battery_status = "Charging"
+        elif charge_power is not None or discharge_power is not None:
+            battery_status = "Idle"
 
         # Cell voltage data from register map (mV -> V via SCALE_1000 in map)
         max_cell_voltage = _read_and_scale_field(input_registers, register_map.bms_max_cell_voltage)
@@ -1308,6 +1316,7 @@ class BatteryBankData:
             discharge_power=discharge_power,
             max_capacity=max_capacity,
             current_capacity=current_capacity,
+            status=battery_status,
             fault_code=bms_fault_code,
             warning_code=bms_warning_code,
             battery_count=actual_battery_count,

@@ -99,6 +99,7 @@ class RuntimeRegisterMap:
     battery_voltage: RegisterField | None = None
     battery_current: RegisterField | None = None  # Battery current in A
     soc_soh_packed: RegisterField | None = None  # SOC in low byte, SOH in high byte
+    battery_status: RegisterField | None = None  # Inverter-aggregated battery status (reg 95)
 
     # -------------------------------------------------------------------------
     # Battery Power
@@ -442,17 +443,17 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     pv3_power=RegisterField(9, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 9
     # Battery - Vbat at reg 4 with scale 0.1
     battery_voltage=RegisterField(4, 16, ScaleFactor.SCALE_10),  # galets: scale=0.1
-    battery_current=RegisterField(75, 16, ScaleFactor.SCALE_100, signed=True),  # Reg 75
+    battery_current=RegisterField(98, 16, ScaleFactor.SCALE_10, signed=True),  # BMS current (0.1A)
     soc_soh_packed=RegisterField(5, 16, ScaleFactor.SCALE_NONE),  # SOC=low, SOH=high
+    battery_status=RegisterField(95, 16, ScaleFactor.SCALE_NONE),  # Inverter-aggregated status
     charge_power=RegisterField(10, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 10
     discharge_power=RegisterField(11, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 11
     # Grid - voltages at regs 12-14, frequency at reg 15
     grid_voltage_r=RegisterField(12, 16, ScaleFactor.SCALE_10),  # L1-L2
     grid_voltage_s=RegisterField(13, 16, ScaleFactor.SCALE_10),  # L2-L3
     grid_voltage_t=RegisterField(14, 16, ScaleFactor.SCALE_10),  # L3-L1
-    # Split-phase L1/L2 voltages (FlexBOSS21) - confirmed via Modbus testing
-    grid_l1_voltage=RegisterField(127, 16, ScaleFactor.SCALE_10),  # L1 ~120V
-    grid_l2_voltage=RegisterField(128, 16, ScaleFactor.SCALE_10),  # L2 ~120V
+    # No confirmed Grid L1N/L2N registers for PV_SERIES split-phase
+    # grid_l1_voltage and grid_l2_voltage not available via Modbus
     grid_frequency=RegisterField(15, 16, ScaleFactor.SCALE_100),
     inverter_power=RegisterField(16, 16, ScaleFactor.SCALE_NONE),  # Pinv: inverter output power
     grid_power=RegisterField(17, 16, ScaleFactor.SCALE_NONE),  # Prec: AC charge power
@@ -461,9 +462,9 @@ PV_SERIES_RUNTIME_MAP = RuntimeRegisterMap(
     eps_voltage_r=RegisterField(20, 16, ScaleFactor.SCALE_10),  # L1-L2
     eps_voltage_s=RegisterField(21, 16, ScaleFactor.SCALE_10),  # L2-L3
     eps_voltage_t=RegisterField(22, 16, ScaleFactor.SCALE_10),  # L3-L1
-    # Split-phase L1/L2 EPS voltages (FlexBOSS21) - confirmed via Modbus testing
-    eps_l1_voltage=RegisterField(140, 16, ScaleFactor.SCALE_10),  # L1 ~120V
-    eps_l2_voltage=RegisterField(141, 16, ScaleFactor.SCALE_10),  # L2 ~120V
+    # Split-phase EPS L1N/L2N voltages - confirmed on 18kPV and FlexBOSS21
+    eps_l1_voltage=RegisterField(127, 16, ScaleFactor.SCALE_10),  # L1-N ~120V
+    eps_l2_voltage=RegisterField(128, 16, ScaleFactor.SCALE_10),  # L2-N ~120V
     eps_frequency=RegisterField(23, 16, ScaleFactor.SCALE_100),
     eps_power=RegisterField(24, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 24
     eps_status=RegisterField(25, 16, ScaleFactor.SCALE_NONE),  # Seps at reg 25
@@ -578,7 +579,7 @@ LXP_EU_RUNTIME_MAP = RuntimeRegisterMap(
     pv3_power=RegisterField(9, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 9
     # Battery - 0.1V scale per luxpower-ha-integration (I_VBAT)
     battery_voltage=RegisterField(4, 16, ScaleFactor.SCALE_10),
-    battery_current=RegisterField(75, 16, ScaleFactor.SCALE_100, signed=True),  # Same as PV_SERIES
+    battery_current=RegisterField(98, 16, ScaleFactor.SCALE_10, signed=True),  # BMS current (0.1A)
     soc_soh_packed=RegisterField(5, 16, ScaleFactor.SCALE_NONE),
     charge_power=RegisterField(10, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 10
     discharge_power=RegisterField(11, 16, ScaleFactor.SCALE_NONE),  # 16-bit at reg 11
