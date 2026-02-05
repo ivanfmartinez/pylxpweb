@@ -12,8 +12,17 @@ Feature detection uses a multi-layer approach:
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Mapping of deprecated family names to their replacements
+_DEPRECATED_FAMILY_NAMES: dict[str, str] = {
+    "SNA": "EG4_OFFGRID",
+    "PV_SERIES": "EG4_HYBRID",
+    "LXP_EU": "LXP",
+    "LXP_LV": "LXP",
+}
 
 
 class InverterFamily(str, Enum):
@@ -45,12 +54,14 @@ class InverterFamily(str, Enum):
     # Unknown model family
     UNKNOWN = "UNKNOWN"
 
-    # Legacy aliases for backwards compatibility
+    # -------------------------------------------------------------------------
+    # DEPRECATED ALIASES - Will be removed in a future version
     # These allow existing config entries using old names to still work
-    SNA = "EG4_OFFGRID"  # Deprecated: use EG4_OFFGRID
-    PV_SERIES = "EG4_HYBRID"  # Deprecated: use EG4_HYBRID
-    LXP_EU = "LXP"  # Deprecated: use LXP
-    LXP_LV = "LXP"  # Deprecated: use LXP (same register maps)
+    # -------------------------------------------------------------------------
+    SNA = "EG4_OFFGRID"  # Deprecated since v0.8.0: use EG4_OFFGRID
+    PV_SERIES = "EG4_HYBRID"  # Deprecated since v0.8.0: use EG4_HYBRID
+    LXP_EU = "LXP"  # Deprecated since v0.8.0: use LXP
+    LXP_LV = "LXP"  # Deprecated since v0.8.0: use LXP (same register maps)
 
 
 class GridType(str, Enum):
@@ -67,6 +78,54 @@ class GridType(str, Enum):
 
     # Unknown grid type
     UNKNOWN = "unknown"
+
+
+def resolve_family(name: str | InverterFamily) -> InverterFamily:
+    """Resolve an inverter family name to its canonical InverterFamily enum.
+
+    This function handles both current and deprecated family names, emitting
+    a DeprecationWarning when a deprecated name is used.
+
+    Args:
+        name: Family name string or InverterFamily enum value
+
+    Returns:
+        The canonical InverterFamily enum value
+
+    Raises:
+        ValueError: If the name is not a valid family name
+
+    Example:
+        >>> resolve_family("EG4_HYBRID")  # Current name - no warning
+        <InverterFamily.EG4_HYBRID: 'EG4_HYBRID'>
+
+        >>> resolve_family("PV_SERIES")  # Deprecated - emits warning
+        DeprecationWarning: InverterFamily 'PV_SERIES' is deprecated...
+        <InverterFamily.EG4_HYBRID: 'EG4_HYBRID'>
+    """
+    # If already an enum, return as-is
+    if isinstance(name, InverterFamily):
+        return name
+
+    # Check if it's a deprecated name
+    if name in _DEPRECATED_FAMILY_NAMES:
+        new_name = _DEPRECATED_FAMILY_NAMES[name]
+        warnings.warn(
+            f"InverterFamily '{name}' is deprecated since v0.8.0. "
+            f"Use '{new_name}' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return InverterFamily(new_name)
+
+    # Try to resolve as a current name
+    try:
+        return InverterFamily(name)
+    except ValueError as e:
+        raise ValueError(
+            f"Unknown inverter family: '{name}'. "
+            f"Valid families: {[f.value for f in InverterFamily if f.value == f.name]}"
+        ) from e
 
 
 # Device type code to family mapping
