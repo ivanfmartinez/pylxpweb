@@ -24,6 +24,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import time
+from collections import deque
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urljoin
@@ -122,7 +124,7 @@ class LuxpowerClient:
         self._response_cache: dict[str, dict[str, Any]] = {}
         self._cache_ttl_config: dict[str, timedelta] = {
             "device_discovery": timedelta(minutes=15),
-            "battery_info": timedelta(minutes=5),
+            "battery_info": timedelta(seconds=60),
             "parameter_read": timedelta(minutes=2),
             "quick_charge_status": timedelta(minutes=1),
             "inverter_runtime": timedelta(seconds=20),
@@ -144,6 +146,16 @@ class LuxpowerClient:
         # Invalidates cache on first request after hour changes to ensure
         # fresh data at date boundaries (especially midnight for daily energy values)
         self._last_request_hour: int | None = None
+
+        # API request rate tracking — sliding window of timestamps (monotonic)
+        # for calculating requests/minute and peak rates. Only real HTTP calls
+        # are tracked, not cache hits. maxlen=2000 covers an hour of heavy use.
+        self._request_timestamps: deque[float] = deque(maxlen=2000)
+
+        # Daily request counter — resets at midnight (local system time).
+        # Uses (year, month, day) tuple to detect day changes.
+        self._daily_request_count: int = 0
+        self._daily_reset_ymd: tuple[int, int, int] = time.localtime()[:3]
 
         # API namespace (new v0.2.0 interface)
         self._api_namespace: APINamespace | None = None
@@ -299,6 +311,60 @@ class LuxpowerClient:
             >>>         print("Control operations may be restricted")
         """
         return self._account_level
+
+    @property
+    def api_requests_per_minute(self) -> float:
+        """Return the number of real API requests made in the last 60 seconds.
+
+        Only counts actual HTTP calls, not cache hits. Uses a sliding window
+        of monotonic timestamps for accuracy.
+        """
+        if not self._request_timestamps:
+            return 0.0
+        cutoff = time.monotonic() - 60.0
+        count = sum(1 for ts in self._request_timestamps if ts >= cutoff)
+        return float(count)
+
+    @property
+    def api_requests_last_hour(self) -> int:
+        """Return total API requests in the last 60 minutes (sliding window)."""
+        if not self._request_timestamps:
+            return 0
+        cutoff = time.monotonic() - 3600.0
+        return sum(1 for ts in self._request_timestamps if ts >= cutoff)
+
+    @property
+    def api_peak_rate_per_hour(self) -> float:
+        """Return the peak 1-minute request rate within the last hour.
+
+        Scans all timestamps from the last 60 minutes using a two-pointer
+        sliding window to find the densest 60-second burst.
+        """
+        now = time.monotonic()
+        hour_cutoff = now - 3600.0
+        hourly = [ts for ts in self._request_timestamps if ts >= hour_cutoff]
+        if not hourly:
+            return 0.0
+        # Two-pointer: slide a 60s window across sorted timestamps
+        max_count = 0
+        right = 0
+        for left in range(len(hourly)):
+            while right < len(hourly) and hourly[right] - hourly[left] < 60.0:
+                right += 1
+            max_count = max(max_count, right - left)
+        return float(max_count)
+
+    @property
+    def api_requests_today(self) -> int:
+        """Return total API requests since midnight (local system time).
+
+        Resets to 0 when the local date changes.
+        """
+        today = time.localtime()[:3]
+        if today != self._daily_reset_ymd:
+            self._daily_request_count = 0
+            self._daily_reset_ymd = today
+        return self._daily_request_count
 
     async def _apply_backoff(self) -> None:
         """Apply exponential backoff delay before API requests."""
@@ -516,6 +582,13 @@ class LuxpowerClient:
         }
 
         _LOGGER.debug("API %s %s (data_keys=%s)", method, endpoint, list(data) if data else [])
+        self._request_timestamps.append(time.monotonic())
+        # Increment daily counter (resets on date change)
+        today = time.localtime()[:3]
+        if today != self._daily_reset_ymd:
+            self._daily_request_count = 0
+            self._daily_reset_ymd = today
+        self._daily_request_count += 1
 
         try:
             async with session.request(method, url, data=data, headers=headers) as response:
