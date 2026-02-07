@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import abstractmethod
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -500,25 +501,34 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
             include_parameters: If True, also refresh parameters (default: False)
         """
         # Prepare tasks to fetch only expired/missing data
-        tasks = []
+        tasks: list[Awaitable[None]] = []
 
-        # Runtime data (30s TTL for cloud, 5s for Modbus, 30s for Dongle)
-        if self._is_cache_expired(self._runtime_cache_time, self._runtime_cache_ttl, force):
-            tasks.append(self._fetch_runtime())
+        runtime_expired = self._is_cache_expired(
+            self._runtime_cache_time, self._runtime_cache_ttl, force
+        )
 
-        # Energy data (5min TTL)
-        if self._is_cache_expired(self._energy_cache_time, self._energy_cache_ttl, force):
-            tasks.append(self._fetch_energy())
+        # Combined read path: when transport supports read_all_input_data
+        # and runtime is expired, read all input registers in one shot
+        combined_fn = (
+            getattr(self._transport, "read_all_input_data", None) if self._transport else None
+        )
 
-        # Battery data (30s TTL) - Lazy loading optimization
-        # Only fetch if we have batteries OR haven't checked yet (first fetch)
-        if self._is_cache_expired(self._battery_cache_time, self._battery_cache_ttl, force):
-            should_fetch_battery = (
-                self._battery_bank is None  # Haven't checked yet
-                or (self._battery_bank and self._battery_bank.battery_count > 0)  # Has batteries
-            )
-            if should_fetch_battery:
-                tasks.append(self._fetch_battery())
+        if runtime_expired and combined_fn is not None:
+            tasks.append(self._fetch_combined_input_data())
+        else:
+            # Individual read path
+            if runtime_expired:
+                tasks.append(self._fetch_runtime())
+
+            if self._is_cache_expired(self._energy_cache_time, self._energy_cache_ttl, force):
+                tasks.append(self._fetch_energy())
+
+            if self._is_cache_expired(self._battery_cache_time, self._battery_cache_ttl, force):
+                should_fetch_battery = self._battery_bank is None or (
+                    self._battery_bank and self._battery_bank.battery_count > 0
+                )
+                if should_fetch_battery:
+                    tasks.append(self._fetch_battery())
 
         # Parameters (1hr TTL) - only fetch if explicitly requested
         if include_parameters and self._is_cache_expired(
@@ -632,6 +642,27 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
                     err,
                     type(err).__name__,
                 )
+
+    async def _fetch_combined_input_data(self) -> None:
+        """Fetch runtime, energy, and battery via a single combined read.
+
+        Uses ``read_all_input_data()`` on the transport to read all input
+        register groups once, then constructs all three data types from the
+        shared snapshot.  Reduces Modbus transactions by ~33%.
+        """
+        try:
+            runtime, energy, battery = await self._transport.read_all_input_data()  # type: ignore[union-attr]
+            self._transport_runtime = runtime
+            self._runtime_cache_time = datetime.now()
+            self._transport_energy = energy
+            self._energy_cache_time = datetime.now()
+            if battery is not None:
+                self._transport_battery = battery
+                await self._fetch_battery_metadata()
+                self._apply_battery_metadata()
+            self._battery_cache_time = datetime.now()
+        except Exception as err:
+            _LOGGER.debug("Combined input read failed for %s: %s", self.serial_number, err)
 
     async def _fetch_battery_metadata(self) -> None:
         """Fetch battery metadata from cloud API if stale or missing.

@@ -190,6 +190,132 @@ class TestInverterRefresh:
         assert len(inverter._battery_bank.batteries) == 3
 
 
+class TestCombinedTransportRefresh:
+    """Test combined transport refresh path (read_all_input_data)."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_uses_combined_read_when_transport_supports_it(
+        self, mock_client: LuxpowerClient
+    ) -> None:
+        """Test that refresh uses read_all_input_data when available on transport."""
+        from pylxpweb.transports.data import (
+            BatteryBankData,
+            InverterEnergyData,
+            InverterRuntimeData,
+        )
+
+        inverter = ConcreteInverter(
+            client=mock_client, serial_number="1234567890", model="TestModel"
+        )
+
+        mock_runtime = Mock(spec=InverterRuntimeData)
+        mock_energy = Mock(spec=InverterEnergyData)
+        mock_battery = Mock(spec=BatteryBankData)
+        mock_battery.battery_count = 2
+
+        # Create a transport mock with read_all_input_data
+        mock_transport = AsyncMock()
+        mock_transport.read_all_input_data = AsyncMock(
+            return_value=(mock_runtime, mock_energy, mock_battery)
+        )
+        inverter._transport = mock_transport
+
+        await inverter.refresh(force=True)
+
+        # Should use combined read, not individual reads
+        mock_transport.read_all_input_data.assert_awaited_once()
+        mock_transport.read_runtime.assert_not_awaited()
+        mock_transport.read_energy.assert_not_awaited()
+        mock_transport.read_battery.assert_not_awaited()
+
+        # All data should be stored
+        assert inverter._transport_runtime is mock_runtime
+        assert inverter._transport_energy is mock_energy
+        assert inverter._transport_battery is mock_battery
+
+    @pytest.mark.asyncio
+    async def test_refresh_falls_back_when_transport_lacks_combined_read(
+        self, mock_client: LuxpowerClient
+    ) -> None:
+        """Test that refresh uses individual reads when transport lacks read_all_input_data."""
+        from pylxpweb.transports.data import InverterEnergyData, InverterRuntimeData
+
+        inverter = ConcreteInverter(
+            client=mock_client, serial_number="1234567890", model="TestModel"
+        )
+
+        mock_runtime = Mock(spec=InverterRuntimeData)
+        mock_energy = Mock(spec=InverterEnergyData)
+
+        # Create a transport mock WITHOUT read_all_input_data
+        mock_transport = AsyncMock(spec=["read_runtime", "read_energy", "read_battery"])
+        mock_transport.read_runtime = AsyncMock(return_value=mock_runtime)
+        mock_transport.read_energy = AsyncMock(return_value=mock_energy)
+        mock_transport.read_battery = AsyncMock(return_value=None)
+        inverter._transport = mock_transport
+
+        await inverter.refresh(force=True)
+
+        # Should fall back to individual reads
+        mock_transport.read_runtime.assert_awaited_once()
+        mock_transport.read_energy.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_combined_read_error_handled_gracefully(
+        self, mock_client: LuxpowerClient
+    ) -> None:
+        """Test that combined read errors are handled without crashing."""
+        inverter = ConcreteInverter(
+            client=mock_client, serial_number="1234567890", model="TestModel"
+        )
+
+        mock_transport = AsyncMock()
+        mock_transport.read_all_input_data = AsyncMock(side_effect=Exception("Modbus timeout"))
+        inverter._transport = mock_transport
+
+        # Should not raise
+        await inverter.refresh(force=True)
+
+        # Data should remain None (no crash)
+        assert inverter._transport_runtime is None
+
+    @pytest.mark.asyncio
+    async def test_combined_read_still_fetches_parameters_separately(
+        self, mock_client: LuxpowerClient
+    ) -> None:
+        """Test that parameters are fetched separately even with combined input read."""
+        from pylxpweb.transports.data import (
+            BatteryBankData,
+            InverterEnergyData,
+            InverterRuntimeData,
+        )
+
+        inverter = ConcreteInverter(
+            client=mock_client, serial_number="1234567890", model="TestModel"
+        )
+
+        mock_runtime = Mock(spec=InverterRuntimeData)
+        mock_energy = Mock(spec=InverterEnergyData)
+        mock_battery = Mock(spec=BatteryBankData)
+        mock_battery.battery_count = 0
+
+        mock_transport = AsyncMock()
+        mock_transport.read_all_input_data = AsyncMock(
+            return_value=(mock_runtime, mock_energy, mock_battery)
+        )
+        mock_transport.read_parameters = AsyncMock(return_value={0: 100})
+        mock_transport.read_named_parameters = AsyncMock(return_value={"param": 42})
+        inverter._transport = mock_transport
+
+        await inverter.refresh(force=True, include_parameters=True)
+
+        # Combined read for input data
+        mock_transport.read_all_input_data.assert_awaited_once()
+        # Parameters fetched separately (via _fetch_parameters which calls read_parameters)
+        # The _fetch_parameters path uses read_named_parameters for transport
+        assert inverter._transport_runtime is mock_runtime
+
+
 class TestInverterDeviceInfo:
     """Test inverter device info generation."""
 

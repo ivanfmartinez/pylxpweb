@@ -477,3 +477,195 @@ class TestModbusRegisterReading:
 
             assert transport.is_connected is False
             mock_client.close.assert_called_once()
+
+
+class TestReadAllInputData:
+    """Tests for the combined read_all_input_data method."""
+
+    @pytest.mark.asyncio
+    async def test_read_all_returns_runtime_energy_battery(self) -> None:
+        """Test combined read returns all three data types from shared registers."""
+        transport = ModbusTransport(
+            host="192.168.1.100",
+            serial="CE12345678",
+        )
+
+        with patch("pymodbus.client.AsyncModbusTcpClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.connect = AsyncMock(return_value=True)
+            mock_client.close = MagicMock()
+
+            # Build a register response with battery data
+            registers = [0] * 172
+            registers[1] = 5100  # PV1 voltage (×10 = 510V)
+            registers[4] = 530  # Battery voltage (×10 = 53V)
+            registers[5] = (100 << 8) | 85  # SOC=85, SOH=100
+            registers[7] = 1000  # PV1 power
+            registers[10] = 500  # Charge power
+            registers[12] = 2410  # Grid voltage
+            registers[15] = 5998  # Grid frequency
+            registers[27] = 1500  # Load power
+            registers[96] = 0  # Battery count = 0 (no individual batteries)
+
+            mock_response = MagicMock()
+            mock_response.isError.return_value = False
+            mock_response.registers = registers[:32]
+
+            # Each register group read returns appropriate slice
+            call_idx = 0
+
+            async def mock_read(address: int, count: int, **kwargs: int) -> MagicMock:
+                nonlocal call_idx
+                resp = MagicMock()
+                resp.isError.return_value = False
+                resp.registers = registers[address : address + count]
+                call_idx += 1
+                return resp
+
+            mock_client.read_input_registers = mock_read
+            mock_client_class.return_value = mock_client
+
+            await transport.connect()
+            runtime, energy, battery = await transport.read_all_input_data()
+
+            # All three data types should be constructed
+            assert runtime is not None
+            assert energy is not None
+            assert runtime.pv1_voltage == pytest.approx(510.0, rel=0.01)
+            assert runtime.battery_soc == 85
+
+            # Should have made exactly 7 reads (one per register group)
+            assert call_idx == 7
+
+    @pytest.mark.asyncio
+    async def test_read_all_reads_individual_batteries(self) -> None:
+        """Test combined read includes individual battery registers when present."""
+        transport = ModbusTransport(
+            host="192.168.1.100",
+            serial="CE12345678",
+        )
+
+        with patch("pymodbus.client.AsyncModbusTcpClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.connect = AsyncMock(return_value=True)
+            mock_client.close = MagicMock()
+
+            # Build registers with battery_count = 2
+            registers = [0] * 172
+            registers[4] = 530  # Battery voltage
+            registers[5] = (100 << 8) | 85  # SOC/SOH
+            registers[96] = 2  # Battery count = 2
+
+            read_addresses: list[int] = []
+
+            async def mock_read(address: int, count: int, **kwargs: int) -> MagicMock:
+                read_addresses.append(address)
+                resp = MagicMock()
+                resp.isError.return_value = False
+                if address < 200:
+                    resp.registers = registers[address : address + count]
+                else:
+                    # Individual battery registers at 5002+
+                    resp.registers = [0] * count
+                return resp
+
+            mock_client.read_input_registers = mock_read
+            mock_client_class.return_value = mock_client
+
+            await transport.connect()
+            runtime, energy, battery = await transport.read_all_input_data()
+
+            # Should read 7 register groups + individual battery reads at 5002+
+            assert any(addr >= 5000 for addr in read_addresses)
+            # First 7 reads are the register groups
+            group_starts = [0, 32, 64, 80, 113, 140, 170]
+            for expected_start in group_starts:
+                assert expected_start in read_addresses
+
+    @pytest.mark.asyncio
+    async def test_read_all_fewer_reads_than_separate(self) -> None:
+        """Test combined read uses fewer Modbus reads than separate calls."""
+        transport = ModbusTransport(
+            host="192.168.1.100",
+            serial="CE12345678",
+        )
+
+        with patch("pymodbus.client.AsyncModbusTcpClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.connect = AsyncMock(return_value=True)
+            mock_client.close = MagicMock()
+
+            registers = [0] * 172
+            registers[4] = 530  # Battery voltage
+            registers[5] = (100 << 8) | 85  # SOC/SOH
+            registers[96] = 0  # No individual batteries
+
+            async def count_reads(address: int, count: int, **kwargs: int) -> MagicMock:
+                resp = MagicMock()
+                resp.isError.return_value = False
+                if address < 200:
+                    resp.registers = registers[address : address + count]
+                else:
+                    resp.registers = [0] * count
+                return resp
+
+            mock_client.read_input_registers = count_reads
+            mock_client_class.return_value = mock_client
+
+            await transport.connect()
+
+            # Count combined reads
+            original_read = mock_client.read_input_registers
+            call_count = 0
+
+            async def counting_read(address: int, count: int, **kwargs: int) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                return await original_read(address, count, **kwargs)
+
+            mock_client.read_input_registers = counting_read
+
+            await transport.read_all_input_data()
+            combined_reads = call_count
+
+            # Combined should use exactly 7 reads (no individual batteries)
+            assert combined_reads == 7
+
+    @pytest.mark.asyncio
+    async def test_read_all_survives_bms_data_failure(self) -> None:
+        """Test that bms_data failure is non-fatal, matching read_energy() resilience."""
+        transport = ModbusTransport(
+            host="192.168.1.100",
+            serial="CE12345678",
+        )
+
+        with patch("pymodbus.client.AsyncModbusTcpClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.connect = AsyncMock(return_value=True)
+            mock_client.close = MagicMock()
+
+            registers = [0] * 172
+            registers[4] = 530  # Battery voltage
+            registers[5] = (100 << 8) | 85  # SOC/SOH
+            registers[96] = 0  # No individual batteries
+
+            async def mock_read_with_bms_failure(
+                address: int, count: int, **kwargs: int
+            ) -> MagicMock:
+                # bms_data group starts at register 80
+                if address == 80:
+                    raise OSError("BMS communication timeout")
+                resp = MagicMock()
+                resp.isError.return_value = False
+                resp.registers = registers[address : address + count]
+                return resp
+
+            mock_client.read_input_registers = mock_read_with_bms_failure
+            mock_client_class.return_value = mock_client
+
+            await transport.connect()
+            runtime, energy, battery = await transport.read_all_input_data()
+
+            # Should succeed despite bms_data failure
+            assert runtime is not None
+            assert energy is not None
