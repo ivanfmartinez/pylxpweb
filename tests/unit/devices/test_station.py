@@ -1232,6 +1232,4 @@ class TestLoadDevicesParallelInvertersOnly:
         assert station.parallel_groups[0].first_device_serial == "1111111111"
 
         # Verify API was called with inverter serial (not GridBOSS)
-        mock_client.api.devices.get_parallel_group_details.assert_called_once_with(
-            "1111111111"
-        )
+        mock_client.api.devices.get_parallel_group_details.assert_called_once_with("1111111111")

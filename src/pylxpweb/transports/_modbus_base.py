@@ -33,12 +33,10 @@ from .protocol import BaseTransport
 if TYPE_CHECKING:
     from pylxpweb.devices.inverters._features import InverterFamily
     from pylxpweb.transports.data import BatteryBankData
-    from pylxpweb.transports.register_maps import (
-        EnergyRegisterMap,
-        RuntimeRegisterMap,
-    )
 
 _LOGGER = logging.getLogger(__name__)
+
+__all__ = ["BaseModbusTransport", "INPUT_REGISTER_GROUPS"]
 
 
 class BaseModbusTransport(RegisterDataMixin, BaseTransport):
@@ -119,20 +117,6 @@ class BaseModbusTransport(RegisterDataMixin, BaseTransport):
                 self._serial,
             )
         self._inverter_family = value
-
-    @property
-    def runtime_register_map(self) -> RuntimeRegisterMap:
-        """Get the runtime register map for this inverter family."""
-        from pylxpweb.transports.register_maps import get_runtime_map
-
-        return get_runtime_map(self._inverter_family)
-
-    @property
-    def energy_register_map(self) -> EnergyRegisterMap:
-        """Get the energy register map for this inverter family."""
-        from pylxpweb.transports.register_maps import get_energy_map
-
-        return get_energy_map(self._inverter_family)
 
     # ------------------------------------------------------------------
     # Register Read/Write (with retry and error tracking)

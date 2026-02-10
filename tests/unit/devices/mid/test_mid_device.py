@@ -13,6 +13,13 @@ from pylxpweb.devices.mid_device import MIDDevice
 from pylxpweb.devices.models import Entity
 from pylxpweb.exceptions import LuxpowerAPIError
 from pylxpweb.models import MidboxRuntime
+from pylxpweb.transports.data import MidboxRuntimeData
+
+
+def _apply_runtime(mid: MIDDevice, runtime: MidboxRuntime) -> None:
+    """Set runtime data the same way MIDDevice.refresh() does for HTTP."""
+    mid._runtime = runtime
+    mid._transport_runtime = MidboxRuntimeData.from_http_response(runtime.midboxData)
 
 
 @pytest.fixture
@@ -72,6 +79,7 @@ class TestMIDDeviceRefresh:
 
         # Verify data stored
         assert mid._runtime is sample_midbox_runtime
+        assert mid._transport_runtime is not None
         assert mid._last_refresh is not None
 
     @pytest.mark.asyncio
@@ -98,7 +106,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test has_data returns True when runtime available."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         assert mid.has_data is True
 
@@ -113,7 +121,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test grid_voltage property with scaling."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         # Sample has gridRmsVolt=2418, should be 241.8V
         assert mid.grid_voltage == pytest.approx(241.8, rel=0.01)
@@ -123,7 +131,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test ups_voltage property with scaling."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         # Sample has upsRmsVolt=2403, should be 240.3V
         assert mid.ups_voltage == pytest.approx(240.3, rel=0.01)
@@ -133,7 +141,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test grid_power property (L1 + L2)."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         # Sample has gridL1ActivePower=872, gridL2ActivePower=1169
         # Total = 2041W
@@ -144,7 +152,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test ups_power property (L1 + L2)."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         # Sample has upsL1ActivePower=827, upsL2ActivePower=1211
         # Total = 2038W
@@ -155,7 +163,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test hybrid_power property."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         # Sample has hybridPower=-2042
         assert mid.hybrid_power == -2042
@@ -165,7 +173,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test grid_frequency property with scaling."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         # Sample has gridFreq=5998, should be 59.98Hz
         assert mid.grid_frequency == pytest.approx(59.98, rel=0.01)
@@ -175,7 +183,7 @@ class TestMIDDeviceProperties:
     ) -> None:
         """Test firmware_version property."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         assert mid.firmware_version == "IAAB-1300"
 
@@ -197,7 +205,7 @@ class TestMIDDeviceEntities:
     ) -> None:
         """Test entity generation with runtime data."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         entities = mid.to_entities()
 
@@ -217,7 +225,7 @@ class TestMIDDeviceEntities:
     ) -> None:
         """Test all entities are Entity objects."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         entities = mid.to_entities()
 
@@ -228,7 +236,7 @@ class TestMIDDeviceEntities:
     ) -> None:
         """Test entities have correct device classes and units."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         entities = mid.to_entities()
         entities_by_id = {e.unique_id: e for e in entities}
@@ -257,7 +265,7 @@ class TestMIDDeviceDeviceInfo:
     ) -> None:
         """Test device info generation."""
         mid = MIDDevice(client=mock_client, serial_number="1234567890")
-        mid._runtime = sample_midbox_runtime
+        _apply_runtime(mid, sample_midbox_runtime)
 
         device_info = mid.to_device_info()
 

@@ -222,17 +222,27 @@ class TestInverterEnergyData:
             36: 150,  # Grid export today (15.0 kWh)
             37: 200,  # Grid import today / Etouser_day (20.0 kWh) - matches HTTP todayImport
             # Lifetime energy - 32-bit little-endian (low word, high word), scale 0.1 kWh
-            40: 10000, 41: 0,  # PV1 total (1000.0 kWh)
-            42: 8000, 43: 0,  # PV2 total (800.0 kWh)
-            44: 5000, 45: 0,  # PV3 total (500.0 kWh)
-            46: 50000, 47: 0,  # Inverter total (5000.0 kWh)
+            40: 10000,
+            41: 0,  # PV1 total (1000.0 kWh)
+            42: 8000,
+            43: 0,  # PV2 total (800.0 kWh)
+            44: 5000,
+            45: 0,  # PV3 total (500.0 kWh)
+            46: 50000,
+            47: 0,  # Inverter total (5000.0 kWh)
             # Grid/load totals - 32-bit little-endian pairs
-            48: 15000, 49: 0,  # Load total / Erec_all (1500.0 kWh)
-            50: 10000, 51: 0,  # Charge total (1000.0 kWh)
-            52: 8000, 53: 0,  # Discharge total (800.0 kWh)
-            54: 2000, 55: 0,  # EPS total (200.0 kWh)
-            56: 25000, 57: 0,  # Grid export total (2500.0 kWh)
-            58: 40000, 59: 0,  # Grid import total / Etouser_all (4000.0 kWh)
+            48: 15000,
+            49: 0,  # Load total / Erec_all (1500.0 kWh)
+            50: 10000,
+            51: 0,  # Charge total (1000.0 kWh)
+            52: 8000,
+            53: 0,  # Discharge total (800.0 kWh)
+            54: 2000,
+            55: 0,  # EPS total (200.0 kWh)
+            56: 25000,
+            57: 0,  # Grid export total (2500.0 kWh)
+            58: 40000,
+            59: 0,  # Grid import total / Etouser_all (4000.0 kWh)
         }
 
         data = InverterEnergyData.from_modbus_registers(input_regs)

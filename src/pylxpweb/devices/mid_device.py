@@ -175,8 +175,13 @@ class MIDDevice(FirmwareUpdateMixin, MIDRuntimePropertiesMixin, BaseDevice):
                     self.serial_number,
                 )
             elif self._client is not None:
+                from pylxpweb.transports.data import MidboxRuntimeData
+
                 self._runtime = await self._client.api.devices.get_midbox_runtime(
                     self.serial_number
+                )
+                self._transport_runtime = MidboxRuntimeData.from_http_response(
+                    self._runtime.midboxData
                 )
                 self._last_refresh = datetime.now()
             else:

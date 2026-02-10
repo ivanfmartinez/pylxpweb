@@ -9,7 +9,7 @@ reading/writing methods shared between ``BaseModbusTransport`` and
 - ``_write_holding_registers(start, values) -> None``
 - ``_serial: str``
 - ``_inter_register_delay: float``
-- ``runtime_register_map`` / ``energy_register_map`` properties
+- ``_inverter_family: InverterFamily | None``
 
 At *runtime* ``_DataMixinBase`` resolves to ``object`` so the MRO is
 unchanged.  Under ``TYPE_CHECKING`` it supplies typed stubs for mypy.
@@ -20,6 +20,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import TYPE_CHECKING
+
+from pylxpweb.registers import (
+    BATTERY_BASE_ADDRESS,
+    BATTERY_MAX_COUNT,
+    BATTERY_REGISTER_COUNT,
+)
 
 from ._register_readers import (
     is_midbox_device,
@@ -37,10 +43,7 @@ from .data import (
 from .exceptions import TransportReadError, TransportTimeoutError
 
 if TYPE_CHECKING:
-    from pylxpweb.transports.register_maps import (
-        EnergyRegisterMap,
-        RuntimeRegisterMap,
-    )
+    from pylxpweb.devices.inverters._features import InverterFamily
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ INPUT_REGISTER_GROUPS: dict[str, tuple[int, int]] = {
     "extended_data": (113, 18),  # Registers 113-130: Parallel config, generator, EPS
     "eps_split_phase": (140, 3),  # Registers 140-142: EPS L1/L2 voltages
     "output_power": (170, 2),  # Registers 170-171: Output power
+    "split_phase_grid": (193, 4),  # Registers 193-196: Split-phase grid L1/L2 voltages
 }
 
 # GridBOSS/MID register groups for ``read_midbox_runtime``
@@ -67,7 +71,7 @@ MIDBOX_REGISTER_GROUPS: list[tuple[int, int]] = [
     (0, 40),  # Voltages, currents, power, smart loads 1-3
     (40, 28),  # Smart load 4 power + energy today
     (68, 40),  # Energy totals
-    (108, 12),  # Smart port 4 status + AC couple totals
+    (108, 12),  # AC couple port 3-4 totals
     (128, 4),  # Frequencies
 ]
 
@@ -82,18 +86,13 @@ if TYPE_CHECKING:
 
         _serial: str
         _inter_register_delay: float
-
-        @property
-        def runtime_register_map(self) -> RuntimeRegisterMap: ...
-
-        @property
-        def energy_register_map(self) -> EnergyRegisterMap: ...
+        _inverter_family: InverterFamily | None
 
         async def _read_input_registers(self, start: int, count: int) -> list[int]: ...
 
         async def _read_holding_registers(self, start: int, count: int) -> list[int]: ...
 
-        async def _write_holding_registers(self, start: int, values: list[int]) -> None: ...
+        async def _write_holding_registers(self, start: int, values: list[int]) -> bool: ...
 
 else:
     _DataMixinBase = object
@@ -190,7 +189,8 @@ class RegisterDataMixin(_DataMixinBase):
             TransportReadError: If read operation fails.
         """
         input_registers = await self._read_register_groups()
-        return InverterRuntimeData.from_modbus_registers(input_registers, self.runtime_register_map)
+        family = self._inverter_family.value if self._inverter_family else "EG4_HYBRID"
+        return InverterRuntimeData.from_modbus_registers(input_registers, family)
 
     async def read_energy(self) -> InverterEnergyData:
         """Read energy statistics via input registers.
@@ -214,7 +214,8 @@ class RegisterDataMixin(_DataMixinBase):
                 self._serial,
             )
 
-        return InverterEnergyData.from_modbus_registers(input_registers, self.energy_register_map)
+        family = self._inverter_family.value if self._inverter_family else "EG4_HYBRID"
+        return InverterEnergyData.from_modbus_registers(input_registers, family)
 
     async def read_battery(
         self,
@@ -232,12 +233,6 @@ class RegisterDataMixin(_DataMixinBase):
         Raises:
             TransportReadError: If read operation fails.
         """
-        from pylxpweb.transports.register_maps import (
-            INDIVIDUAL_BATTERY_BASE_ADDRESS,
-            INDIVIDUAL_BATTERY_MAX_COUNT,
-            INDIVIDUAL_BATTERY_REGISTER_COUNT,
-        )
-
         all_registers: dict[int, int] = {}
 
         # Read core battery registers (power + BMS).
@@ -260,11 +255,11 @@ class RegisterDataMixin(_DataMixinBase):
 
         if include_individual and battery_count > 0:
             individual_registers = {}
-            batteries_to_read = min(battery_count, INDIVIDUAL_BATTERY_MAX_COUNT)
-            total_registers = batteries_to_read * INDIVIDUAL_BATTERY_REGISTER_COUNT
+            batteries_to_read = min(battery_count, BATTERY_MAX_COUNT)
+            total_registers = batteries_to_read * BATTERY_REGISTER_COUNT
 
             try:
-                current_addr = INDIVIDUAL_BATTERY_BASE_ADDRESS
+                current_addr = BATTERY_BASE_ADDRESS
                 remaining = total_registers
 
                 while remaining > 0:
@@ -277,7 +272,7 @@ class RegisterDataMixin(_DataMixinBase):
                 _LOGGER.debug(
                     "Read individual battery data for %d batteries from registers %d-%d",
                     batteries_to_read,
-                    INDIVIDUAL_BATTERY_BASE_ADDRESS,
+                    BATTERY_BASE_ADDRESS,
                     current_addr - 1,
                 )
             except Exception as e:
@@ -289,7 +284,6 @@ class RegisterDataMixin(_DataMixinBase):
 
         result = BatteryBankData.from_modbus_registers(
             all_registers,
-            self.runtime_register_map,
             individual_registers,
         )
 
@@ -316,12 +310,6 @@ class RegisterDataMixin(_DataMixinBase):
         Returns:
             Tuple of (runtime_data, energy_data, battery_data_or_none).
         """
-        from pylxpweb.transports.register_maps import (
-            INDIVIDUAL_BATTERY_BASE_ADDRESS,
-            INDIVIDUAL_BATTERY_MAX_COUNT,
-            INDIVIDUAL_BATTERY_REGISTER_COUNT,
-        )
-
         input_registers: dict[int, int] = {}
 
         for i, (group_name, (start, count)) in enumerate(INPUT_REGISTER_GROUPS.items()):
@@ -341,11 +329,11 @@ class RegisterDataMixin(_DataMixinBase):
             if i < len(INPUT_REGISTER_GROUPS) - 1:
                 await asyncio.sleep(self._inter_register_delay)
 
+        family = self._inverter_family.value if self._inverter_family else "EG4_HYBRID"
+
         # Construct all three data types from the shared snapshot
-        runtime = InverterRuntimeData.from_modbus_registers(
-            input_registers, self.runtime_register_map
-        )
-        energy = InverterEnergyData.from_modbus_registers(input_registers, self.energy_register_map)
+        runtime = InverterRuntimeData.from_modbus_registers(input_registers, family)
+        energy = InverterEnergyData.from_modbus_registers(input_registers, family)
 
         # Read individual battery registers (5000+) if present
         battery_count = input_registers.get(96, 0)
@@ -353,11 +341,11 @@ class RegisterDataMixin(_DataMixinBase):
 
         if battery_count > 0:
             individual_registers = {}
-            batteries_to_read = min(battery_count, INDIVIDUAL_BATTERY_MAX_COUNT)
-            total_registers = batteries_to_read * INDIVIDUAL_BATTERY_REGISTER_COUNT
+            batteries_to_read = min(battery_count, BATTERY_MAX_COUNT)
+            total_registers = batteries_to_read * BATTERY_REGISTER_COUNT
 
             try:
-                current_addr = INDIVIDUAL_BATTERY_BASE_ADDRESS
+                current_addr = BATTERY_BASE_ADDRESS
                 remaining = total_registers
 
                 while remaining > 0:
@@ -372,7 +360,6 @@ class RegisterDataMixin(_DataMixinBase):
 
         battery = BatteryBankData.from_modbus_registers(
             input_registers,
-            self.runtime_register_map,
             individual_registers,
         )
 
@@ -387,11 +374,6 @@ class RegisterDataMixin(_DataMixinBase):
         Raises:
             TransportReadError: If read operation fails.
         """
-        from pylxpweb.transports.register_maps import (
-            GRIDBOSS_ENERGY_MAP,
-            GRIDBOSS_RUNTIME_MAP,
-        )
-
         input_registers: dict[int, int] = {}
 
         try:
@@ -406,8 +388,18 @@ class RegisterDataMixin(_DataMixinBase):
             _LOGGER.error("Failed to read MID input registers: %s", e)
             raise TransportReadError(f"Failed to read MID registers: {e}") from e
 
+        # Smart port mode is stored as a bit-packed value in holding register 20
+        # (2 bits per port, LSB-first: bits 0-1 = port 1, bits 2-3 = port 2, etc.)
+        # Values: 0 = off, 1 = smart_load, 2 = ac_couple
+        smart_port_mode_reg: int | None = None
+        try:
+            holding_vals = await self._read_holding_registers(20, 1)
+            smart_port_mode_reg = holding_vals[0]
+        except Exception:
+            _LOGGER.debug("Failed to read smart port mode register 20")
+
         return MidboxRuntimeData.from_modbus_registers(
-            input_registers, GRIDBOSS_RUNTIME_MAP, GRIDBOSS_ENERGY_MAP
+            input_registers, smart_port_mode_reg=smart_port_mode_reg
         )
 
     async def read_parameters(

@@ -1,47 +1,45 @@
 """Runtime properties mixin for MIDDevice (GridBOSS).
 
 This mixin provides properly-scaled property accessors for all GridBOSS
-sensor data.  It supports two data sources:
+sensor data.  ``_transport_runtime`` (a ``MidboxRuntimeData`` dataclass)
+is the single data source — it is populated by both the Modbus/Dongle
+transport (via ``from_modbus_registers()``) and the HTTP API (via
+``from_http_response()``).  Both factory methods produce final, scaled
+values (V, A, W, Hz, kWh), so property accessors are simple pass-throughs.
 
-- ``_transport_runtime`` (`MidboxRuntimeData`): Pre-scaled values from
-  Modbus/Dongle transport — checked first.
-- ``_runtime`` (`MidboxRuntime`): Raw values from the HTTP API — fallback
-  that applies scaling functions before returning.
+``_runtime`` (``MidboxRuntime``) is only kept for HTTP-only metadata
+(firmware version, off-grid status, server/device timestamps).
 
-Two helper methods eliminate per-property boilerplate:
+Helper methods:
 
-- ``_scaled(transport_attr, http_attr, scale_fn)`` — for values that need
-  a scaling function in HTTP mode (voltage, current, frequency, energy).
-- ``_raw(transport_attr, http_attr)`` — for values with the same scale
-  in both modes (power, smart-port status).
+- ``_raw_float(transport_attr, http_attr)`` — read a pre-scaled float.
+- ``_raw_int(transport_attr, http_attr)`` — read an int (smart port status).
 
 Aggregate properties (e.g. ``grid_power``, ``e_ups_today``) delegate to
-per-phase properties so the dual-source logic is handled in one place.
+per-phase properties so the access logic is handled in one place.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pylxpweb.constants import scale_mid_current, scale_mid_frequency, scale_mid_voltage
-
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from pylxpweb.models import MidboxRuntime
     from pylxpweb.transports.data import MidboxRuntimeData
 
 
 def _safe_sum(*values: int | float | None) -> float | None:
-    """Sum values, returning None if all are None, treating individual Nones as 0."""
+    """Sum values, returning None if all are None, treating individual Nones as 0.
+
+    Note: GridBOSS aggregates (grid_power, ups_power, load_power) use per-phase
+    CT summation (L1 + L2) via this helper.  Inverter aggregates use a different
+    strategy — energy balance computed in the HA coordinator (coordinator_mixins.py,
+    coordinator_local.py).  The two strategies differ because GridBOSS has direct
+    CT measurements per phase while inverters only expose total values.
+    """
     if all(v is None for v in values):
         return None
     return sum(v for v in values if v is not None)
-
-
-def _scale_energy(val: int | float) -> float:
-    """Scale MID energy value from 0.1 kWh to kWh."""
-    return float(val) / 10.0
 
 
 class MIDRuntimePropertiesMixin:
@@ -54,47 +52,38 @@ class MIDRuntimePropertiesMixin:
     # Data Access Helpers
     # ===========================================
 
-    def _scaled(
-        self,
-        transport_attr: str,
-        http_attr: str,
-        scale_fn: Callable[[int | float], float],
-    ) -> float | None:
-        """Get a value that needs scaling in HTTP mode.
-
-        Transport data is pre-scaled; HTTP data needs *scale_fn* applied.
-        """
-        tr = self._transport_runtime
-        if tr is not None:
-            return getattr(tr, transport_attr, None)
-        if self._runtime is None:
-            return None
-        val = getattr(self._runtime.midboxData, http_attr, None)
-        return scale_fn(val) if val is not None else None
-
     def _raw_float(self, transport_attr: str, http_attr: str) -> float | None:
         """Get a numeric value that has the same scale in both modes.
 
         Returns the value as-is (int from HTTP, float from transport).
         Both are subtypes of ``float`` in the Python type system.
+
+        Falls through to HTTP data when the transport value is None,
+        supporting hybrid mode where holding register data (parameters)
+        may not be loaded yet while HTTP data is already available.
         """
         val: float | None
         tr = self._transport_runtime
         if tr is not None:
             val = getattr(tr, transport_attr, None)
-            return val
+            if val is not None:
+                return val
         if self._runtime is None:
             return None
         val = getattr(self._runtime.midboxData, http_attr, None)
         return val
 
     def _raw_int(self, transport_attr: str, http_attr: str) -> int | None:
-        """Get an integer value that has the same scale in both modes."""
+        """Get an integer value that has the same scale in both modes.
+
+        Falls through to HTTP data when the transport value is None.
+        """
         val: int | None
         tr = self._transport_runtime
         if tr is not None:
             val = getattr(tr, transport_attr, None)
-            return val
+            if val is not None:
+                return val
         if self._runtime is None:
             return None
         val = getattr(self._runtime.midboxData, http_attr, None)
@@ -156,17 +145,17 @@ class MIDRuntimePropertiesMixin:
     @property
     def grid_voltage(self) -> float | None:
         """Get aggregate grid voltage in volts."""
-        return self._scaled("grid_voltage", "gridRmsVolt", scale_mid_voltage)
+        return self._raw_float("grid_voltage", "gridRmsVolt")
 
     @property
     def ups_voltage(self) -> float | None:
         """Get aggregate UPS voltage in volts."""
-        return self._scaled("ups_voltage", "upsRmsVolt", scale_mid_voltage)
+        return self._raw_float("ups_voltage", "upsRmsVolt")
 
     @property
     def generator_voltage(self) -> float | None:
         """Get aggregate generator voltage in volts."""
-        return self._scaled("gen_voltage", "genRmsVolt", scale_mid_voltage)
+        return self._raw_float("gen_voltage", "genRmsVolt")
 
     # ===========================================
     # Voltage Properties - Grid Per-Phase
@@ -175,12 +164,12 @@ class MIDRuntimePropertiesMixin:
     @property
     def grid_l1_voltage(self) -> float | None:
         """Get grid L1 voltage in volts."""
-        return self._scaled("grid_l1_voltage", "gridL1RmsVolt", scale_mid_voltage)
+        return self._raw_float("grid_l1_voltage", "gridL1RmsVolt")
 
     @property
     def grid_l2_voltage(self) -> float | None:
         """Get grid L2 voltage in volts."""
-        return self._scaled("grid_l2_voltage", "gridL2RmsVolt", scale_mid_voltage)
+        return self._raw_float("grid_l2_voltage", "gridL2RmsVolt")
 
     # ===========================================
     # Voltage Properties - UPS Per-Phase
@@ -189,12 +178,12 @@ class MIDRuntimePropertiesMixin:
     @property
     def ups_l1_voltage(self) -> float | None:
         """Get UPS L1 voltage in volts."""
-        return self._scaled("ups_l1_voltage", "upsL1RmsVolt", scale_mid_voltage)
+        return self._raw_float("ups_l1_voltage", "upsL1RmsVolt")
 
     @property
     def ups_l2_voltage(self) -> float | None:
         """Get UPS L2 voltage in volts."""
-        return self._scaled("ups_l2_voltage", "upsL2RmsVolt", scale_mid_voltage)
+        return self._raw_float("ups_l2_voltage", "upsL2RmsVolt")
 
     # ===========================================
     # Voltage Properties - Generator Per-Phase
@@ -203,12 +192,12 @@ class MIDRuntimePropertiesMixin:
     @property
     def generator_l1_voltage(self) -> float | None:
         """Get generator L1 voltage in volts."""
-        return self._scaled("gen_l1_voltage", "genL1RmsVolt", scale_mid_voltage)
+        return self._raw_float("gen_l1_voltage", "genL1RmsVolt")
 
     @property
     def generator_l2_voltage(self) -> float | None:
         """Get generator L2 voltage in volts."""
-        return self._scaled("gen_l2_voltage", "genL2RmsVolt", scale_mid_voltage)
+        return self._raw_float("gen_l2_voltage", "genL2RmsVolt")
 
     # ===========================================
     # Current Properties - Grid
@@ -217,12 +206,12 @@ class MIDRuntimePropertiesMixin:
     @property
     def grid_l1_current(self) -> float | None:
         """Get grid L1 current in amps."""
-        return self._scaled("grid_l1_current", "gridL1RmsCurr", scale_mid_current)
+        return self._raw_float("grid_l1_current", "gridL1RmsCurr")
 
     @property
     def grid_l2_current(self) -> float | None:
         """Get grid L2 current in amps."""
-        return self._scaled("grid_l2_current", "gridL2RmsCurr", scale_mid_current)
+        return self._raw_float("grid_l2_current", "gridL2RmsCurr")
 
     # ===========================================
     # Current Properties - Load
@@ -231,12 +220,12 @@ class MIDRuntimePropertiesMixin:
     @property
     def load_l1_current(self) -> float | None:
         """Get load L1 current in amps."""
-        return self._scaled("load_l1_current", "loadL1RmsCurr", scale_mid_current)
+        return self._raw_float("load_l1_current", "loadL1RmsCurr")
 
     @property
     def load_l2_current(self) -> float | None:
         """Get load L2 current in amps."""
-        return self._scaled("load_l2_current", "loadL2RmsCurr", scale_mid_current)
+        return self._raw_float("load_l2_current", "loadL2RmsCurr")
 
     # ===========================================
     # Current Properties - Generator
@@ -245,12 +234,12 @@ class MIDRuntimePropertiesMixin:
     @property
     def generator_l1_current(self) -> float | None:
         """Get generator L1 current in amps."""
-        return self._scaled("gen_l1_current", "genL1RmsCurr", scale_mid_current)
+        return self._raw_float("gen_l1_current", "genL1RmsCurr")
 
     @property
     def generator_l2_current(self) -> float | None:
         """Get generator L2 current in amps."""
-        return self._scaled("gen_l2_current", "genL2RmsCurr", scale_mid_current)
+        return self._raw_float("gen_l2_current", "genL2RmsCurr")
 
     # ===========================================
     # Current Properties - UPS
@@ -259,12 +248,12 @@ class MIDRuntimePropertiesMixin:
     @property
     def ups_l1_current(self) -> float | None:
         """Get UPS L1 current in amps."""
-        return self._scaled("ups_l1_current", "upsL1RmsCurr", scale_mid_current)
+        return self._raw_float("ups_l1_current", "upsL1RmsCurr")
 
     @property
     def ups_l2_current(self) -> float | None:
         """Get UPS L2 current in amps."""
-        return self._scaled("ups_l2_current", "upsL2RmsCurr", scale_mid_current)
+        return self._raw_float("ups_l2_current", "upsL2RmsCurr")
 
     # ===========================================
     # Power Properties - Per-Phase
@@ -342,17 +331,17 @@ class MIDRuntimePropertiesMixin:
     @property
     def phase_lock_frequency(self) -> float | None:
         """Get PLL (phase-lock loop) frequency in Hz."""
-        return self._scaled("phase_lock_freq", "phaseLockFreq", scale_mid_frequency)
+        return self._raw_float("phase_lock_freq", "phaseLockFreq")
 
     @property
     def grid_frequency(self) -> float | None:
         """Get grid frequency in Hz."""
-        return self._scaled("grid_frequency", "gridFreq", scale_mid_frequency)
+        return self._raw_float("grid_frequency", "gridFreq")
 
     @property
     def generator_frequency(self) -> float | None:
         """Get generator frequency in Hz."""
-        return self._scaled("gen_frequency", "genFreq", scale_mid_frequency)
+        return self._raw_float("gen_frequency", "genFreq")
 
     # ===========================================
     # Smart Port Status
@@ -570,253 +559,253 @@ class MIDRuntimePropertiesMixin:
     @property
     def e_ups_today_l1(self) -> float | None:
         """Get UPS L1 energy today in kWh."""
-        return self._scaled("ups_energy_today_l1", "eUpsTodayL1", _scale_energy)
+        return self._raw_float("ups_energy_today_l1", "eUpsTodayL1")
 
     @property
     def e_ups_today_l2(self) -> float | None:
         """Get UPS L2 energy today in kWh."""
-        return self._scaled("ups_energy_today_l2", "eUpsTodayL2", _scale_energy)
+        return self._raw_float("ups_energy_today_l2", "eUpsTodayL2")
 
     @property
     def e_ups_total_l1(self) -> float | None:
         """Get UPS L1 lifetime energy in kWh."""
-        return self._scaled("ups_energy_total_l1", "eUpsTotalL1", _scale_energy)
+        return self._raw_float("ups_energy_total_l1", "eUpsTotalL1")
 
     @property
     def e_ups_total_l2(self) -> float | None:
         """Get UPS L2 lifetime energy in kWh."""
-        return self._scaled("ups_energy_total_l2", "eUpsTotalL2", _scale_energy)
+        return self._raw_float("ups_energy_total_l2", "eUpsTotalL2")
 
     # Grid Export
     @property
     def e_to_grid_today_l1(self) -> float | None:
         """Get grid export L1 energy today in kWh."""
-        return self._scaled("to_grid_energy_today_l1", "eToGridTodayL1", _scale_energy)
+        return self._raw_float("to_grid_energy_today_l1", "eToGridTodayL1")
 
     @property
     def e_to_grid_today_l2(self) -> float | None:
         """Get grid export L2 energy today in kWh."""
-        return self._scaled("to_grid_energy_today_l2", "eToGridTodayL2", _scale_energy)
+        return self._raw_float("to_grid_energy_today_l2", "eToGridTodayL2")
 
     @property
     def e_to_grid_total_l1(self) -> float | None:
         """Get grid export L1 lifetime energy in kWh."""
-        return self._scaled("to_grid_energy_total_l1", "eToGridTotalL1", _scale_energy)
+        return self._raw_float("to_grid_energy_total_l1", "eToGridTotalL1")
 
     @property
     def e_to_grid_total_l2(self) -> float | None:
         """Get grid export L2 lifetime energy in kWh."""
-        return self._scaled("to_grid_energy_total_l2", "eToGridTotalL2", _scale_energy)
+        return self._raw_float("to_grid_energy_total_l2", "eToGridTotalL2")
 
     # Grid Import
     @property
     def e_to_user_today_l1(self) -> float | None:
         """Get grid import L1 energy today in kWh."""
-        return self._scaled("to_user_energy_today_l1", "eToUserTodayL1", _scale_energy)
+        return self._raw_float("to_user_energy_today_l1", "eToUserTodayL1")
 
     @property
     def e_to_user_today_l2(self) -> float | None:
         """Get grid import L2 energy today in kWh."""
-        return self._scaled("to_user_energy_today_l2", "eToUserTodayL2", _scale_energy)
+        return self._raw_float("to_user_energy_today_l2", "eToUserTodayL2")
 
     @property
     def e_to_user_total_l1(self) -> float | None:
         """Get grid import L1 lifetime energy in kWh."""
-        return self._scaled("to_user_energy_total_l1", "eToUserTotalL1", _scale_energy)
+        return self._raw_float("to_user_energy_total_l1", "eToUserTotalL1")
 
     @property
     def e_to_user_total_l2(self) -> float | None:
         """Get grid import L2 lifetime energy in kWh."""
-        return self._scaled("to_user_energy_total_l2", "eToUserTotalL2", _scale_energy)
+        return self._raw_float("to_user_energy_total_l2", "eToUserTotalL2")
 
     # Load
     @property
     def e_load_today_l1(self) -> float | None:
         """Get load L1 energy today in kWh."""
-        return self._scaled("load_energy_today_l1", "eLoadTodayL1", _scale_energy)
+        return self._raw_float("load_energy_today_l1", "eLoadTodayL1")
 
     @property
     def e_load_today_l2(self) -> float | None:
         """Get load L2 energy today in kWh."""
-        return self._scaled("load_energy_today_l2", "eLoadTodayL2", _scale_energy)
+        return self._raw_float("load_energy_today_l2", "eLoadTodayL2")
 
     @property
     def e_load_total_l1(self) -> float | None:
         """Get load L1 lifetime energy in kWh."""
-        return self._scaled("load_energy_total_l1", "eLoadTotalL1", _scale_energy)
+        return self._raw_float("load_energy_total_l1", "eLoadTotalL1")
 
     @property
     def e_load_total_l2(self) -> float | None:
         """Get load L2 lifetime energy in kWh."""
-        return self._scaled("load_energy_total_l2", "eLoadTotalL2", _scale_energy)
+        return self._raw_float("load_energy_total_l2", "eLoadTotalL2")
 
     # AC Couple 1
     @property
     def e_ac_couple1_today_l1(self) -> float | None:
         """Get AC Couple 1 L1 energy today in kWh."""
-        return self._scaled("ac_couple_1_energy_today_l1", "eACcouple1TodayL1", _scale_energy)
+        return self._raw_float("ac_couple_1_energy_today_l1", "eACcouple1TodayL1")
 
     @property
     def e_ac_couple1_today_l2(self) -> float | None:
         """Get AC Couple 1 L2 energy today in kWh."""
-        return self._scaled("ac_couple_1_energy_today_l2", "eACcouple1TodayL2", _scale_energy)
+        return self._raw_float("ac_couple_1_energy_today_l2", "eACcouple1TodayL2")
 
     @property
     def e_ac_couple1_total_l1(self) -> float | None:
         """Get AC Couple 1 L1 lifetime energy in kWh."""
-        return self._scaled("ac_couple_1_energy_total_l1", "eACcouple1TotalL1", _scale_energy)
+        return self._raw_float("ac_couple_1_energy_total_l1", "eACcouple1TotalL1")
 
     @property
     def e_ac_couple1_total_l2(self) -> float | None:
         """Get AC Couple 1 L2 lifetime energy in kWh."""
-        return self._scaled("ac_couple_1_energy_total_l2", "eACcouple1TotalL2", _scale_energy)
+        return self._raw_float("ac_couple_1_energy_total_l2", "eACcouple1TotalL2")
 
     # AC Couple 2
     @property
     def e_ac_couple2_today_l1(self) -> float | None:
         """Get AC Couple 2 L1 energy today in kWh."""
-        return self._scaled("ac_couple_2_energy_today_l1", "eACcouple2TodayL1", _scale_energy)
+        return self._raw_float("ac_couple_2_energy_today_l1", "eACcouple2TodayL1")
 
     @property
     def e_ac_couple2_today_l2(self) -> float | None:
         """Get AC Couple 2 L2 energy today in kWh."""
-        return self._scaled("ac_couple_2_energy_today_l2", "eACcouple2TodayL2", _scale_energy)
+        return self._raw_float("ac_couple_2_energy_today_l2", "eACcouple2TodayL2")
 
     @property
     def e_ac_couple2_total_l1(self) -> float | None:
         """Get AC Couple 2 L1 lifetime energy in kWh."""
-        return self._scaled("ac_couple_2_energy_total_l1", "eACcouple2TotalL1", _scale_energy)
+        return self._raw_float("ac_couple_2_energy_total_l1", "eACcouple2TotalL1")
 
     @property
     def e_ac_couple2_total_l2(self) -> float | None:
         """Get AC Couple 2 L2 lifetime energy in kWh."""
-        return self._scaled("ac_couple_2_energy_total_l2", "eACcouple2TotalL2", _scale_energy)
+        return self._raw_float("ac_couple_2_energy_total_l2", "eACcouple2TotalL2")
 
     # AC Couple 3
     @property
     def e_ac_couple3_today_l1(self) -> float | None:
         """Get AC Couple 3 L1 energy today in kWh."""
-        return self._scaled("ac_couple_3_energy_today_l1", "eACcouple3TodayL1", _scale_energy)
+        return self._raw_float("ac_couple_3_energy_today_l1", "eACcouple3TodayL1")
 
     @property
     def e_ac_couple3_today_l2(self) -> float | None:
         """Get AC Couple 3 L2 energy today in kWh."""
-        return self._scaled("ac_couple_3_energy_today_l2", "eACcouple3TodayL2", _scale_energy)
+        return self._raw_float("ac_couple_3_energy_today_l2", "eACcouple3TodayL2")
 
     @property
     def e_ac_couple3_total_l1(self) -> float | None:
         """Get AC Couple 3 L1 lifetime energy in kWh."""
-        return self._scaled("ac_couple_3_energy_total_l1", "eACcouple3TotalL1", _scale_energy)
+        return self._raw_float("ac_couple_3_energy_total_l1", "eACcouple3TotalL1")
 
     @property
     def e_ac_couple3_total_l2(self) -> float | None:
         """Get AC Couple 3 L2 lifetime energy in kWh."""
-        return self._scaled("ac_couple_3_energy_total_l2", "eACcouple3TotalL2", _scale_energy)
+        return self._raw_float("ac_couple_3_energy_total_l2", "eACcouple3TotalL2")
 
     # AC Couple 4
     @property
     def e_ac_couple4_today_l1(self) -> float | None:
         """Get AC Couple 4 L1 energy today in kWh."""
-        return self._scaled("ac_couple_4_energy_today_l1", "eACcouple4TodayL1", _scale_energy)
+        return self._raw_float("ac_couple_4_energy_today_l1", "eACcouple4TodayL1")
 
     @property
     def e_ac_couple4_today_l2(self) -> float | None:
         """Get AC Couple 4 L2 energy today in kWh."""
-        return self._scaled("ac_couple_4_energy_today_l2", "eACcouple4TodayL2", _scale_energy)
+        return self._raw_float("ac_couple_4_energy_today_l2", "eACcouple4TodayL2")
 
     @property
     def e_ac_couple4_total_l1(self) -> float | None:
         """Get AC Couple 4 L1 lifetime energy in kWh."""
-        return self._scaled("ac_couple_4_energy_total_l1", "eACcouple4TotalL1", _scale_energy)
+        return self._raw_float("ac_couple_4_energy_total_l1", "eACcouple4TotalL1")
 
     @property
     def e_ac_couple4_total_l2(self) -> float | None:
         """Get AC Couple 4 L2 lifetime energy in kWh."""
-        return self._scaled("ac_couple_4_energy_total_l2", "eACcouple4TotalL2", _scale_energy)
+        return self._raw_float("ac_couple_4_energy_total_l2", "eACcouple4TotalL2")
 
     # Smart Load 1
     @property
     def e_smart_load1_today_l1(self) -> float | None:
         """Get Smart Load 1 L1 energy today in kWh."""
-        return self._scaled("smart_load_1_energy_today_l1", "eSmartLoad1TodayL1", _scale_energy)
+        return self._raw_float("smart_load_1_energy_today_l1", "eSmartLoad1TodayL1")
 
     @property
     def e_smart_load1_today_l2(self) -> float | None:
         """Get Smart Load 1 L2 energy today in kWh."""
-        return self._scaled("smart_load_1_energy_today_l2", "eSmartLoad1TodayL2", _scale_energy)
+        return self._raw_float("smart_load_1_energy_today_l2", "eSmartLoad1TodayL2")
 
     @property
     def e_smart_load1_total_l1(self) -> float | None:
         """Get Smart Load 1 L1 lifetime energy in kWh."""
-        return self._scaled("smart_load_1_energy_total_l1", "eSmartLoad1TotalL1", _scale_energy)
+        return self._raw_float("smart_load_1_energy_total_l1", "eSmartLoad1TotalL1")
 
     @property
     def e_smart_load1_total_l2(self) -> float | None:
         """Get Smart Load 1 L2 lifetime energy in kWh."""
-        return self._scaled("smart_load_1_energy_total_l2", "eSmartLoad1TotalL2", _scale_energy)
+        return self._raw_float("smart_load_1_energy_total_l2", "eSmartLoad1TotalL2")
 
     # Smart Load 2
     @property
     def e_smart_load2_today_l1(self) -> float | None:
         """Get Smart Load 2 L1 energy today in kWh."""
-        return self._scaled("smart_load_2_energy_today_l1", "eSmartLoad2TodayL1", _scale_energy)
+        return self._raw_float("smart_load_2_energy_today_l1", "eSmartLoad2TodayL1")
 
     @property
     def e_smart_load2_today_l2(self) -> float | None:
         """Get Smart Load 2 L2 energy today in kWh."""
-        return self._scaled("smart_load_2_energy_today_l2", "eSmartLoad2TodayL2", _scale_energy)
+        return self._raw_float("smart_load_2_energy_today_l2", "eSmartLoad2TodayL2")
 
     @property
     def e_smart_load2_total_l1(self) -> float | None:
         """Get Smart Load 2 L1 lifetime energy in kWh."""
-        return self._scaled("smart_load_2_energy_total_l1", "eSmartLoad2TotalL1", _scale_energy)
+        return self._raw_float("smart_load_2_energy_total_l1", "eSmartLoad2TotalL1")
 
     @property
     def e_smart_load2_total_l2(self) -> float | None:
         """Get Smart Load 2 L2 lifetime energy in kWh."""
-        return self._scaled("smart_load_2_energy_total_l2", "eSmartLoad2TotalL2", _scale_energy)
+        return self._raw_float("smart_load_2_energy_total_l2", "eSmartLoad2TotalL2")
 
     # Smart Load 3
     @property
     def e_smart_load3_today_l1(self) -> float | None:
         """Get Smart Load 3 L1 energy today in kWh."""
-        return self._scaled("smart_load_3_energy_today_l1", "eSmartLoad3TodayL1", _scale_energy)
+        return self._raw_float("smart_load_3_energy_today_l1", "eSmartLoad3TodayL1")
 
     @property
     def e_smart_load3_today_l2(self) -> float | None:
         """Get Smart Load 3 L2 energy today in kWh."""
-        return self._scaled("smart_load_3_energy_today_l2", "eSmartLoad3TodayL2", _scale_energy)
+        return self._raw_float("smart_load_3_energy_today_l2", "eSmartLoad3TodayL2")
 
     @property
     def e_smart_load3_total_l1(self) -> float | None:
         """Get Smart Load 3 L1 lifetime energy in kWh."""
-        return self._scaled("smart_load_3_energy_total_l1", "eSmartLoad3TotalL1", _scale_energy)
+        return self._raw_float("smart_load_3_energy_total_l1", "eSmartLoad3TotalL1")
 
     @property
     def e_smart_load3_total_l2(self) -> float | None:
         """Get Smart Load 3 L2 lifetime energy in kWh."""
-        return self._scaled("smart_load_3_energy_total_l2", "eSmartLoad3TotalL2", _scale_energy)
+        return self._raw_float("smart_load_3_energy_total_l2", "eSmartLoad3TotalL2")
 
     # Smart Load 4
     @property
     def e_smart_load4_today_l1(self) -> float | None:
         """Get Smart Load 4 L1 energy today in kWh."""
-        return self._scaled("smart_load_4_energy_today_l1", "eSmartLoad4TodayL1", _scale_energy)
+        return self._raw_float("smart_load_4_energy_today_l1", "eSmartLoad4TodayL1")
 
     @property
     def e_smart_load4_today_l2(self) -> float | None:
         """Get Smart Load 4 L2 energy today in kWh."""
-        return self._scaled("smart_load_4_energy_today_l2", "eSmartLoad4TodayL2", _scale_energy)
+        return self._raw_float("smart_load_4_energy_today_l2", "eSmartLoad4TodayL2")
 
     @property
     def e_smart_load4_total_l1(self) -> float | None:
         """Get Smart Load 4 L1 lifetime energy in kWh."""
-        return self._scaled("smart_load_4_energy_total_l1", "eSmartLoad4TotalL1", _scale_energy)
+        return self._raw_float("smart_load_4_energy_total_l1", "eSmartLoad4TotalL1")
 
     @property
     def e_smart_load4_total_l2(self) -> float | None:
         """Get Smart Load 4 L2 lifetime energy in kWh."""
-        return self._scaled("smart_load_4_energy_total_l2", "eSmartLoad4TotalL2", _scale_energy)
+        return self._raw_float("smart_load_4_energy_total_l2", "eSmartLoad4TotalL2")
 
     # ===========================================
     # Aggregate Energy Properties (L1 + L2)

@@ -130,15 +130,15 @@ class TestPVProperties:
         assert inverter_with_runtime.pv3_power == 0
         assert inverter_with_runtime.pv_total_power == 2700
 
-    def test_pv_properties_return_defaults_when_none(self, inverter_without_runtime):
-        """Verify PV properties return defaults when runtime is None."""
-        assert inverter_without_runtime.pv1_voltage == 0.0
-        assert inverter_without_runtime.pv2_voltage == 0.0
-        assert inverter_without_runtime.pv3_voltage == 0.0
-        assert inverter_without_runtime.pv1_power == 0
-        assert inverter_without_runtime.pv2_power == 0
-        assert inverter_without_runtime.pv3_power == 0
-        assert inverter_without_runtime.pv_total_power == 0
+    def test_pv_properties_return_none_when_no_data(self, inverter_without_runtime):
+        """Verify PV properties return None when runtime is None."""
+        assert inverter_without_runtime.pv1_voltage is None
+        assert inverter_without_runtime.pv2_voltage is None
+        assert inverter_without_runtime.pv3_voltage is None
+        assert inverter_without_runtime.pv1_power is None
+        assert inverter_without_runtime.pv2_power is None
+        assert inverter_without_runtime.pv3_power is None
+        assert inverter_without_runtime.pv_total_power is None
 
     def test_pv_voltage_types(self, inverter_with_runtime):
         """Verify PV voltages return float type."""
@@ -167,13 +167,13 @@ class TestACGridProperties:
         """Verify grid frequency uses ÷100 scaling."""
         assert inverter_with_runtime.grid_frequency == 59.98
 
-    def test_grid_properties_return_defaults_when_none(self, inverter_without_runtime):
-        """Verify grid properties return defaults when runtime is None."""
-        assert inverter_without_runtime.grid_voltage_r == 0.0
-        assert inverter_without_runtime.grid_voltage_s == 0.0
-        assert inverter_without_runtime.grid_voltage_t == 0.0
-        assert inverter_without_runtime.grid_frequency == 0.0
-        assert inverter_without_runtime.power_factor == ""
+    def test_grid_properties_return_none_when_no_data(self, inverter_without_runtime):
+        """Verify grid properties return None when runtime is None."""
+        assert inverter_without_runtime.grid_voltage_r is None
+        assert inverter_without_runtime.grid_voltage_s is None
+        assert inverter_without_runtime.grid_voltage_t is None
+        assert inverter_without_runtime.grid_frequency is None
+        assert inverter_without_runtime.power_factor is None
 
 
 class TestEPSProperties:
@@ -282,7 +282,7 @@ class TestStatusProperties:
 
     def test_status_properties_when_none(self, inverter_without_runtime):
         """Verify status properties return defaults when runtime is None."""
-        assert inverter_without_runtime.status == 0
+        assert inverter_without_runtime.status is None
         assert inverter_without_runtime.status_text == ""
         assert inverter_without_runtime.is_lost is True  # No data = lost
         assert inverter_without_runtime.firmware_version == ""

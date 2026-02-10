@@ -22,155 +22,37 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from pylxpweb.transports._canonical_reader import (
+    clamp_percentage as _clamp_percentage,
+)
+from pylxpweb.transports._canonical_reader import (
+    read_raw,
+    read_scaled,
+    unpack_parallel_config,
+)
+from pylxpweb.transports._canonical_reader import (
+    sum_optional as _sum_optional,
+)
+from pylxpweb.transports._field_mappings import (
+    BATTERY_FIELD,
+    ENERGY_CATEGORIES,
+    ENERGY_FIELD,
+    GRIDBOSS_FIELD,
+    RUNTIME_CATEGORIES,
+    RUNTIME_FIELD,
+)
 
 if TYPE_CHECKING:
     from pylxpweb.models import EnergyInfo, InverterRuntime, MidboxData
-    from pylxpweb.transports.register_maps import (
-        EnergyRegisterMap,
-        MidboxEnergyRegisterMap,
-        MidboxRuntimeRegisterMap,
-        RegisterField,
-        RuntimeRegisterMap,
-    )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _read_register_field(
-    registers: dict[int, int],
-    field_def: RegisterField | None,
-    default: int | None = None,
-) -> int | None:
-    """Read a value from registers using a RegisterField definition.
-
-    Args:
-        registers: Dict mapping register address to raw value
-        field_def: RegisterField defining how to read the value, or None
-        default: Default value if field is None or register not found.
-            Use None to indicate unavailable data (recommended for Modbus reads).
-
-    Returns:
-        Raw integer value (no scaling applied yet), or None if unavailable.
-        Returns None when:
-        - field_def is None (field not defined for this device/map)
-        - Required register(s) not present in registers dict (read failed)
-    """
-    if field_def is None:
-        return default
-
-    if field_def.bit_width == 32:
-        # 32-bit value from two consecutive registers
-        # Both registers must be present for valid data
-        if field_def.address not in registers or field_def.address + 1 not in registers:
-            return default
-
-        if field_def.little_endian:
-            # Little-endian: low word at address, high word at address+1 (LuxPower style)
-            low = registers[field_def.address]
-            high = registers[field_def.address + 1]
-        else:
-            # Big-endian: high word at address, low word at address+1 (EG4 style)
-            high = registers[field_def.address]
-            low = registers[field_def.address + 1]
-        value = (high << 16) | low
-    else:
-        # 16-bit value - register must be present
-        if field_def.address not in registers:
-            return default
-        value = registers[field_def.address]
-
-    # Handle signed values
-    if field_def.signed:
-        if field_def.bit_width == 16 and value > 32767:
-            value = value - 65536
-        elif field_def.bit_width == 32 and value > 2147483647:
-            value = value - 4294967296
-
-    return value
-
-
-def _read_and_scale_field(
-    registers: dict[int, int],
-    field_def: RegisterField | None,
-) -> float | None:
-    """Read a value from registers and apply scaling.
-
-    Args:
-        registers: Dict mapping register address to raw value
-        field_def: RegisterField defining how to read and scale the value
-
-    Returns:
-        Scaled floating-point value, or None if unavailable.
-        Returns None when:
-        - field_def is None (field not defined for this device/map)
-        - Required register(s) not present (read failed, flaky connectivity)
-
-    Note:
-        Returning None instead of 0.0 for missing data allows Home Assistant
-        to show "unavailable" state rather than recording false zero values
-        in history graphs. See: eg4_web_monitor issue #91
-    """
-    if field_def is None:
-        return None
-
-    from pylxpweb.constants.scaling import apply_scale
-
-    raw_value = _read_register_field(registers, field_def)
-    if raw_value is None:
-        return None
-    return apply_scale(raw_value, field_def.scale_factor)
-
-
-def _clamp_percentage(value: int | None, name: str) -> int | None:
-    """Clamp percentage value to 0-100 range, logging if out of bounds.
-
-    Args:
-        value: Percentage value to clamp, or None if unavailable
-        name: Field name for logging
-
-    Returns:
-        Clamped value (0-100), or None if input was None
-    """
-    if value is None:
-        return None
-    if value < 0:
-        _LOGGER.warning("%s value %d is negative, clamping to 0", name, value)
-        return 0
-    if value > 100:
-        _LOGGER.warning("%s value %d exceeds 100%%, clamping to 100", name, value)
-        return 100
-    return value
-
-
-def _decode_parallel_config(value: int | None, bits: int, shift: int) -> int | None:
-    """Decode parallel configuration from register value.
-
-    Args:
-        value: Raw register value, or None if unavailable
-        bits: Bitmask to apply after shifting
-        shift: Number of bits to shift right
-
-    Returns:
-        Decoded value, or None if input was None
-    """
-    if value is None:
-        return None
-    return (value >> shift) & bits
-
-
-def _sum_optional(*values: float | None) -> float | None:
-    """Sum multiple optional float values.
-
-    Args:
-        *values: Float values that may be None
-
-    Returns:
-        Sum of all non-None values, or None if all values are None.
-        If some values are None but not all, returns sum of available values.
-    """
-    non_none = [v for v in values if v is not None]
-    return sum(non_none) if non_none else None
+# Legacy helper aliases are now imported from _canonical_reader.py:
+# _clamp_percentage = clamp_percentage
+# _sum_optional = sum_optional
 
 
 @dataclass
@@ -386,207 +268,98 @@ class InverterRuntimeData:
     def from_modbus_registers(
         cls,
         input_registers: dict[int, int],
-        register_map: RuntimeRegisterMap | None = None,
+        model_family: str = "EG4_HYBRID",
     ) -> InverterRuntimeData:
         """Create from Modbus input register values.
 
-        Register mappings based on:
-        - EG4-18KPV-12LV Modbus Protocol specification
-        - eg4-modbus-monitor project (https://github.com/galets/eg4-modbus-monitor)
-        - Yippy's BMS documentation (https://github.com/joyfulhouse/pylxpweb/issues/97)
-        - Yippy's LXP-EU 12K corrections (https://github.com/joyfulhouse/pylxpweb/issues/52)
+        Uses canonical register definitions from ``registers/inverter_input.py``
+        to read and scale values.  The ``model_family`` parameter controls
+        which registers are included (e.g. ``"EG4_HYBRID"`` vs ``"LXP"``).
 
         Args:
             input_registers: Dict mapping register address to raw value
-            register_map: Optional RuntimeRegisterMap for model-specific register
-                locations. If None, defaults to EG4_HYBRID_RUNTIME_MAP.
+            model_family: Inverter family string (``"EG4_HYBRID"``,
+                ``"EG4_OFFGRID"``, or ``"LXP"``).
 
         Returns:
             Transport-agnostic runtime data with scaling applied
         """
-        from pylxpweb.transports.register_maps import EG4_HYBRID_RUNTIME_MAP
+        from pylxpweb.registers.inverter_input import BY_NAME, registers_for_model
 
-        # Use default map if none provided (backward compatible)
-        if register_map is None:
-            register_map = EG4_HYBRID_RUNTIME_MAP
+        # Get registers applicable to this model, filtered to runtime categories
+        model_regs = registers_for_model(model_family)
+        runtime_regs = [r for r in model_regs if r.category.value in RUNTIME_CATEGORIES]
 
-        # Read power values using register map
-        pv1_power = _read_and_scale_field(input_registers, register_map.pv1_power)
-        pv2_power = _read_and_scale_field(input_registers, register_map.pv2_power)
-        pv3_power = _read_and_scale_field(input_registers, register_map.pv3_power)
-        charge_power = _read_and_scale_field(input_registers, register_map.charge_power)
-        discharge_power = _read_and_scale_field(input_registers, register_map.discharge_power)
-        inverter_power = _read_and_scale_field(input_registers, register_map.inverter_power)
-        grid_power = _read_and_scale_field(input_registers, register_map.grid_power)
-        eps_power = _read_and_scale_field(input_registers, register_map.eps_power)
-        load_power = _read_and_scale_field(input_registers, register_map.load_power)
+        # Build kwargs dict from canonical definitions
+        kwargs: dict[str, Any] = {}
+        # Track special values for post-processing
+        inverter_fault_code: int | None = None
+        bms_fault_code: int | None = None
+        inverter_warning_code: int | None = None
+        bms_warning_code: int | None = None
 
-        # SOC/SOH packed register (low byte = SOC, high byte = SOH)
-        soc_soh_packed = _read_register_field(input_registers, register_map.soc_soh_packed)
-        battery_soc: int | None = None
-        battery_soh: int | None = None
-        if soc_soh_packed is not None:
-            battery_soc = soc_soh_packed & 0xFF
-            battery_soh = (soc_soh_packed >> 8) & 0xFF
-            if battery_soh == 0:
-                battery_soh = 100  # Default to 100% if not reported
+        for reg in runtime_regs:
+            field_name = RUNTIME_FIELD.get(reg.canonical_name)
+            if field_name is None:
+                # Special handling: packed registers, fault/warning codes
+                if reg.canonical_name == "soc_soh_packed":
+                    raw = read_raw(input_registers, reg)
+                    if raw is not None:
+                        soc = raw & 0xFF
+                        soh = (raw >> 8) & 0xFF
+                        if soh == 0:
+                            soh = 100  # Default to 100% if not reported
+                        kwargs["battery_soc"] = soc
+                        kwargs["battery_soh"] = soh
+                elif reg.canonical_name == "parallel_config":
+                    ms, phase, number = unpack_parallel_config(input_registers, reg)
+                    kwargs["parallel_master_slave"] = ms
+                    kwargs["parallel_phase"] = phase
+                    kwargs["parallel_number"] = number
+                elif reg.canonical_name == "fault_code":
+                    inverter_fault_code = read_raw(input_registers, reg)
+                elif reg.canonical_name == "bms_fault_code":
+                    bms_fault_code = read_raw(input_registers, reg)
+                elif reg.canonical_name == "warning_code":
+                    inverter_warning_code = read_raw(input_registers, reg)
+                elif reg.canonical_name == "bms_warning_code":
+                    bms_warning_code = read_raw(input_registers, reg)
+                continue
 
-        # Fault/warning codes
-        inverter_fault_code = _read_register_field(
-            input_registers, register_map.inverter_fault_code
+            # Fields that need raw int values (no scaling)
+            int_fields = {
+                "device_status",
+                "eps_status",
+                "bms_cycle_count",
+                "battery_parallel_num",
+                "inverter_on_time",
+                "ac_input_type",
+            }
+            if field_name in int_fields:
+                kwargs[field_name] = read_raw(input_registers, reg)
+            else:
+                kwargs[field_name] = read_scaled(input_registers, reg)
+
+        # Combine fault/warning codes (inverter + BMS) — prefer non-zero
+        kwargs["fault_code"] = inverter_fault_code if inverter_fault_code else bms_fault_code
+        kwargs["warning_code"] = (
+            inverter_warning_code if inverter_warning_code else bms_warning_code
         )
-        inverter_warning_code = _read_register_field(
-            input_registers, register_map.inverter_warning_code
-        )
-        bms_fault_code = _read_register_field(input_registers, register_map.bms_fault_code)
-        bms_warning_code = _read_register_field(input_registers, register_map.bms_warning_code)
 
-        # Combine fault/warning codes (inverter + BMS) - prefer non-None/non-zero values
-        fault_code = inverter_fault_code if inverter_fault_code else bms_fault_code
-        warning_code = inverter_warning_code if inverter_warning_code else bms_warning_code
-
-        return cls(
-            timestamp=datetime.now(),
-            # PV
-            pv1_voltage=_read_and_scale_field(input_registers, register_map.pv1_voltage),
-            pv1_power=pv1_power,
-            pv2_voltage=_read_and_scale_field(input_registers, register_map.pv2_voltage),
-            pv2_power=pv2_power,
-            pv3_voltage=_read_and_scale_field(input_registers, register_map.pv3_voltage),
-            pv3_power=pv3_power,
-            pv_total_power=_sum_optional(pv1_power, pv2_power, pv3_power),
-            # Battery - SOC/SOH from packed register
-            battery_voltage=_read_and_scale_field(input_registers, register_map.battery_voltage),
-            battery_current=_read_and_scale_field(input_registers, register_map.battery_current),
-            battery_soc=battery_soc,
-            battery_soh=battery_soh,
-            battery_charge_power=charge_power,
-            battery_discharge_power=discharge_power,
-            battery_temperature=_read_and_scale_field(
-                input_registers, register_map.battery_temperature
-            ),
-            # Grid
-            grid_voltage_r=_read_and_scale_field(input_registers, register_map.grid_voltage_r),
-            grid_voltage_s=_read_and_scale_field(input_registers, register_map.grid_voltage_s),
-            grid_voltage_t=_read_and_scale_field(input_registers, register_map.grid_voltage_t),
-            grid_l1_voltage=_read_and_scale_field(input_registers, register_map.grid_l1_voltage),
-            grid_l2_voltage=_read_and_scale_field(input_registers, register_map.grid_l2_voltage),
-            grid_frequency=_read_and_scale_field(input_registers, register_map.grid_frequency),
-            grid_power=grid_power,
-            power_to_grid=_read_and_scale_field(input_registers, register_map.power_to_grid),
-            power_from_grid=_read_and_scale_field(input_registers, register_map.load_power),
-            # Inverter
-            inverter_power=inverter_power,
-            # EPS
-            eps_voltage_r=_read_and_scale_field(input_registers, register_map.eps_voltage_r),
-            eps_voltage_s=_read_and_scale_field(input_registers, register_map.eps_voltage_s),
-            eps_voltage_t=_read_and_scale_field(input_registers, register_map.eps_voltage_t),
-            eps_l1_voltage=_read_and_scale_field(input_registers, register_map.eps_l1_voltage),
-            eps_l2_voltage=_read_and_scale_field(input_registers, register_map.eps_l2_voltage),
-            eps_frequency=_read_and_scale_field(input_registers, register_map.eps_frequency),
-            eps_power=eps_power,
-            eps_status=_read_register_field(input_registers, register_map.eps_status),
-            # Load
-            load_power=load_power,
-            output_power=_read_and_scale_field(input_registers, register_map.output_power),
-            # Internal
-            bus_voltage_1=_read_and_scale_field(input_registers, register_map.bus_voltage_1),
-            bus_voltage_2=_read_and_scale_field(input_registers, register_map.bus_voltage_2),
-            # Temperatures
-            internal_temperature=_read_and_scale_field(
-                input_registers, register_map.internal_temperature
-            ),
-            radiator_temperature_1=_read_and_scale_field(
-                input_registers, register_map.radiator_temperature_1
-            ),
-            radiator_temperature_2=_read_and_scale_field(
-                input_registers, register_map.radiator_temperature_2
-            ),
-            # Status and fault codes
-            device_status=_read_register_field(input_registers, register_map.device_status),
-            fault_code=fault_code,
-            warning_code=warning_code,
-            # Extended sensors - Inverter RMS Current (3-phase R/S/T) & Power
-            inverter_rms_current_r=_read_and_scale_field(
-                input_registers, register_map.inverter_rms_current_r
-            ),
-            inverter_rms_current_s=_read_and_scale_field(
-                input_registers, register_map.inverter_rms_current_s
-            ),
-            inverter_rms_current_t=_read_and_scale_field(
-                input_registers, register_map.inverter_rms_current_t
-            ),
-            inverter_apparent_power=_read_and_scale_field(
-                input_registers, register_map.inverter_apparent_power
-            ),
-            # Generator input
-            generator_voltage=_read_and_scale_field(
-                input_registers, register_map.generator_voltage
-            ),
-            generator_frequency=_read_and_scale_field(
-                input_registers, register_map.generator_frequency
-            ),
-            generator_power=_read_and_scale_field(input_registers, register_map.generator_power),
-            # BMS limits and cell data
-            bms_charge_current_limit=_read_and_scale_field(
-                input_registers, register_map.bms_charge_current_limit
-            ),
-            bms_discharge_current_limit=_read_and_scale_field(
-                input_registers, register_map.bms_discharge_current_limit
-            ),
-            bms_charge_voltage_ref=_read_and_scale_field(
-                input_registers, register_map.bms_charge_voltage_ref
-            ),
-            bms_discharge_cutoff=_read_and_scale_field(
-                input_registers, register_map.bms_discharge_cutoff
-            ),
-            # BMS cell voltages - register map has SCALE_1000 for mV → V conversion
-            bms_max_cell_voltage=_read_and_scale_field(
-                input_registers, register_map.bms_max_cell_voltage
-            ),
-            bms_min_cell_voltage=_read_and_scale_field(
-                input_registers, register_map.bms_min_cell_voltage
-            ),
-            bms_max_cell_temperature=_read_and_scale_field(
-                input_registers, register_map.bms_max_cell_temperature
-            ),
-            bms_min_cell_temperature=_read_and_scale_field(
-                input_registers, register_map.bms_min_cell_temperature
-            ),
-            bms_cycle_count=_read_register_field(input_registers, register_map.bms_cycle_count),
-            battery_parallel_num=_read_register_field(
-                input_registers, register_map.battery_parallel_num
-            ),
-            battery_capacity_ah=_read_and_scale_field(
-                input_registers, register_map.battery_capacity_ah
-            ),
-            # Additional temperatures
-            temperature_t1=_read_and_scale_field(input_registers, register_map.temperature_t1),
-            temperature_t2=_read_and_scale_field(input_registers, register_map.temperature_t2),
-            temperature_t3=_read_and_scale_field(input_registers, register_map.temperature_t3),
-            temperature_t4=_read_and_scale_field(input_registers, register_map.temperature_t4),
-            temperature_t5=_read_and_scale_field(input_registers, register_map.temperature_t5),
-            # Inverter operational
-            inverter_on_time=_read_register_field(input_registers, register_map.inverter_on_time),
-            ac_input_type=_read_register_field(input_registers, register_map.ac_input_type),
-            # Parallel configuration (decoded from register 113)
-            # bits 0-1: master/slave, bits 2-3: phase, bits 8-15: number
-            parallel_master_slave=_decode_parallel_config(
-                _read_register_field(input_registers, register_map.parallel_config),
-                bits=0x03,
-                shift=0,
-            ),
-            parallel_phase=_decode_parallel_config(
-                _read_register_field(input_registers, register_map.parallel_config),
-                bits=0x03,
-                shift=2,
-            ),
-            parallel_number=_decode_parallel_config(
-                _read_register_field(input_registers, register_map.parallel_config),
-                bits=0xFF,
-                shift=8,
-            ),
+        # Compute derived fields
+        kwargs["pv_total_power"] = _sum_optional(
+            kwargs.get("pv1_power"), kwargs.get("pv2_power"), kwargs.get("pv3_power")
         )
+
+        # load_power comes from power_to_user (reg 27), power_from_grid also
+        # maps to the same register in the legacy code
+        load_power_reg = BY_NAME.get("power_to_user")
+        if load_power_reg is not None:
+            load_val = read_scaled(input_registers, load_power_reg)
+            kwargs.setdefault("load_power", load_val)
+            kwargs.setdefault("power_from_grid", load_val)
+
+        return cls(timestamp=datetime.now(), **kwargs)
 
 
 @dataclass
@@ -677,97 +450,44 @@ class InverterEnergyData:
     def from_modbus_registers(
         cls,
         input_registers: dict[int, int],
-        register_map: EnergyRegisterMap | None = None,
+        model_family: str = "EG4_HYBRID",
     ) -> InverterEnergyData:
         """Create from Modbus input register values.
 
+        Uses canonical register definitions from ``registers/inverter_input.py``.
+
         Args:
             input_registers: Dict mapping register address to raw value
-            register_map: Optional EnergyRegisterMap for model-specific register
-                locations. If None, defaults to EG4_HYBRID_ENERGY_MAP.
+            model_family: Inverter family string for model filtering.
 
         Returns:
             Transport-agnostic energy data with scaling applied
         """
-        from pylxpweb.transports.register_maps import EG4_HYBRID_ENERGY_MAP
+        from pylxpweb.registers.inverter_input import registers_for_model
 
-        # Use default map if none provided (backward compatible)
-        if register_map is None:
-            register_map = EG4_HYBRID_ENERGY_MAP
+        model_regs = registers_for_model(model_family)
+        energy_regs = [r for r in model_regs if r.category.value in ENERGY_CATEGORIES]
 
-        def read_energy_field(
-            field_def: RegisterField | None,
-        ) -> float | None:
-            """Read an energy field and return value in kWh.
+        kwargs: dict[str, float | None] = {}
+        for reg in energy_regs:
+            field_name = ENERGY_FIELD.get(reg.canonical_name)
+            if field_name is None:
+                continue
+            kwargs[field_name] = read_scaled(input_registers, reg)
 
-            Args:
-                field_def: RegisterField for the energy value
-
-            Returns:
-                Energy value in kWh, or None if field not defined or register missing
-
-            Note:
-                According to galets/eg4-modbus-monitor, energy register values
-                are in 0.1 kWh units (not 0.1 Wh as previously assumed).
-                After applying the scale factor (typically SCALE_10 = divide by 10),
-                the result is directly in kWh.
-            """
-            if field_def is None:
-                return None
-
-            raw_value = _read_register_field(input_registers, field_def)
-            if raw_value is None:
-                return None
-
-            # Apply scale factor - result is in kWh directly
-            # Energy values are in 0.1 kWh (scale=0.1), so raw/10 = kWh
-            from pylxpweb.constants.scaling import apply_scale
-
-            return apply_scale(raw_value, field_def.scale_factor)
-
-        def sum_pv_energy(pv1: float | None, pv2: float | None, pv3: float | None) -> float | None:
-            """Sum PV energy values, returning None if all components are None."""
-            values = [v for v in [pv1, pv2, pv3] if v is not None]
-            return sum(values) if values else None
-
-        # Calculate total PV energy from per-string values
-        pv1_today = read_energy_field(register_map.pv1_energy_today)
-        pv2_today = read_energy_field(register_map.pv2_energy_today)
-        pv3_today = read_energy_field(register_map.pv3_energy_today)
-        pv1_total = read_energy_field(register_map.pv1_energy_total)
-        pv2_total = read_energy_field(register_map.pv2_energy_total)
-        pv3_total = read_energy_field(register_map.pv3_energy_total)
-
-        return cls(
-            timestamp=datetime.now(),
-            # Daily energy
-            inverter_energy_today=read_energy_field(register_map.inverter_energy_today),
-            grid_import_today=read_energy_field(register_map.grid_import_today),
-            charge_energy_today=read_energy_field(register_map.charge_energy_today),
-            discharge_energy_today=read_energy_field(register_map.discharge_energy_today),
-            eps_energy_today=read_energy_field(register_map.eps_energy_today),
-            grid_export_today=read_energy_field(register_map.grid_export_today),
-            load_energy_today=read_energy_field(register_map.load_energy_today),
-            pv1_energy_today=pv1_today,
-            pv2_energy_today=pv2_today,
-            pv3_energy_today=pv3_today,
-            pv_energy_today=sum_pv_energy(pv1_today, pv2_today, pv3_today),
-            # Lifetime energy
-            inverter_energy_total=read_energy_field(register_map.inverter_energy_total),
-            grid_import_total=read_energy_field(register_map.grid_import_total),
-            charge_energy_total=read_energy_field(register_map.charge_energy_total),
-            discharge_energy_total=read_energy_field(register_map.discharge_energy_total),
-            eps_energy_total=read_energy_field(register_map.eps_energy_total),
-            grid_export_total=read_energy_field(register_map.grid_export_total),
-            load_energy_total=read_energy_field(register_map.load_energy_total),
-            pv1_energy_total=pv1_total,
-            pv2_energy_total=pv2_total,
-            pv3_energy_total=pv3_total,
-            pv_energy_total=sum_pv_energy(pv1_total, pv2_total, pv3_total),
-            # Generator energy
-            generator_energy_today=read_energy_field(register_map.generator_energy_today),
-            generator_energy_total=read_energy_field(register_map.generator_energy_total),
+        # Compute PV totals from per-string values
+        kwargs["pv_energy_today"] = _sum_optional(
+            kwargs.get("pv1_energy_today"),
+            kwargs.get("pv2_energy_today"),
+            kwargs.get("pv3_energy_today"),
         )
+        kwargs["pv_energy_total"] = _sum_optional(
+            kwargs.get("pv1_energy_total"),
+            kwargs.get("pv2_energy_total"),
+            kwargs.get("pv3_energy_total"),
+        )
+
+        return cls(timestamp=datetime.now(), **kwargs)
 
 
 @dataclass
@@ -912,8 +632,10 @@ class BatteryData:
     ) -> BatteryData | None:
         """Create BatteryData from Modbus registers for a single battery.
 
-        The registers dict should contain the 30-register block for this battery
-        with keys as absolute register addresses (e.g., 5002-5031 for battery 0).
+        Uses canonical definitions from ``registers/battery.py``.  The
+        *registers* dict should contain the 30-register block for this
+        battery with keys as absolute register addresses (5002-5031 for
+        battery 0, etc.).
 
         Args:
             battery_index: 0-based battery index
@@ -922,112 +644,117 @@ class BatteryData:
         Returns:
             BatteryData with all values properly scaled, or None if battery not present
         """
-        from pylxpweb.transports.register_maps import (
-            INDIVIDUAL_BATTERY_BASE_ADDRESS,
-            INDIVIDUAL_BATTERY_MAP,
-            INDIVIDUAL_BATTERY_REGISTER_COUNT,
+        from pylxpweb.registers.battery import (
+            BATTERY_BASE_ADDRESS,
+            BATTERY_REGISTER_COUNT,
+            BATTERY_REGISTERS,
+        )
+        from pylxpweb.registers.battery import (
+            BY_NAME as BAT_BY_NAME,
+        )
+        from pylxpweb.transports._canonical_reader import (
+            read_battery_firmware,
+            read_battery_serial,
         )
 
-        base = INDIVIDUAL_BATTERY_BASE_ADDRESS + (battery_index * INDIVIDUAL_BATTERY_REGISTER_COUNT)
-        battery_map = INDIVIDUAL_BATTERY_MAP
+        base = BATTERY_BASE_ADDRESS + (battery_index * BATTERY_REGISTER_COUNT)
 
-        # Check if battery is present by reading status header
-        # 0xC003 indicates a connected battery
-        status_addr = base + (battery_map.status_header.address if battery_map.status_header else 0)
-        status = registers.get(status_addr, 0)
-        if status == 0:
+        # Check if battery is present via status header (offset 0)
+        status_reg = BAT_BY_NAME["battery_status_header"]
+        status_raw = read_raw(registers, status_reg, base_address=base)
+        if not status_raw:
             return None  # Battery slot is empty
 
-        # Helper to read a field at base + offset
-        def read_field(field_def: RegisterField | None, default: float = 0.0) -> float:
-            if field_def is None:
-                return default
-            addr = base + field_def.address
-            raw_value = registers.get(addr, int(default))
-            # Handle signed values
-            if field_def.signed and raw_value > 32767:
-                raw_value = raw_value - 65536
-            # Apply scaling
-            from pylxpweb.constants.scaling import apply_scale
+        # Build kwargs from canonical definitions using BATTERY_FIELD mapping
+        kwargs: dict[str, float | int] = {}
+        soc: int = 0
+        soh: int = 100
 
-            return apply_scale(raw_value, field_def.scale_factor)
+        for reg in BATTERY_REGISTERS:
+            cname = reg.canonical_name
 
-        def read_int_field(field_def: RegisterField | None, default: int = 0) -> int:
-            if field_def is None:
-                return default
-            addr = base + field_def.address
-            return registers.get(addr, default)
+            # Handle packed SOC/SOH
+            if cname == "battery_soc":
+                raw = read_raw(registers, reg, base_address=base)
+                soc = raw if raw is not None else 0
+                continue
+            if cname == "battery_soh":
+                raw = read_raw(registers, reg, base_address=base)
+                soh = raw if raw is not None else 0
+                continue
 
-        # Read serial number from 7 registers (up to 14 ASCII chars)
-        serial_chars: list[str] = []
-        for i in range(battery_map.serial_number_count):
-            addr = base + battery_map.serial_number_start + i
-            value = registers.get(addr, 0)
-            low_byte = value & 0xFF
-            high_byte = (value >> 8) & 0xFF
-            if 32 <= low_byte <= 126:
-                serial_chars.append(chr(low_byte))
-            if 32 <= high_byte <= 126:
-                serial_chars.append(chr(high_byte))
-        serial_number = "".join(serial_chars).strip()
+            # Handle packed cell number registers
+            if cname in (
+                "battery_max_cell_num_voltage",
+                "battery_min_cell_num_voltage",
+                "battery_max_cell_num_temp",
+                "battery_min_cell_num_temp",
+            ):
+                field_name = BATTERY_FIELD.get(cname)
+                if field_name is not None:
+                    raw = read_raw(registers, reg, base_address=base)
+                    kwargs[field_name] = raw if raw is not None else 0
+                continue
 
-        # Read cell voltage data (scaling handled in register map - SCALE_1000)
-        max_cell_voltage = read_field(battery_map.max_cell_voltage)
-        min_cell_voltage = read_field(battery_map.min_cell_voltage)
+            # Handle firmware and serial (special multi-register reads)
+            if cname == "battery_firmware_version":
+                continue  # handled below
+            if cname == "battery_serial_number":
+                continue  # handled below
+            if cname == "battery_status_header":
+                continue  # already checked
 
-        # Read temperature data
-        max_cell_temp = read_field(battery_map.max_cell_temp)
-        min_cell_temp = read_field(battery_map.min_cell_temp)
+            field_name = BATTERY_FIELD.get(cname)
+            if field_name is None:
+                continue
 
-        # Parse cell number packed registers (low byte = max cell#, high byte = min cell#)
-        cell_num_voltage_packed = read_int_field(battery_map.cell_num_voltage_packed)
-        max_cell_num_voltage = cell_num_voltage_packed & 0xFF
-        min_cell_num_voltage = (cell_num_voltage_packed >> 8) & 0xFF
+            # Cycle count is an int field (no scaling)
+            if cname == "battery_cycle_count":
+                raw = read_raw(registers, reg, base_address=base)
+                kwargs[field_name] = raw if raw is not None else 0
+            else:
+                val = read_scaled(registers, reg, base_address=base)
+                kwargs[field_name] = val if val is not None else 0.0
 
-        cell_num_temp_packed = read_int_field(battery_map.cell_num_temp_packed)
-        max_cell_num_temp = cell_num_temp_packed & 0xFF
-        min_cell_num_temp = (cell_num_temp_packed >> 8) & 0xFF
+        # Firmware version (packed: high byte = major, low byte = minor)
+        fw_reg = BAT_BY_NAME["battery_firmware_version"]
+        firmware_version = read_battery_firmware(registers, fw_reg, base_address=base)
 
-        # Parse SOC/SOH from packed register (low byte = SOC, high byte = SOH)
-        soc_soh_packed = read_int_field(battery_map.soc_soh_packed)
-        soc = soc_soh_packed & 0xFF  # Low byte = SOC%
-        soh = (soc_soh_packed >> 8) & 0xFF  # High byte = SOH%
+        # Serial number (7 consecutive registers, 2 ASCII chars each)
+        serial_number = read_battery_serial(registers, base_address=base)
 
-        # Parse firmware version from packed register (high byte = major, low byte = minor)
-        fw_raw = read_int_field(battery_map.firmware_version)
-        fw_major = (fw_raw >> 8) & 0xFF
-        fw_minor = fw_raw & 0xFF
-        firmware_version = f"{fw_major}.{fw_minor}" if fw_raw else ""
-
-        # Read max_capacity and compute current_capacity (no register exists for it)
-        max_capacity = read_field(battery_map.full_capacity_ah)
+        # Compute current_capacity from max_capacity and SOC
+        max_capacity = float(kwargs.get("max_capacity", 0.0))
         current_capacity = max_capacity * soc / 100 if max_capacity and soc else None
+
+        # Temperature: use max_cell_temperature as the primary temperature
+        max_cell_temp = float(kwargs.get("max_cell_temperature", 0.0))
 
         return cls(
             battery_index=battery_index,
             serial_number=serial_number,
-            voltage=read_field(battery_map.voltage),
-            current=read_field(battery_map.current),
+            voltage=float(kwargs.get("voltage", 0.0)),
+            current=float(kwargs.get("current", 0.0)),
             soc=soc,
             soh=soh if soh > 0 else 100,
             temperature=max_cell_temp,
             max_capacity=max_capacity,
             current_capacity=current_capacity,
-            cycle_count=read_int_field(battery_map.cycle_count),
-            min_cell_voltage=min_cell_voltage,
-            max_cell_voltage=max_cell_voltage,
-            min_cell_temperature=min_cell_temp,
+            cycle_count=int(kwargs.get("cycle_count", 0)),
+            min_cell_voltage=float(kwargs.get("min_cell_voltage", 0.0)),
+            max_cell_voltage=float(kwargs.get("max_cell_voltage", 0.0)),
+            min_cell_temperature=float(kwargs.get("min_cell_temperature", 0.0)),
             max_cell_temperature=max_cell_temp,
-            max_cell_num_voltage=max_cell_num_voltage,
-            min_cell_num_voltage=min_cell_num_voltage,
-            max_cell_num_temp=max_cell_num_temp,
-            min_cell_num_temp=min_cell_num_temp,
-            charge_voltage_ref=read_field(battery_map.charge_voltage_ref),
-            charge_current_limit=read_field(battery_map.charge_current_limit),
-            discharge_current_limit=read_field(battery_map.discharge_current_limit),
-            discharge_voltage_cutoff=read_field(battery_map.discharge_voltage_cutoff),
+            max_cell_num_voltage=int(kwargs.get("max_cell_num_voltage", 0)),
+            min_cell_num_voltage=int(kwargs.get("min_cell_num_voltage", 0)),
+            max_cell_num_temp=int(kwargs.get("max_cell_num_temp", 0)),
+            min_cell_num_temp=int(kwargs.get("min_cell_num_temp", 0)),
+            charge_voltage_ref=float(kwargs.get("charge_voltage_ref", 0.0)),
+            charge_current_limit=float(kwargs.get("charge_current_limit", 0.0)),
+            discharge_current_limit=float(kwargs.get("discharge_current_limit", 0.0)),
+            discharge_voltage_cutoff=float(kwargs.get("discharge_voltage_cutoff", 0.0)),
             firmware_version=firmware_version,
-            status=status,
+            status=status_raw,
         )
 
 
@@ -1192,18 +919,17 @@ class BatteryBankData:
     def from_modbus_registers(
         cls,
         input_registers: dict[int, int],
-        register_map: RuntimeRegisterMap | None = None,
         individual_battery_registers: dict[int, int] | None = None,
     ) -> BatteryBankData | None:
         """Create from Modbus input register values.
 
-        Uses the register map to determine correct register addresses and scaling
-        for each inverter family. This ensures extensibility for future models.
+        Uses canonical register definitions from ``registers/inverter_input.py``
+        for the aggregate battery data read from the main input register space,
+        and ``registers/battery.py`` for individual battery modules in the
+        5000+ range.
 
         Args:
             input_registers: Dict mapping register address to raw value (0-127)
-            register_map: RuntimeRegisterMap for model-specific register locations.
-                If None, defaults to EG4_HYBRID_RUNTIME_MAP.
             individual_battery_registers: Optional dict with extended register
                 range (5000+) containing individual battery data. If provided,
                 individual batteries will be populated in the batteries list.
@@ -1211,42 +937,42 @@ class BatteryBankData:
         Returns:
             BatteryBankData with all values properly scaled, or None if no battery
         """
-        from pylxpweb.transports.register_maps import EG4_HYBRID_RUNTIME_MAP
+        from pylxpweb.registers.battery import BATTERY_MAX_COUNT
+        from pylxpweb.registers.inverter_input import BY_NAME
 
-        if register_map is None:
-            register_map = EG4_HYBRID_RUNTIME_MAP
-
-        # Battery voltage from register map
-        battery_voltage = _read_and_scale_field(input_registers, register_map.battery_voltage)
+        # Battery voltage from canonical register def
+        bat_volt_reg = BY_NAME["battery_voltage"]
+        battery_voltage = read_scaled(input_registers, bat_volt_reg)
 
         # If voltage is too low or None, assume no battery present
         if battery_voltage is None or battery_voltage < 1.0:
             return None
 
         # SOC/SOH from packed register (low byte = SOC, high byte = SOH)
-        soc_soh_packed = _read_register_field(input_registers, register_map.soc_soh_packed)
+        soc_soh_reg = BY_NAME["soc_soh_packed"]
+        soc_soh_raw = read_raw(input_registers, soc_soh_reg)
         battery_soc: int | None = None
         battery_soh: int | None = None
-        if soc_soh_packed is not None:
-            battery_soc = soc_soh_packed & 0xFF
-            battery_soh = (soc_soh_packed >> 8) & 0xFF
+        if soc_soh_raw is not None:
+            battery_soc = soc_soh_raw & 0xFF
+            battery_soh = (soc_soh_raw >> 8) & 0xFF
 
-        # Charge/discharge power from register map (16-bit, no scaling)
-        charge_power = _read_and_scale_field(input_registers, register_map.charge_power)
-        discharge_power = _read_and_scale_field(input_registers, register_map.discharge_power)
+        # Charge/discharge power
+        charge_power = read_scaled(input_registers, BY_NAME["charge_power"])
+        discharge_power = read_scaled(input_registers, BY_NAME["discharge_power"])
 
-        # Battery current from register map
-        battery_current = _read_and_scale_field(input_registers, register_map.battery_current)
+        # Battery current
+        battery_current = read_scaled(input_registers, BY_NAME["battery_current_bms"])
 
-        # Battery temperature from register map
-        battery_temp = _read_and_scale_field(input_registers, register_map.battery_temperature)
+        # Battery temperature
+        battery_temp = read_scaled(input_registers, BY_NAME["battery_temperature"])
 
-        # BMS data from register map
-        bms_fault_code = _read_register_field(input_registers, register_map.bms_fault_code)
-        bms_warning_code = _read_register_field(input_registers, register_map.bms_warning_code)
-        battery_count = _read_register_field(input_registers, register_map.battery_parallel_num)
-        # Derive battery status from charge/discharge power rather than register 95,
-        # which only indicates "active" (3) vs "standby" (2) without direction info.
+        # BMS data
+        bms_fault_code = read_raw(input_registers, BY_NAME["bms_fault_code"])
+        bms_warning_code = read_raw(input_registers, BY_NAME["bms_warning_code"])
+        battery_count = read_raw(input_registers, BY_NAME["battery_parallel_count"])
+
+        # Derive battery status from charge/discharge power
         battery_status: str | None = None
         if discharge_power is not None and discharge_power > 0:
             battery_status = "Discharging"
@@ -1255,23 +981,13 @@ class BatteryBankData:
         elif charge_power is not None or discharge_power is not None:
             battery_status = "Idle"
 
-        # Cell voltage data from register map (mV -> V via SCALE_1000 in map)
-        max_cell_voltage = _read_and_scale_field(input_registers, register_map.bms_max_cell_voltage)
-        min_cell_voltage = _read_and_scale_field(input_registers, register_map.bms_min_cell_voltage)
-
-        # Cell temperature data from register map (0.1°C -> °C via SCALE_10 in map)
-        max_cell_temp = _read_and_scale_field(
-            input_registers, register_map.bms_max_cell_temperature
-        )
-        min_cell_temp = _read_and_scale_field(
-            input_registers, register_map.bms_min_cell_temperature
-        )
-
-        # Cycle count from register map
-        cycle_count = _read_register_field(input_registers, register_map.bms_cycle_count)
-
-        # Battery capacity from register map (Ah, no scaling)
-        max_capacity = _read_and_scale_field(input_registers, register_map.battery_capacity_ah)
+        # Cell data
+        max_cell_voltage = read_scaled(input_registers, BY_NAME["bms_max_cell_voltage"])
+        min_cell_voltage = read_scaled(input_registers, BY_NAME["bms_min_cell_voltage"])
+        max_cell_temp = read_scaled(input_registers, BY_NAME["bms_max_cell_temperature"])
+        min_cell_temp = read_scaled(input_registers, BY_NAME["bms_min_cell_temperature"])
+        cycle_count = read_raw(input_registers, BY_NAME["bms_cycle_count"])
+        max_capacity = read_scaled(input_registers, BY_NAME["battery_capacity_ah"])
 
         # Compute current capacity from max_capacity and SOC
         current_capacity: float | None = None
@@ -1281,15 +997,11 @@ class BatteryBankData:
         # Parse individual battery data if extended registers provided
         batteries: list[BatteryData] = []
         if individual_battery_registers:
-            from pylxpweb.transports.register_maps import INDIVIDUAL_BATTERY_MAX_COUNT
-
-            # Try to read each battery slot (up to max count or battery_count)
-            # Use INDIVIDUAL_BATTERY_MAX_COUNT if battery_count is None or 0
             if battery_count is not None and battery_count > 0:
                 count_to_use = battery_count
             else:
-                count_to_use = INDIVIDUAL_BATTERY_MAX_COUNT
-            max_to_check = min(count_to_use, INDIVIDUAL_BATTERY_MAX_COUNT)
+                count_to_use = BATTERY_MAX_COUNT
+            max_to_check = min(count_to_use, BATTERY_MAX_COUNT)
             for idx in range(max_to_check):
                 battery_data = BatteryData.from_modbus_registers(
                     battery_index=idx,
@@ -1298,9 +1010,7 @@ class BatteryBankData:
                 if battery_data is not None:
                     batteries.append(battery_data)
 
-        # Handle None values for battery_count and soh with sensible defaults
-        # battery_count defaults to 1 if unavailable
-        # soh defaults to 100 (assume healthy) if unavailable
+        # Sensible defaults
         actual_battery_count: int | None = None
         if battery_count is not None and battery_count > 0:
             actual_battery_count = battery_count
@@ -1408,7 +1118,8 @@ class MidboxRuntimeData:
 
     # -------------------------------------------------------------------------
     # Smart Port Status (0=off, 1=smart load, 2=ac_couple)
-    # Available via both HTTP API and Modbus (INPUT registers 105-108)
+    # HTTP: individual API fields (smartPort1Status, etc.)
+    # Modbus: bit-packed in HOLDING register 20 (2 bits per port, LSB-first)
     # -------------------------------------------------------------------------
     smart_port_1_status: int | None = None  # smartPort1Status
     smart_port_2_status: int | None = None  # smartPort2Status
@@ -1568,16 +1279,16 @@ class MidboxRuntimeData:
 
         return cls(
             timestamp=datetime.now(),
-            # Voltages (raw values are volts, no scaling needed)
-            grid_voltage=_f(midbox_data.gridRmsVolt),
-            ups_voltage=_f(midbox_data.upsRmsVolt),
-            gen_voltage=_f(midbox_data.genRmsVolt),
-            grid_l1_voltage=_f(midbox_data.gridL1RmsVolt),
-            grid_l2_voltage=_f(midbox_data.gridL2RmsVolt),
-            ups_l1_voltage=_f(midbox_data.upsL1RmsVolt),
-            ups_l2_voltage=_f(midbox_data.upsL2RmsVolt),
-            gen_l1_voltage=_f(midbox_data.genL1RmsVolt),
-            gen_l2_voltage=_f(midbox_data.genL2RmsVolt),
+            # Voltages (API returns decivolts, divide by 10)
+            grid_voltage=_f_div(midbox_data.gridRmsVolt, 10.0),
+            ups_voltage=_f_div(midbox_data.upsRmsVolt, 10.0),
+            gen_voltage=_f_div(midbox_data.genRmsVolt, 10.0),
+            grid_l1_voltage=_f_div(midbox_data.gridL1RmsVolt, 10.0),
+            grid_l2_voltage=_f_div(midbox_data.gridL2RmsVolt, 10.0),
+            ups_l1_voltage=_f_div(midbox_data.upsL1RmsVolt, 10.0),
+            ups_l2_voltage=_f_div(midbox_data.upsL2RmsVolt, 10.0),
+            gen_l1_voltage=_f_div(midbox_data.genL1RmsVolt, 10.0),
+            gen_l2_voltage=_f_div(midbox_data.genL2RmsVolt, 10.0),
             # Currents (API returns deciamps, divide by 10)
             grid_l1_current=_f_div(midbox_data.gridL1RmsCurr, 10.0),
             grid_l2_current=_f_div(midbox_data.gridL2RmsCurr, 10.0),
@@ -1671,256 +1382,43 @@ class MidboxRuntimeData:
     def from_modbus_registers(
         cls,
         input_registers: dict[int, int],
-        register_map: MidboxRuntimeRegisterMap | None = None,
-        energy_map: MidboxEnergyRegisterMap | None = None,
+        *,
+        smart_port_mode_reg: int | None = None,
     ) -> MidboxRuntimeData:
         """Create from Modbus input register values.
 
-        Note: GridBOSS/MID devices use INPUT registers (function 0x04) for runtime data.
+        Uses canonical register definitions from ``registers/gridboss.py``.
+        GridBOSS only has one register layout so no model filtering is needed.
 
         Args:
             input_registers: Dict mapping register address to raw value
-            register_map: Optional MidboxRuntimeRegisterMap for register locations.
-                If None, defaults to GRIDBOSS_RUNTIME_MAP.
-            energy_map: Optional MidboxEnergyRegisterMap for energy register locations.
-                If None, defaults to GRIDBOSS_ENERGY_MAP. Pass None explicitly to skip
-                energy field reading.
+            smart_port_mode_reg: Raw value of holding register 20, which
+                contains all 4 smart port modes bit-packed (2 bits each,
+                LSB-first). ``None`` if the read failed.
 
         Returns:
             Transport-agnostic runtime data with scaling applied
         """
-        from pylxpweb.transports.register_maps import (
-            GRIDBOSS_ENERGY_MAP,
-            GRIDBOSS_RUNTIME_MAP,
-        )
+        from pylxpweb.registers.gridboss import GRIDBOSS_REGISTERS
 
-        if register_map is None:
-            register_map = GRIDBOSS_RUNTIME_MAP
+        kwargs: dict[str, Any] = {}
 
-        if energy_map is None:
-            energy_map = GRIDBOSS_ENERGY_MAP
+        for reg in GRIDBOSS_REGISTERS:
+            field_name = GRIDBOSS_FIELD.get(reg.canonical_name)
+            if field_name is None:
+                continue
 
-        return cls(
-            timestamp=datetime.now(),
-            # Voltages (scale /10 - raw register value is volts × 10)
-            grid_voltage=_read_and_scale_field(input_registers, register_map.grid_voltage),
-            ups_voltage=_read_and_scale_field(input_registers, register_map.ups_voltage),
-            gen_voltage=_read_and_scale_field(input_registers, register_map.gen_voltage),
-            grid_l1_voltage=_read_and_scale_field(input_registers, register_map.grid_l1_voltage),
-            grid_l2_voltage=_read_and_scale_field(input_registers, register_map.grid_l2_voltage),
-            ups_l1_voltage=_read_and_scale_field(input_registers, register_map.ups_l1_voltage),
-            ups_l2_voltage=_read_and_scale_field(input_registers, register_map.ups_l2_voltage),
-            gen_l1_voltage=_read_and_scale_field(input_registers, register_map.gen_l1_voltage),
-            gen_l2_voltage=_read_and_scale_field(input_registers, register_map.gen_l2_voltage),
-            # Currents (scale /100 for amps)
-            grid_l1_current=_read_and_scale_field(input_registers, register_map.grid_l1_current),
-            grid_l2_current=_read_and_scale_field(input_registers, register_map.grid_l2_current),
-            load_l1_current=_read_and_scale_field(input_registers, register_map.load_l1_current),
-            load_l2_current=_read_and_scale_field(input_registers, register_map.load_l2_current),
-            gen_l1_current=_read_and_scale_field(input_registers, register_map.gen_l1_current),
-            gen_l2_current=_read_and_scale_field(input_registers, register_map.gen_l2_current),
-            ups_l1_current=_read_and_scale_field(input_registers, register_map.ups_l1_current),
-            ups_l2_current=_read_and_scale_field(input_registers, register_map.ups_l2_current),
-            # Power (no scaling - raw watts, signed)
-            grid_l1_power=_read_and_scale_field(input_registers, register_map.grid_l1_power),
-            grid_l2_power=_read_and_scale_field(input_registers, register_map.grid_l2_power),
-            load_l1_power=_read_and_scale_field(input_registers, register_map.load_l1_power),
-            load_l2_power=_read_and_scale_field(input_registers, register_map.load_l2_power),
-            gen_l1_power=_read_and_scale_field(input_registers, register_map.gen_l1_power),
-            gen_l2_power=_read_and_scale_field(input_registers, register_map.gen_l2_power),
-            ups_l1_power=_read_and_scale_field(input_registers, register_map.ups_l1_power),
-            ups_l2_power=_read_and_scale_field(input_registers, register_map.ups_l2_power),
-            hybrid_power=_read_and_scale_field(input_registers, register_map.hybrid_power),
-            # Smart Load Power (watts, signed)
-            smart_load_1_l1_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_1_l1_power
-            ),
-            smart_load_1_l2_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_1_l2_power
-            ),
-            smart_load_2_l1_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_2_l1_power
-            ),
-            smart_load_2_l2_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_2_l2_power
-            ),
-            smart_load_3_l1_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_3_l1_power
-            ),
-            smart_load_3_l2_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_3_l2_power
-            ),
-            smart_load_4_l1_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_4_l1_power
-            ),
-            smart_load_4_l2_power=_read_and_scale_field(
-                input_registers, register_map.smart_load_4_l2_power
-            ),
-            # Smart Port Status (0=off, 1=smart_load, 2=ac_couple)
-            # INPUT registers 105-108, confirmed via live register probe.
-            smart_port_1_status=_read_register_field(
-                input_registers, register_map.smart_port_1_status
-            ),
-            smart_port_2_status=_read_register_field(
-                input_registers, register_map.smart_port_2_status
-            ),
-            smart_port_3_status=_read_register_field(
-                input_registers, register_map.smart_port_3_status
-            ),
-            smart_port_4_status=_read_register_field(
-                input_registers, register_map.smart_port_4_status
-            ),
-            # Frequency (scale /100 for Hz)
-            phase_lock_freq=_read_and_scale_field(input_registers, register_map.phase_lock_freq),
-            grid_frequency=_read_and_scale_field(input_registers, register_map.grid_frequency),
-            gen_frequency=_read_and_scale_field(input_registers, register_map.gen_frequency),
-            # Energy Today (kWh, scale /10)
-            load_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.load_energy_today_l1
-            ),
-            load_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.load_energy_today_l2
-            ),
-            ups_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.ups_energy_today_l1
-            ),
-            ups_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.ups_energy_today_l2
-            ),
-            to_grid_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.to_grid_energy_today_l1
-            ),
-            to_grid_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.to_grid_energy_today_l2
-            ),
-            to_user_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.to_user_energy_today_l1
-            ),
-            to_user_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.to_user_energy_today_l2
-            ),
-            ac_couple_1_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_1_energy_today_l1
-            ),
-            ac_couple_1_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_1_energy_today_l2
-            ),
-            ac_couple_2_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_2_energy_today_l1
-            ),
-            ac_couple_2_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_2_energy_today_l2
-            ),
-            ac_couple_3_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_3_energy_today_l1
-            ),
-            ac_couple_3_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_3_energy_today_l2
-            ),
-            ac_couple_4_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_4_energy_today_l1
-            ),
-            ac_couple_4_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_4_energy_today_l2
-            ),
-            smart_load_1_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_1_energy_today_l1
-            ),
-            smart_load_1_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_1_energy_today_l2
-            ),
-            smart_load_2_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_2_energy_today_l1
-            ),
-            smart_load_2_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_2_energy_today_l2
-            ),
-            smart_load_3_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_3_energy_today_l1
-            ),
-            smart_load_3_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_3_energy_today_l2
-            ),
-            smart_load_4_energy_today_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_4_energy_today_l1
-            ),
-            smart_load_4_energy_today_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_4_energy_today_l2
-            ),
-            # Energy Total (kWh, 32-bit, scale /10)
-            load_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.load_energy_total_l1
-            ),
-            load_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.load_energy_total_l2
-            ),
-            ups_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.ups_energy_total_l1
-            ),
-            ups_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.ups_energy_total_l2
-            ),
-            to_grid_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.to_grid_energy_total_l1
-            ),
-            to_grid_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.to_grid_energy_total_l2
-            ),
-            to_user_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.to_user_energy_total_l1
-            ),
-            to_user_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.to_user_energy_total_l2
-            ),
-            ac_couple_1_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_1_energy_total_l1
-            ),
-            ac_couple_1_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_1_energy_total_l2
-            ),
-            ac_couple_2_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_2_energy_total_l1
-            ),
-            ac_couple_2_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_2_energy_total_l2
-            ),
-            ac_couple_3_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_3_energy_total_l1
-            ),
-            ac_couple_3_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_3_energy_total_l2
-            ),
-            ac_couple_4_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_4_energy_total_l1
-            ),
-            ac_couple_4_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.ac_couple_4_energy_total_l2
-            ),
-            smart_load_1_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_1_energy_total_l1
-            ),
-            smart_load_1_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_1_energy_total_l2
-            ),
-            smart_load_2_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_2_energy_total_l1
-            ),
-            smart_load_2_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_2_energy_total_l2
-            ),
-            smart_load_3_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_3_energy_total_l1
-            ),
-            smart_load_3_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_3_energy_total_l2
-            ),
-            smart_load_4_energy_total_l1=_read_and_scale_field(
-                input_registers, energy_map.smart_load_4_energy_total_l1
-            ),
-            smart_load_4_energy_total_l2=_read_and_scale_field(
-                input_registers, energy_map.smart_load_4_energy_total_l2
-            ),
-        )
+            kwargs[field_name] = read_scaled(input_registers, reg)
+
+        # Decode smart port modes from holding register 20 (bit-packed).
+        # Each port uses 2 bits: 0=off, 1=smart_load, 2=ac_couple.
+        # Bits 0-1 = port 1, bits 2-3 = port 2, bits 4-5 = port 3, bits 6-7 = port 4.
+        if smart_port_mode_reg is not None:
+            for port in range(1, 5):
+                mode = (smart_port_mode_reg >> ((port - 1) * 2)) & 0x03
+                kwargs[f"smart_port_{port}_status"] = mode
+
+        return cls(timestamp=datetime.now(), **kwargs)
 
     def to_dict(self) -> dict[str, float | int | None]:
         """Convert to dictionary with MidboxData-compatible field names.

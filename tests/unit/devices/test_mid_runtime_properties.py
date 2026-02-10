@@ -14,6 +14,76 @@ import pytest
 
 from pylxpweb.devices.mid_device import MIDDevice
 from pylxpweb.models import MidboxData, MidboxRuntime
+from pylxpweb.transports.data import MidboxRuntimeData
+
+
+def _apply_runtime(mid: MIDDevice, runtime: MidboxRuntime) -> None:
+    """Set runtime data, constructing scaled MidboxRuntimeData from MidboxData.
+
+    Applies the same scaling as ``from_http_response()`` but uses ``getattr``
+    so test fixtures created with ``model_construct()`` (partial fields) work.
+    """
+    mid._runtime = runtime
+    d = runtime.midboxData
+
+    def _g(attr: str) -> int | None:
+        return getattr(d, attr, None)
+
+    def _f(v: int | None) -> float | None:
+        return float(v) if v is not None else None
+
+    def _f_div(v: int | None, divisor: float) -> float | None:
+        return float(v) / divisor if v is not None else None
+
+    mid._transport_runtime = MidboxRuntimeData(
+        # Voltages (÷10)
+        grid_voltage=_f_div(_g("gridRmsVolt"), 10.0),
+        ups_voltage=_f_div(_g("upsRmsVolt"), 10.0),
+        gen_voltage=_f_div(_g("genRmsVolt"), 10.0),
+        grid_l1_voltage=_f_div(_g("gridL1RmsVolt"), 10.0),
+        grid_l2_voltage=_f_div(_g("gridL2RmsVolt"), 10.0),
+        ups_l1_voltage=_f_div(_g("upsL1RmsVolt"), 10.0),
+        ups_l2_voltage=_f_div(_g("upsL2RmsVolt"), 10.0),
+        gen_l1_voltage=_f_div(_g("genL1RmsVolt"), 10.0),
+        gen_l2_voltage=_f_div(_g("genL2RmsVolt"), 10.0),
+        # Currents (÷10)
+        grid_l1_current=_f_div(_g("gridL1RmsCurr"), 10.0),
+        grid_l2_current=_f_div(_g("gridL2RmsCurr"), 10.0),
+        load_l1_current=_f_div(_g("loadL1RmsCurr"), 10.0),
+        load_l2_current=_f_div(_g("loadL2RmsCurr"), 10.0),
+        gen_l1_current=_f_div(_g("genL1RmsCurr"), 10.0),
+        gen_l2_current=_f_div(_g("genL2RmsCurr"), 10.0),
+        ups_l1_current=_f_div(_g("upsL1RmsCurr"), 10.0),
+        ups_l2_current=_f_div(_g("upsL2RmsCurr"), 10.0),
+        # Power (no scaling)
+        grid_l1_power=_f(_g("gridL1ActivePower")),
+        grid_l2_power=_f(_g("gridL2ActivePower")),
+        load_l1_power=_f(_g("loadL1ActivePower")),
+        load_l2_power=_f(_g("loadL2ActivePower")),
+        gen_l1_power=_f(_g("genL1ActivePower")),
+        gen_l2_power=_f(_g("genL2ActivePower")),
+        ups_l1_power=_f(_g("upsL1ActivePower")),
+        ups_l2_power=_f(_g("upsL2ActivePower")),
+        hybrid_power=_f(_g("hybridPower")),
+        # Smart Load Power (no scaling)
+        smart_load_1_l1_power=_f(_g("smartLoad1L1ActivePower")),
+        smart_load_1_l2_power=_f(_g("smartLoad1L2ActivePower")),
+        smart_load_2_l1_power=_f(_g("smartLoad2L1ActivePower")),
+        smart_load_2_l2_power=_f(_g("smartLoad2L2ActivePower")),
+        smart_load_3_l1_power=_f(_g("smartLoad3L1ActivePower")),
+        smart_load_3_l2_power=_f(_g("smartLoad3L2ActivePower")),
+        smart_load_4_l1_power=_f(_g("smartLoad4L1ActivePower")),
+        smart_load_4_l2_power=_f(_g("smartLoad4L2ActivePower")),
+        # Smart Port Status (raw int)
+        smart_port_1_status=_g("smartPort1Status"),
+        smart_port_2_status=_g("smartPort2Status"),
+        smart_port_3_status=_g("smartPort3Status"),
+        smart_port_4_status=_g("smartPort4Status"),
+        # Frequency (÷100)
+        phase_lock_freq=_f_div(_g("phaseLockFreq"), 100.0),
+        grid_frequency=_f_div(_g("gridFreq"), 100.0),
+        gen_frequency=_f_div(_g("genFreq"), 100.0),
+    )
 
 
 @pytest.fixture
@@ -80,7 +150,7 @@ def mid_device_with_runtime() -> MIDDevice:
         fwCode="v1.0.0",
     )
 
-    mid_device._runtime = runtime
+    _apply_runtime(mid_device, runtime)
     return mid_device
 
 
@@ -288,7 +358,7 @@ class TestPropertyTypes:
     """Test that all properties return expected types."""
 
     def test_all_float_properties_return_float(self, mid_device_with_runtime):
-        """Verify all voltage/frequency/current properties return float."""
+        """Verify all voltage/frequency/current/power properties return float."""
         float_properties = [
             "grid_voltage",
             "ups_voltage",
@@ -308,15 +378,7 @@ class TestPropertyTypes:
             "ups_l1_current",
             "ups_l2_current",
             "grid_frequency",
-        ]
-
-        for prop in float_properties:
-            value = getattr(mid_device_with_runtime, prop)
-            assert isinstance(value, float), f"{prop} should return float, got {type(value)}"
-
-    def test_all_int_properties_return_int(self, mid_device_with_runtime):
-        """Verify all power/status properties return int."""
-        int_properties = [
+            # Power properties return float (stored as float in MidboxRuntimeData)
             "grid_l1_power",
             "grid_l2_power",
             "grid_power",
@@ -330,6 +392,15 @@ class TestPropertyTypes:
             "ups_l2_power",
             "ups_power",
             "hybrid_power",
+        ]
+
+        for prop in float_properties:
+            value = getattr(mid_device_with_runtime, prop)
+            assert isinstance(value, float), f"{prop} should return float, got {type(value)}"
+
+    def test_all_int_properties_return_int(self, mid_device_with_runtime):
+        """Verify all status properties return int."""
+        int_properties = [
             "smart_port1_status",
             "smart_port2_status",
             "smart_port3_status",
@@ -453,7 +524,7 @@ class TestACCouplePowerRemapping:
             fwCode="v1.0.0",
         )
 
-        mid_device._runtime = runtime
+        _apply_runtime(mid_device, runtime)
         return mid_device
 
     def test_ac_couple_power_reads_from_smart_load_when_ac_couple_mode(
@@ -474,21 +545,21 @@ class TestACCouplePowerRemapping:
         assert device.ac_couple4_l2_power == 900
         assert device.ac_couple4_power == 1700  # Sum of L1 + L2
 
-    def test_ac_couple_power_returns_zero_when_not_ac_couple_mode(self, mid_device_ac_couple_mode):
-        """Verify AC Couple power returns 0 when port is not in AC Couple mode."""
+    def test_ac_couple_power_returns_none_when_not_ac_couple_mode(self, mid_device_ac_couple_mode):
+        """Verify AC Couple power returns None when port is not in AC Couple mode."""
         device = mid_device_ac_couple_mode
 
-        # Port 2 is unused (status=0)
-        # Should return 0 from acCouple2L*ActivePower fields
-        assert device.ac_couple2_l1_power == 0
-        assert device.ac_couple2_l2_power == 0
-        assert device.ac_couple2_power == 0
+        # Port 2 is unused (status=0, smart_load power=0)
+        # Returns None — port not configured for AC coupling, no power flowing
+        assert device.ac_couple2_l1_power is None
+        assert device.ac_couple2_l2_power is None
+        assert device.ac_couple2_power is None
 
         # Port 3 is in Smart Load mode (status=1)
-        # Should return 0 from acCouple3L*ActivePower fields (not from smartLoad)
-        assert device.ac_couple3_l1_power == 0
-        assert device.ac_couple3_l2_power == 0
-        assert device.ac_couple3_power == 0
+        # Returns None — port not in AC Couple mode
+        assert device.ac_couple3_l1_power is None
+        assert device.ac_couple3_l2_power is None
+        assert device.ac_couple3_power is None
 
     def test_smart_load_power_unaffected_by_remapping(self, mid_device_ac_couple_mode):
         """Verify Smart Load power properties always read from Smart Load fields."""

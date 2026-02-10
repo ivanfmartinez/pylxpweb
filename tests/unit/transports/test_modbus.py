@@ -496,7 +496,7 @@ class TestReadAllInputData:
             mock_client.close = MagicMock()
 
             # Build a register response with battery data
-            registers = [0] * 172
+            registers = [0] * 197
             registers[1] = 5100  # PV1 voltage (×10 = 510V)
             registers[4] = 530  # Battery voltage (×10 = 53V)
             registers[5] = (100 << 8) | 85  # SOC=85, SOH=100
@@ -534,8 +534,8 @@ class TestReadAllInputData:
             assert runtime.pv1_voltage == pytest.approx(510.0, rel=0.01)
             assert runtime.battery_soc == 85
 
-            # Should have made exactly 7 reads (one per register group)
-            assert call_idx == 7
+            # Should have made exactly 8 reads (one per register group)
+            assert call_idx == 8
 
     @pytest.mark.asyncio
     async def test_read_all_reads_individual_batteries(self) -> None:
@@ -551,7 +551,7 @@ class TestReadAllInputData:
             mock_client.close = MagicMock()
 
             # Build registers with battery_count = 2
-            registers = [0] * 172
+            registers = [0] * 197
             registers[4] = 530  # Battery voltage
             registers[5] = (100 << 8) | 85  # SOC/SOH
             registers[96] = 2  # Battery count = 2
@@ -575,10 +575,10 @@ class TestReadAllInputData:
             await transport.connect()
             runtime, energy, battery = await transport.read_all_input_data()
 
-            # Should read 7 register groups + individual battery reads at 5002+
+            # Should read 8 register groups + individual battery reads at 5002+
             assert any(addr >= 5000 for addr in read_addresses)
-            # First 7 reads are the register groups
-            group_starts = [0, 32, 64, 80, 113, 140, 170]
+            # First 8 reads are the register groups
+            group_starts = [0, 32, 64, 80, 113, 140, 170, 193]
             for expected_start in group_starts:
                 assert expected_start in read_addresses
 
@@ -595,7 +595,7 @@ class TestReadAllInputData:
             mock_client.connect = AsyncMock(return_value=True)
             mock_client.close = MagicMock()
 
-            registers = [0] * 172
+            registers = [0] * 197
             registers[4] = 530  # Battery voltage
             registers[5] = (100 << 8) | 85  # SOC/SOH
             registers[96] = 0  # No individual batteries
@@ -628,8 +628,8 @@ class TestReadAllInputData:
             await transport.read_all_input_data()
             combined_reads = call_count
 
-            # Combined should use exactly 7 reads (no individual batteries)
-            assert combined_reads == 7
+            # Combined should use exactly 8 reads (no individual batteries)
+            assert combined_reads == 8
 
     @pytest.mark.asyncio
     async def test_read_all_survives_bms_data_failure(self) -> None:
@@ -644,7 +644,7 @@ class TestReadAllInputData:
             mock_client.connect = AsyncMock(return_value=True)
             mock_client.close = MagicMock()
 
-            registers = [0] * 172
+            registers = [0] * 197
             registers[4] = 530  # Battery voltage
             registers[5] = (100 << 8) | 85  # SOC/SOH
             registers[96] = 0  # No individual batteries

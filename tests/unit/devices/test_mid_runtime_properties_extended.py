@@ -16,6 +16,122 @@ import pytest
 
 from pylxpweb.devices.mid_device import MIDDevice
 from pylxpweb.models import MidboxData, MidboxRuntime
+from pylxpweb.transports.data import MidboxRuntimeData
+
+
+def _apply_runtime(mid: MIDDevice, runtime: MidboxRuntime) -> None:
+    """Set runtime data, constructing scaled MidboxRuntimeData from MidboxData."""
+    mid._runtime = runtime
+    d = runtime.midboxData
+
+    def _g(attr: str) -> int | None:
+        return getattr(d, attr, None)
+
+    def _f(v: int | None) -> float | None:
+        return float(v) if v is not None else None
+
+    def _f_div(v: int | None, divisor: float) -> float | None:
+        return float(v) / divisor if v is not None else None
+
+    mid._transport_runtime = MidboxRuntimeData(
+        # Voltages (÷10)
+        grid_voltage=_f_div(_g("gridRmsVolt"), 10.0),
+        ups_voltage=_f_div(_g("upsRmsVolt"), 10.0),
+        gen_voltage=_f_div(_g("genRmsVolt"), 10.0),
+        grid_l1_voltage=_f_div(_g("gridL1RmsVolt"), 10.0),
+        grid_l2_voltage=_f_div(_g("gridL2RmsVolt"), 10.0),
+        ups_l1_voltage=_f_div(_g("upsL1RmsVolt"), 10.0),
+        ups_l2_voltage=_f_div(_g("upsL2RmsVolt"), 10.0),
+        gen_l1_voltage=_f_div(_g("genL1RmsVolt"), 10.0),
+        gen_l2_voltage=_f_div(_g("genL2RmsVolt"), 10.0),
+        # Currents (÷10)
+        grid_l1_current=_f_div(_g("gridL1RmsCurr"), 10.0),
+        grid_l2_current=_f_div(_g("gridL2RmsCurr"), 10.0),
+        load_l1_current=_f_div(_g("loadL1RmsCurr"), 10.0),
+        load_l2_current=_f_div(_g("loadL2RmsCurr"), 10.0),
+        gen_l1_current=_f_div(_g("genL1RmsCurr"), 10.0),
+        gen_l2_current=_f_div(_g("genL2RmsCurr"), 10.0),
+        ups_l1_current=_f_div(_g("upsL1RmsCurr"), 10.0),
+        ups_l2_current=_f_div(_g("upsL2RmsCurr"), 10.0),
+        # Power (no scaling)
+        grid_l1_power=_f(_g("gridL1ActivePower")),
+        grid_l2_power=_f(_g("gridL2ActivePower")),
+        load_l1_power=_f(_g("loadL1ActivePower")),
+        load_l2_power=_f(_g("loadL2ActivePower")),
+        gen_l1_power=_f(_g("genL1ActivePower")),
+        gen_l2_power=_f(_g("genL2ActivePower")),
+        ups_l1_power=_f(_g("upsL1ActivePower")),
+        ups_l2_power=_f(_g("upsL2ActivePower")),
+        hybrid_power=_f(_g("hybridPower")),
+        # Smart Load Power (no scaling)
+        smart_load_1_l1_power=_f(_g("smartLoad1L1ActivePower")),
+        smart_load_1_l2_power=_f(_g("smartLoad1L2ActivePower")),
+        smart_load_2_l1_power=_f(_g("smartLoad2L1ActivePower")),
+        smart_load_2_l2_power=_f(_g("smartLoad2L2ActivePower")),
+        smart_load_3_l1_power=_f(_g("smartLoad3L1ActivePower")),
+        smart_load_3_l2_power=_f(_g("smartLoad3L2ActivePower")),
+        smart_load_4_l1_power=_f(_g("smartLoad4L1ActivePower")),
+        smart_load_4_l2_power=_f(_g("smartLoad4L2ActivePower")),
+        # Smart Port Status (raw int)
+        smart_port_1_status=_g("smartPort1Status"),
+        smart_port_2_status=_g("smartPort2Status"),
+        smart_port_3_status=_g("smartPort3Status"),
+        smart_port_4_status=_g("smartPort4Status"),
+        # Frequency (÷100)
+        phase_lock_freq=_f_div(_g("phaseLockFreq"), 100.0),
+        grid_frequency=_f_div(_g("gridFreq"), 100.0),
+        gen_frequency=_f_div(_g("genFreq"), 100.0),
+        # Energy Today (÷10)
+        load_energy_today_l1=_f_div(_g("eLoadTodayL1"), 10.0),
+        load_energy_today_l2=_f_div(_g("eLoadTodayL2"), 10.0),
+        ups_energy_today_l1=_f_div(_g("eUpsTodayL1"), 10.0),
+        ups_energy_today_l2=_f_div(_g("eUpsTodayL2"), 10.0),
+        to_grid_energy_today_l1=_f_div(_g("eToGridTodayL1"), 10.0),
+        to_grid_energy_today_l2=_f_div(_g("eToGridTodayL2"), 10.0),
+        to_user_energy_today_l1=_f_div(_g("eToUserTodayL1"), 10.0),
+        to_user_energy_today_l2=_f_div(_g("eToUserTodayL2"), 10.0),
+        ac_couple_1_energy_today_l1=_f_div(_g("eACcouple1TodayL1"), 10.0),
+        ac_couple_1_energy_today_l2=_f_div(_g("eACcouple1TodayL2"), 10.0),
+        ac_couple_2_energy_today_l1=_f_div(_g("eACcouple2TodayL1"), 10.0),
+        ac_couple_2_energy_today_l2=_f_div(_g("eACcouple2TodayL2"), 10.0),
+        ac_couple_3_energy_today_l1=_f_div(_g("eACcouple3TodayL1"), 10.0),
+        ac_couple_3_energy_today_l2=_f_div(_g("eACcouple3TodayL2"), 10.0),
+        ac_couple_4_energy_today_l1=_f_div(_g("eACcouple4TodayL1"), 10.0),
+        ac_couple_4_energy_today_l2=_f_div(_g("eACcouple4TodayL2"), 10.0),
+        smart_load_1_energy_today_l1=_f_div(_g("eSmartLoad1TodayL1"), 10.0),
+        smart_load_1_energy_today_l2=_f_div(_g("eSmartLoad1TodayL2"), 10.0),
+        smart_load_2_energy_today_l1=_f_div(_g("eSmartLoad2TodayL1"), 10.0),
+        smart_load_2_energy_today_l2=_f_div(_g("eSmartLoad2TodayL2"), 10.0),
+        smart_load_3_energy_today_l1=_f_div(_g("eSmartLoad3TodayL1"), 10.0),
+        smart_load_3_energy_today_l2=_f_div(_g("eSmartLoad3TodayL2"), 10.0),
+        smart_load_4_energy_today_l1=_f_div(_g("eSmartLoad4TodayL1"), 10.0),
+        smart_load_4_energy_today_l2=_f_div(_g("eSmartLoad4TodayL2"), 10.0),
+        # Energy Total (÷10)
+        load_energy_total_l1=_f_div(_g("eLoadTotalL1"), 10.0),
+        load_energy_total_l2=_f_div(_g("eLoadTotalL2"), 10.0),
+        ups_energy_total_l1=_f_div(_g("eUpsTotalL1"), 10.0),
+        ups_energy_total_l2=_f_div(_g("eUpsTotalL2"), 10.0),
+        to_grid_energy_total_l1=_f_div(_g("eToGridTotalL1"), 10.0),
+        to_grid_energy_total_l2=_f_div(_g("eToGridTotalL2"), 10.0),
+        to_user_energy_total_l1=_f_div(_g("eToUserTotalL1"), 10.0),
+        to_user_energy_total_l2=_f_div(_g("eToUserTotalL2"), 10.0),
+        ac_couple_1_energy_total_l1=_f_div(_g("eACcouple1TotalL1"), 10.0),
+        ac_couple_1_energy_total_l2=_f_div(_g("eACcouple1TotalL2"), 10.0),
+        ac_couple_2_energy_total_l1=_f_div(_g("eACcouple2TotalL1"), 10.0),
+        ac_couple_2_energy_total_l2=_f_div(_g("eACcouple2TotalL2"), 10.0),
+        ac_couple_3_energy_total_l1=_f_div(_g("eACcouple3TotalL1"), 10.0),
+        ac_couple_3_energy_total_l2=_f_div(_g("eACcouple3TotalL2"), 10.0),
+        ac_couple_4_energy_total_l1=_f_div(_g("eACcouple4TotalL1"), 10.0),
+        ac_couple_4_energy_total_l2=_f_div(_g("eACcouple4TotalL2"), 10.0),
+        smart_load_1_energy_total_l1=_f_div(_g("eSmartLoad1TotalL1"), 10.0),
+        smart_load_1_energy_total_l2=_f_div(_g("eSmartLoad1TotalL2"), 10.0),
+        smart_load_2_energy_total_l1=_f_div(_g("eSmartLoad2TotalL1"), 10.0),
+        smart_load_2_energy_total_l2=_f_div(_g("eSmartLoad2TotalL2"), 10.0),
+        smart_load_3_energy_total_l1=_f_div(_g("eSmartLoad3TotalL1"), 10.0),
+        smart_load_3_energy_total_l2=_f_div(_g("eSmartLoad3TotalL2"), 10.0),
+        smart_load_4_energy_total_l1=_f_div(_g("eSmartLoad4TotalL1"), 10.0),
+        smart_load_4_energy_total_l2=_f_div(_g("eSmartLoad4TotalL2"), 10.0),
+    )
 
 
 @pytest.fixture
@@ -133,7 +249,7 @@ def mid_device_with_energy_data() -> MIDDevice:
         fwCode="v1.0.0",
     )
 
-    mid_device._runtime = runtime
+    _apply_runtime(mid_device, runtime)
     return mid_device
 
 
@@ -658,7 +774,7 @@ class TestSumEnergyHelper:
             fwCode="v1.0.0",
         )
 
-        mid_device._runtime = runtime
+        _apply_runtime(mid_device, runtime)
         return mid_device
 
     def test_sum_energy_both_values_present(self, mid_device_partial_energy):
@@ -698,7 +814,7 @@ class TestIsOffGridProperty:
         runtime = MagicMock()
         runtime.isOffGrid = True
 
-        mid_device._runtime = runtime
+        _apply_runtime(mid_device, runtime)
         return mid_device
 
     @pytest.fixture
@@ -715,7 +831,7 @@ class TestIsOffGridProperty:
         runtime = MagicMock()
         runtime.isOffGrid = False
 
-        mid_device._runtime = runtime
+        _apply_runtime(mid_device, runtime)
         return mid_device
 
     def test_is_off_grid_true_when_transport_runtime_true(self, mid_device_off_grid):
@@ -783,7 +899,7 @@ class TestIsOffGridProperty:
         )
         # Don't add isOffGrid attribute - simulating missing field
 
-        mid_device._runtime = runtime
+        _apply_runtime(mid_device, runtime)
 
         # Should gracefully return False with getattr default
         assert mid_device.is_off_grid is False
@@ -871,7 +987,7 @@ class TestACCouplePowerLocalMode:
             fwCode="v1.0.0",
         )
 
-        mid_device._runtime = runtime
+        _apply_runtime(mid_device, runtime)
         return mid_device
 
     def test_ac_couple_power_reads_smart_load_when_local_mode_and_nonzero(
@@ -894,19 +1010,19 @@ class TestACCouplePowerLocalMode:
     def test_ac_couple_power_returns_zero_when_local_mode_and_zero_smart_load(
         self, mid_device_local_mode
     ):
-        """Verify AC Couple returns 0 in LOCAL mode when Smart Load power is 0."""
+        """Verify AC Couple returns None in LOCAL mode when Smart Load power is 0."""
         device = mid_device_local_mode
 
         # Port 2: status=0, Smart Load power is 0
-        # Should return 0 from acCouple2L*ActivePower fields
-        assert device.ac_couple2_l1_power == 0
-        assert device.ac_couple2_l2_power == 0
-        assert device.ac_couple2_power == 0
+        # Returns None — no AC couple data, no power flowing
+        assert device.ac_couple2_l1_power is None
+        assert device.ac_couple2_l2_power is None
+        assert device.ac_couple2_power is None
 
         # Port 4: status=0, Smart Load power is 0
-        assert device.ac_couple4_l1_power == 0
-        assert device.ac_couple4_l2_power == 0
-        assert device.ac_couple4_power == 0
+        assert device.ac_couple4_l1_power is None
+        assert device.ac_couple4_l2_power is None
+        assert device.ac_couple4_power is None
 
     def test_ac_couple_power_helper_returns_zero_when_runtime_none(
         self, mid_device_without_runtime
@@ -980,7 +1096,7 @@ class TestFrequencyPropertiesExtended:
             fwCode="v1.0.0",
         )
 
-        mid_device._runtime = runtime
+        _apply_runtime(mid_device, runtime)
 
         assert mid_device.phase_lock_frequency == 60.05
         assert mid_device.generator_frequency == 59.95
