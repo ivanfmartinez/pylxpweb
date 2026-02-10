@@ -262,6 +262,30 @@ class InverterModelInfo:
         return cls(raw_value=raw_value)
 
     @classmethod
+    def from_registers(cls, reg0: int, reg1: int) -> "InverterModelInfo":
+        """Create InverterModelInfo from raw Modbus holding registers 0-1.
+
+        Decodes power_rating from the register bitfield. For EG4_HYBRID
+        family devices (18kPV, 12kPV, FlexBOSS), power_rating occupies
+        bits 8-11 of the low word (register 0).
+
+        This enables model differentiation in LOCAL mode where the cloud
+        API's pre-decoded HOLD_MODEL_* fields are not available.
+
+        Args:
+            reg0: Holding register 0 (HOLD_MODEL low word).
+            reg1: Holding register 1 (HOLD_MODEL high word).
+
+        Returns:
+            InverterModelInfo with raw_value and power_rating populated.
+        """
+        raw_value = (reg1 << 16) | reg0
+        # Bits 8-11 of reg0 encode power_rating for EG4_HYBRID family.
+        # Verified against 18KPV (power_rating=6, reg0=0x86C0).
+        power_rating = (reg0 >> 8) & 0xF
+        return cls(raw_value=raw_value, power_rating=power_rating)
+
+    @classmethod
     def from_parameters(cls, params: dict[str, int | str | bool]) -> InverterModelInfo:
         """Create InverterModelInfo from API-decoded parameters.
 

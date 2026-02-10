@@ -124,6 +124,49 @@ class TestInverterModelInfo:
         assert model.power_rating == 0
         assert model.us_version is False
 
+    def test_from_registers_18kpv(self) -> None:
+        """Test from_registers decodes 18KPV power_rating from register bitfield."""
+        # 18KPV: raw=0x986C0, reg0=0x86C0, reg1=0x0009, power_rating=6
+        model = InverterModelInfo.from_registers(0x86C0, 0x0009)
+
+        assert model.raw_value == 0x986C0
+        assert model.power_rating == 6  # bits 8-11 of reg0
+        assert model.get_model_name(2092) == "18KPV"
+
+    def test_from_registers_flexboss21(self) -> None:
+        """Test from_registers decodes FlexBOSS21 (power_rating=8)."""
+        # FlexBOSS21: bits 8-11 of reg0 = 8
+        # Construct reg0 with power_rating=8 in bits 8-11
+        reg0 = 0x08C0  # bits 8-11 = 8 (0b1000)
+        model = InverterModelInfo.from_registers(reg0, 0x0009)
+
+        assert model.power_rating == 8
+        assert model.get_model_name(10284) == "FlexBOSS21"
+
+    def test_from_registers_flexboss18(self) -> None:
+        """Test from_registers decodes FlexBOSS18 (power_rating=9)."""
+        # FlexBOSS18: bits 8-11 of reg0 = 9
+        reg0 = 0x09C0  # bits 8-11 = 9 (0b1001)
+        model = InverterModelInfo.from_registers(reg0, 0x0009)
+
+        assert model.power_rating == 9
+        assert model.get_model_name(10284) == "FlexBOSS18"
+
+    def test_from_registers_12kpv(self) -> None:
+        """Test from_registers decodes 12KPV (power_rating=2)."""
+        reg0 = 0x02C0  # bits 8-11 = 2
+        model = InverterModelInfo.from_registers(reg0, 0x0009)
+
+        assert model.power_rating == 2
+        assert model.get_model_name(2092) == "12KPV"
+
+    def test_from_registers_zero_values(self) -> None:
+        """Test from_registers with zero registers."""
+        model = InverterModelInfo.from_registers(0, 0)
+
+        assert model.raw_value == 0
+        assert model.power_rating == 0
+
     def test_from_parameters_empty(self) -> None:
         """Test creating model info from empty parameters."""
         model = InverterModelInfo.from_parameters({})

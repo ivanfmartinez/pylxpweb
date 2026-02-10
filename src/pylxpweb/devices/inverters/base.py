@@ -344,14 +344,38 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
                     transport.serial,
                 )
 
-                # Set model name from family if not provided
+                # Read HOLD_MODEL (registers 0-1) for specific model name.
+                # This differentiates e.g. FlexBOSS18 vs FlexBOSS21, 12KPV vs 18KPV.
+                try:
+                    model_params = await transport.read_parameters(0, 2)
+                    if 0 in model_params and 1 in model_params:
+                        model_info = InverterModelInfo.from_registers(
+                            model_params[0], model_params[1]
+                        )
+                        specific = model_info.get_model_name(device_type_code)
+                        if specific and not specific.startswith("Unknown"):
+                            detected_model = specific
+                            _LOGGER.debug(
+                                "HOLD_MODEL for %s: %s (power_rating=%d)",
+                                transport.serial,
+                                detected_model,
+                                model_info.power_rating,
+                            )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Could not read HOLD_MODEL for %s: %s",
+                        transport.serial,
+                        err,
+                    )
+
+                # Fall back to family default if HOLD_MODEL didn't resolve
                 if detected_model is None:
                     if model_family == InverterFamily.EG4_HYBRID:
-                        detected_model = "18KPV"  # Default for EG4 Hybrid series
+                        detected_model = "18KPV"
                     elif model_family == InverterFamily.EG4_OFFGRID:
-                        detected_model = "12000XP"  # Default for EG4 Off-Grid series
+                        detected_model = "12000XP"
                     elif model_family == InverterFamily.LXP:
-                        detected_model = "LXP"  # Default for Luxpower series
+                        detected_model = "LXP"
                     else:
                         detected_model = "Unknown"
         except LuxpowerDeviceError:
