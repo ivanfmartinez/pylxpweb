@@ -88,3 +88,7 @@ docs/.doctrees/
 test_api_debug.py
 test_full_data_check.py
 full_data_check_output.txt
+
+# Local scratchpad and one-off scripts (not part of the package)
+scratchpad/
+probe_*.py
