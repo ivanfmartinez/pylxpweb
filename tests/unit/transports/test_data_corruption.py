@@ -1,0 +1,252 @@
+"""Tests for data corruption detection in transport data classes.
+
+Tests the ``is_corrupt()`` methods and ``_raw_soc``/``_raw_soh`` fields on
+InverterRuntimeData, InverterEnergyData, BatteryData, BatteryBankData,
+and MidboxRuntimeData.  These canary checks detect physically impossible
+register values that indicate Modbus transaction ID desync or bad dongle data
+(see: eg4_web_monitor issue #83).
+
+Canary ranges (tuned 2026-02-13):
+  - Grid frequency: 30-90 Hz (0 Hz is valid in off-grid/EPS mode)
+  - SoC/SoH: must be <= 100
+  - Battery voltage: must be <= 100V (no LFP exceeds 60V)
+  - Smart port status: must be 0-2
+  - ac_input_type: NOT checked (unreliable across firmware)
+"""
+
+from __future__ import annotations
+
+from pylxpweb.transports.data import (
+    BatteryBankData,
+    BatteryData,
+    InverterEnergyData,
+    InverterRuntimeData,
+    MidboxRuntimeData,
+)
+
+
+class TestInverterRuntimeDataCorruption:
+    """Corruption detection for InverterRuntimeData."""
+
+    def test_valid_data_not_corrupt(self) -> None:
+        """is_corrupt() returns False for physically plausible values."""
+        data = InverterRuntimeData(
+            battery_soc=85,
+            battery_soh=95,
+            grid_frequency=60.0,
+            ac_input_type=1,
+        )
+        assert data.is_corrupt() is False
+
+    def test_raw_soc_above_100_is_corrupt(self) -> None:
+        """is_corrupt() returns True when _raw_soc > 100 (e.g. battery_soc=144)."""
+        data = InverterRuntimeData(battery_soc=144)
+        assert data.is_corrupt() is True
+
+    def test_raw_soh_above_100_is_corrupt(self) -> None:
+        """is_corrupt() returns True when _raw_soh > 100 (e.g. battery_soh=200)."""
+        data = InverterRuntimeData(battery_soh=200)
+        assert data.is_corrupt() is True
+
+    def test_grid_frequency_zero_not_corrupt(self) -> None:
+        """is_corrupt() returns False when grid_frequency is 0 (off-grid/EPS mode)."""
+        data = InverterRuntimeData(grid_frequency=0.0)
+        assert data.is_corrupt() is False
+
+    def test_grid_frequency_below_30_is_corrupt(self) -> None:
+        """is_corrupt() returns True when grid_frequency is non-zero and < 30 Hz."""
+        data = InverterRuntimeData(grid_frequency=15.0)
+        assert data.is_corrupt() is True
+
+    def test_grid_frequency_above_90_is_corrupt(self) -> None:
+        """is_corrupt() returns True when grid_frequency > 90 Hz."""
+        data = InverterRuntimeData(grid_frequency=255.0)
+        assert data.is_corrupt() is True
+
+    def test_grid_frequency_50hz_valid(self) -> None:
+        """is_corrupt() returns False for 50 Hz grid (EU/Asia)."""
+        data = InverterRuntimeData(grid_frequency=50.0)
+        assert data.is_corrupt() is False
+
+    def test_grid_frequency_60hz_valid(self) -> None:
+        """is_corrupt() returns False for 60 Hz grid (US)."""
+        data = InverterRuntimeData(grid_frequency=60.0)
+        assert data.is_corrupt() is False
+
+    def test_ac_input_type_not_checked(self) -> None:
+        """ac_input_type is no longer a canary check (unreliable across firmware)."""
+        data = InverterRuntimeData(ac_input_type=7)
+        assert data.is_corrupt() is False
+
+    def test_raw_soc_preserves_original_while_soc_clamped(self) -> None:
+        """_raw_soc preserves the pre-clamp value while battery_soc is clamped to 100."""
+        data = InverterRuntimeData(battery_soc=144)
+        assert data._raw_soc == 144
+        assert data.battery_soc == 100
+
+    def test_raw_soh_preserves_original_while_soh_clamped(self) -> None:
+        """_raw_soh preserves the pre-clamp value while battery_soh is clamped to 100."""
+        data = InverterRuntimeData(battery_soh=200)
+        assert data._raw_soh == 200
+        assert data.battery_soh == 100
+
+    def test_all_none_fields_not_corrupt(self) -> None:
+        """is_corrupt() returns False when all fields are None (default construction)."""
+        data = InverterRuntimeData()
+        assert data.is_corrupt() is False
+
+
+class TestInverterEnergyDataCorruption:
+    """Corruption detection for InverterEnergyData."""
+
+    def test_always_returns_false(self) -> None:
+        """is_corrupt() always returns False (no physical canaries for energy)."""
+        data = InverterEnergyData(
+            pv_energy_today=100.0,
+            charge_energy_today=50.0,
+            grid_import_total=5000.0,
+        )
+        assert data.is_corrupt() is False
+
+    def test_default_construction_not_corrupt(self) -> None:
+        """is_corrupt() returns False for default-constructed energy data."""
+        data = InverterEnergyData()
+        assert data.is_corrupt() is False
+
+
+class TestBatteryDataCorruption:
+    """Corruption detection for BatteryData."""
+
+    def test_valid_data_not_corrupt(self) -> None:
+        """is_corrupt() returns False for valid battery data."""
+        data = BatteryData(soc=50, soh=90, voltage=52.0)
+        assert data.is_corrupt() is False
+
+    def test_raw_soc_above_100_is_corrupt(self) -> None:
+        """is_corrupt() returns True when _raw_soc > 100."""
+        data = BatteryData(soc=144)
+        assert data.is_corrupt() is True
+
+    def test_raw_soh_above_100_is_corrupt(self) -> None:
+        """is_corrupt() returns True when _raw_soh > 100."""
+        data = BatteryData(soh=200)
+        assert data.is_corrupt() is True
+
+    def test_voltage_above_100_is_corrupt(self) -> None:
+        """is_corrupt() returns True when voltage > 100.0V (no LFP exceeds 60V)."""
+        data = BatteryData(voltage=655.35)
+        assert data.is_corrupt() is True
+
+    def test_raw_soc_preserves_pre_clamp_value(self) -> None:
+        """_raw_soc preserves the original value before clamping."""
+        data = BatteryData(soc=144)
+        assert data._raw_soc == 144
+        assert data.soc == 100
+
+
+class TestBatteryBankDataCorruption:
+    """Corruption detection for BatteryBankData."""
+
+    def test_valid_bank_not_corrupt(self) -> None:
+        """is_corrupt() returns False for valid battery bank data."""
+        data = BatteryBankData(
+            soc=85,
+            soh=95,
+            voltage=53.0,
+            batteries=[
+                BatteryData(soc=85, soh=95, voltage=53.0),
+                BatteryData(soc=86, soh=96, voltage=53.1),
+            ],
+        )
+        assert data.is_corrupt() is False
+
+    def test_bank_raw_soc_above_100_is_corrupt(self) -> None:
+        """is_corrupt() returns True when bank _raw_soc > 100."""
+        data = BatteryBankData(soc=144, soh=95)
+        assert data.is_corrupt() is True
+
+    def test_child_battery_corrupt_cascades(self) -> None:
+        """is_corrupt() returns True when any child BatteryData is corrupt."""
+        corrupt_battery = BatteryData(soc=144, voltage=52.0)
+        data = BatteryBankData(
+            soc=85,
+            soh=95,
+            batteries=[
+                BatteryData(soc=50, soh=90, voltage=52.0),
+                corrupt_battery,
+            ],
+        )
+        assert data.is_corrupt() is True
+
+    def test_ghost_battery_skipped_in_cascade(self) -> None:
+        """is_corrupt() skips ghost batteries (voltage=0, soc=0) in cascade check."""
+        ghost = BatteryData(soc=0, soh=0, voltage=0.0)
+        data = BatteryBankData(
+            soc=85,
+            soh=95,
+            batteries=[
+                BatteryData(soc=50, soh=90, voltage=52.0),
+                ghost,
+            ],
+        )
+        assert data.is_corrupt() is False
+
+    def test_empty_batteries_with_valid_bank_soc_not_corrupt(self) -> None:
+        """is_corrupt() returns False for empty batteries list with valid bank SoC/SoH."""
+        data = BatteryBankData(soc=85, soh=95, batteries=[])
+        assert data.is_corrupt() is False
+
+
+class TestMidboxRuntimeDataCorruption:
+    """Corruption detection for MidboxRuntimeData."""
+
+    def test_valid_data_not_corrupt(self) -> None:
+        """is_corrupt() returns False for valid GridBOSS data."""
+        data = MidboxRuntimeData(
+            grid_frequency=60.0,
+            smart_port_1_status=0,
+            smart_port_2_status=1,
+            smart_port_3_status=2,
+            smart_port_4_status=0,
+        )
+        assert data.is_corrupt() is False
+
+    def test_grid_frequency_zero_not_corrupt(self) -> None:
+        """is_corrupt() returns False when grid_frequency is 0 (off-grid/EPS mode)."""
+        data = MidboxRuntimeData(grid_frequency=0.0)
+        assert data.is_corrupt() is False
+
+    def test_grid_frequency_below_30_is_corrupt(self) -> None:
+        """is_corrupt() returns True when grid_frequency is non-zero and < 30 Hz."""
+        data = MidboxRuntimeData(grid_frequency=15.0)
+        assert data.is_corrupt() is True
+
+    def test_grid_frequency_above_90_is_corrupt(self) -> None:
+        """is_corrupt() returns True when grid_frequency > 90 Hz."""
+        data = MidboxRuntimeData(grid_frequency=255.0)
+        assert data.is_corrupt() is True
+
+    def test_smart_port_status_above_2_is_corrupt(self) -> None:
+        """is_corrupt() returns True when any smart_port_N_status > 2."""
+        data = MidboxRuntimeData(smart_port_1_status=7)
+        assert data.is_corrupt() is True
+
+    def test_smart_port_2_status_above_2_is_corrupt(self) -> None:
+        """is_corrupt() detects corruption on any of the four smart ports."""
+        data = MidboxRuntimeData(smart_port_2_status=5)
+        assert data.is_corrupt() is True
+
+    def test_smart_port_3_status_above_2_is_corrupt(self) -> None:
+        """is_corrupt() detects corruption on smart port 3."""
+        data = MidboxRuntimeData(smart_port_3_status=3)
+        assert data.is_corrupt() is True
+
+    def test_smart_port_4_status_above_2_is_corrupt(self) -> None:
+        """is_corrupt() detects corruption on smart port 4."""
+        data = MidboxRuntimeData(smart_port_4_status=4)
+        assert data.is_corrupt() is True
+
+    def test_all_none_fields_not_corrupt(self) -> None:
+        """is_corrupt() returns False when all fields are None (default construction)."""
+        data = MidboxRuntimeData()
+        assert data.is_corrupt() is False

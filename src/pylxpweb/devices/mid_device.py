@@ -168,7 +168,14 @@ class MIDDevice(FirmwareUpdateMixin, MIDRuntimePropertiesMixin, BaseDevice):
         try:
             if self._transport is not None and hasattr(self._transport, "read_midbox_runtime"):
                 read_midbox = self._transport.read_midbox_runtime
-                self._transport_runtime = await read_midbox()
+                runtime_data = await read_midbox()
+                if self.validate_data and runtime_data.is_corrupt():
+                    _LOGGER.warning(
+                        "Corrupt MID runtime for %s, keeping cached",
+                        self.serial_number,
+                    )
+                    return
+                self._transport_runtime = runtime_data
                 self._last_refresh = datetime.now()
                 _LOGGER.debug(
                     "Refreshed MID device %s via transport",

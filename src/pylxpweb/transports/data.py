@@ -199,10 +199,42 @@ class InverterRuntimeData:
     parallel_phase: int | None = None  # 0=R, 1=S, 2=T
     parallel_number: int | None = None  # unit ID in parallel system (0-255)
 
+    # Pre-clamp raw values for corruption detection (populated by __post_init__)
+    _raw_soc: int | None = field(default=None, repr=False)
+    _raw_soh: int | None = field(default=None, repr=False)
+
     def __post_init__(self) -> None:
         """Validate and clamp percentage values (if not None)."""
+        self._raw_soc = self.battery_soc
+        self._raw_soh = self.battery_soh
         self.battery_soc = _clamp_percentage(self.battery_soc, "battery_soc")
         self.battery_soh = _clamp_percentage(self.battery_soh, "battery_soh")
+
+    def is_corrupt(self) -> bool:
+        """Check if runtime data contains physically impossible values.
+
+        Returns True if any canary field indicates corrupted register data.
+        Canaries are deliberately conservative to avoid false positives:
+        - SoC/SoH > 100 (pre-clamp raw value)
+        - Grid frequency > 0 but outside 45-65 Hz (0 is valid in off-grid/EPS mode)
+        """
+        if self._raw_soc is not None and self._raw_soc > 100:
+            _LOGGER.debug("Canary: raw_soc=%d > 100", self._raw_soc)
+            return True
+        if self._raw_soh is not None and self._raw_soh > 100:
+            _LOGGER.debug("Canary: raw_soh=%d > 100", self._raw_soh)
+            return True
+        # Allow frequency=0 (off-grid/EPS mode) and None (not read yet).
+        # Wide 30-90 Hz band: corrupt reads produce wildly wrong values (e.g.
+        # 6553 Hz from 0xFFFF), not borderline deviations.
+        if (
+            self.grid_frequency is not None
+            and self.grid_frequency > 0
+            and (self.grid_frequency < 30 or self.grid_frequency > 90)
+        ):
+            _LOGGER.debug("Canary: grid_frequency=%.1f outside 30-90", self.grid_frequency)
+            return True
+        return False
 
     @classmethod
     def from_http_response(cls, runtime: InverterRuntime) -> InverterRuntimeData:
@@ -410,6 +442,15 @@ class InverterEnergyData:
     generator_energy_today: float | None = None  # kWh
     generator_energy_total: float | None = None  # kWh
 
+    def is_corrupt(self) -> bool:
+        """Check if energy data contains physically impossible values.
+
+        Energy registers have no strong physical-bounds canaries (all values
+        are monotonic counters or daily accumulations). Temporal validation
+        occurs in the coordinator Layer 3.
+        """
+        return False
+
     @classmethod
     def from_http_response(cls, energy: EnergyInfo) -> InverterEnergyData:
         """Create from HTTP API EnergyInfo response.
@@ -551,16 +592,41 @@ class BatteryData:
     fault_code: int = 0
     warning_code: int = 0
 
+    # Pre-clamp raw values for corruption detection (populated by __post_init__)
+    _raw_soc: int = field(default=0, repr=False)
+    _raw_soh: int = field(default=100, repr=False)
+
     def __post_init__(self) -> None:
         """Validate and clamp percentage values."""
-        # BatteryData uses non-nullable soc/soh (0 and 100 defaults)
-        # _clamp_percentage accepts int|None, so we need to explicitly handle the result
-        clamped_soc = _clamp_percentage(self.soc, "battery_soc")
-        if clamped_soc is not None:
-            self.soc = clamped_soc
-        clamped_soh = _clamp_percentage(self.soh, "battery_soh")
-        if clamped_soh is not None:
-            self.soh = clamped_soh
+        self._raw_soc = self.soc
+        self._raw_soh = self.soh
+        # soc/soh are non-nullable (defaults 0/100), so _clamp_percentage
+        # always returns a non-None int here.
+        self.soc = _clamp_percentage(self.soc, "battery_soc") or 0
+        self.soh = _clamp_percentage(self.soh, "battery_soh") or 100
+
+    def is_corrupt(self) -> bool:
+        """Check if battery data contains physically impossible values.
+
+        Returns True if any canary field indicates corrupted register data.
+        Canaries: SoC/SoH > 100 (raw pre-clamp), voltage > 100V (scaled;
+        catches catastrophic corruption like 0xFFFF → ~6553V).
+        Batteries with voltage=0 (no CAN data) are NOT corrupt — just absent.
+        """
+        if self._raw_soc > 100:
+            _LOGGER.debug("Battery %d canary: raw_soc=%d > 100", self.battery_index, self._raw_soc)
+            return True
+        if self._raw_soh > 100:
+            _LOGGER.debug("Battery %d canary: raw_soh=%d > 100", self.battery_index, self._raw_soh)
+            return True
+        if self.voltage > 100.0:
+            _LOGGER.debug(
+                "Battery %d canary: voltage=%.1f > 100V",
+                self.battery_index,
+                self.voltage,
+            )
+            return True
+        return False
 
     @property
     def remaining_capacity(self) -> float | None:
@@ -812,12 +878,41 @@ class BatteryBankData:
     battery_count: int | None = None
     batteries: list[BatteryData] = field(default_factory=list)
 
+    # Pre-clamp raw values for corruption detection (populated by __post_init__)
+    _raw_soc: int | None = field(default=None, repr=False)
+    _raw_soh: int | None = field(default=None, repr=False)
+
     def __post_init__(self) -> None:
         """Validate and clamp percentage values."""
+        self._raw_soc = self.soc
+        self._raw_soh = self.soh
         if self.soc is not None:
             self.soc = _clamp_percentage(self.soc, "battery_bank_soc")
         if self.soh is not None:
             self.soh = _clamp_percentage(self.soh, "battery_bank_soh")
+
+    def is_corrupt(self) -> bool:
+        """Check if battery bank data contains physically impossible values.
+
+        Returns True if aggregate SoC/SoH > 100 or any *present* individual
+        battery is corrupt.  Batteries with voltage=0 (no CAN bus data) are
+        skipped — they have no real data to validate.
+        """
+        if self._raw_soc is not None and self._raw_soc > 100:
+            _LOGGER.debug("Bank canary: raw_soc=%d > 100", self._raw_soc)
+            return True
+        if self._raw_soh is not None and self._raw_soh > 100:
+            _LOGGER.debug("Bank canary: raw_soh=%d > 100", self._raw_soh)
+            return True
+        # Only cascade to batteries that actually have CAN bus data.
+        # Ghost batteries (voltage=0, soc=0) from 5002+ register failures
+        # are not corrupt — just absent.
+        for b in self.batteries:
+            if b.voltage == 0 and b.soc == 0:
+                continue
+            if b.is_corrupt():
+                return True
+        return False
 
     @property
     def battery_power(self) -> float | None:
@@ -1188,6 +1283,33 @@ class MidboxRuntimeData:
     smart_load_3_energy_total_l2: float | None = None  # eSmartLoad3TotalL2
     smart_load_4_energy_total_l1: float | None = None  # eSmartLoad4TotalL1
     smart_load_4_energy_total_l2: float | None = None  # eSmartLoad4TotalL2
+
+    def is_corrupt(self) -> bool:
+        """Check if MID runtime data contains physically impossible values.
+
+        Returns True if any canary field indicates corrupted register data.
+        Canaries: grid frequency > 0 but outside 45-65 Hz, smart port status > 2.
+        """
+        if (
+            self.grid_frequency is not None
+            and self.grid_frequency > 0
+            and (self.grid_frequency < 30 or self.grid_frequency > 90)
+        ):
+            _LOGGER.debug("MID canary: grid_frequency=%.1f outside 30-90", self.grid_frequency)
+            return True
+        for i, sp in enumerate(
+            (
+                self.smart_port_1_status,
+                self.smart_port_2_status,
+                self.smart_port_3_status,
+                self.smart_port_4_status,
+            ),
+            start=1,
+        ):
+            if sp is not None and sp > 2:
+                _LOGGER.debug("MID canary: smart_port_%d_status=%d > 2", i, sp)
+                return True
+        return False
 
     # -------------------------------------------------------------------------
     # Computed totals (convenience) - returns None if any component is None

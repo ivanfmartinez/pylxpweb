@@ -262,7 +262,7 @@ class InverterModelInfo:
         return cls(raw_value=raw_value)
 
     @classmethod
-    def from_registers(cls, reg0: int, reg1: int) -> "InverterModelInfo":
+    def from_registers(cls, reg0: int, reg1: int) -> InverterModelInfo:
         """Create InverterModelInfo from raw Modbus holding registers 0-1.
 
         Decodes power_rating from the register bitfield. For EG4_HYBRID

@@ -80,6 +80,11 @@ class BaseDevice(ABC):
         # Local transport (Modbus/Dongle) - None means HTTP-only mode
         self._local_transport: InverterTransport | None = None
 
+        # Data validation: when True, corrupt transport reads are rejected
+        # and the previous cached value is kept instead. Set by coordinator
+        # from the CONF_DATA_VALIDATION option.
+        self.validate_data: bool = False
+
     @property
     def model(self) -> str:
         """Get device model name.
