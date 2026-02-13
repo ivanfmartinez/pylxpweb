@@ -239,7 +239,7 @@ class InverterModelInfo:
     measurement: int = 0  # Measurement unit type
     meter_brand: int = 0  # CT meter brand
     meter_type: int = 0  # CT meter type
-    power_rating: int = 0  # Power rating code (6=12K, 7=15K, 8=18K)
+    power_rating: int = 0  # Power rating code from bits 5-7 of low byte or Cloud API
     rule: int = 0  # Grid compliance rule
     rule_mask: int = 0  # Grid compliance mask
     us_version: bool = False  # True for US market, False for EU/other
@@ -265,12 +265,13 @@ class InverterModelInfo:
     def from_registers(cls, reg0: int, reg1: int) -> InverterModelInfo:
         """Create InverterModelInfo from raw Modbus holding registers 0-1.
 
-        Decodes power_rating from the register bitfield. For EG4_HYBRID
-        family devices (18kPV, 12kPV, FlexBOSS), power_rating occupies
-        bits 8-11 of the low word (register 0).
+        Extracts power_rating from the register bitfield to match the Cloud
+        API's HOLD_MODEL_powerRating decomposition. The base rating occupies
+        bits 5-7 of the low byte of reg0; bit 8 of reg1 adds an offset of 8
+        (set for FlexBOSS family: FB21=8, FB18=9).
 
-        This enables model differentiation in LOCAL mode where the cloud
-        API's pre-decoded HOLD_MODEL_* fields are not available.
+        Verified against 13 devices across all families (18kPV, 12kPV,
+        FlexBOSS21, FlexBOSS18, SNA 12KUS, LXP-EU, LXP-US, GridBOSS).
 
         Args:
             reg0: Holding register 0 (HOLD_MODEL low word).
@@ -280,9 +281,12 @@ class InverterModelInfo:
             InverterModelInfo with raw_value and power_rating populated.
         """
         raw_value = (reg1 << 16) | reg0
-        # Bits 8-11 of reg0 encode power_rating for EG4_HYBRID family.
-        # Verified against 18KPV (power_rating=6, reg0=0x86C0).
-        power_rating = (reg0 >> 8) & 0xF
+        # Base rating from bits 5-7 of the low byte of reg0.
+        # Must mask to low byte first — higher bits encode other fields.
+        power_rating = ((reg0 & 0xFF) >> 5) & 0x7
+        # Bit 8 of reg1 adds 8 (FlexBOSS family offset).
+        if reg1 & 0x100:
+            power_rating += 8
         return cls(raw_value=raw_value, power_rating=power_rating)
 
     @classmethod

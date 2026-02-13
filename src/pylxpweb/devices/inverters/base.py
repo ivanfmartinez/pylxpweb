@@ -359,7 +359,7 @@ class BaseInverter(FirmwareUpdateMixin, InverterRuntimePropertiesMixin, BaseDevi
                             model_params[0], model_params[1]
                         )
                         specific = model_info.get_model_name(device_type_code)
-                        if specific and not specific.startswith("Unknown"):
+                        if specific and "Unknown" not in specific:
                             detected_model = specific
                             _LOGGER.debug(
                                 "HOLD_MODEL for %s: %s (power_rating=%d)",
