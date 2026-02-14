@@ -468,6 +468,34 @@ class BatteryBank(BaseDevice):
     # ========== Current Properties ==========
 
     @property
+    def current(self) -> float | None:
+        """Get battery bank current in amps.
+
+        Positive = charging, negative = discharging.
+
+        Uses transport runtime data when available for real-time values,
+        falling back to parsing cloud API currentText/currentType.
+
+        Returns:
+            Current in amps, or None if not available.
+        """
+        val = self._get_transport_value("current")
+        if val is not None:
+            return float(val)
+
+        # Parse from cloud API currentText (e.g., "49.8A") + currentType
+        text = self.data.currentText
+        if text is None:
+            return None
+        try:
+            amps = float(text.rstrip("AaVvWw "))
+        except (ValueError, AttributeError):
+            return None
+        if self.data.currentType == "discharge":
+            amps = -amps
+        return amps
+
+    @property
     def current_text(self) -> str | None:
         """Get formatted current text.
 
