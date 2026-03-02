@@ -214,6 +214,15 @@ GRIDBOSS_FIELD: dict[str, str | None] = {
     "gen_l2_current": "gen_l2_current",
     "ups_l1_current": "ups_l1_current",
     "ups_l2_current": "ups_l2_current",
+    # Smart Port Current
+    "smart_port1_l1_current": "smart_port_1_l1_current",
+    "smart_port1_l2_current": "smart_port_1_l2_current",
+    "smart_port2_l1_current": "smart_port_2_l1_current",
+    "smart_port2_l2_current": "smart_port_2_l2_current",
+    "smart_port3_l1_current": "smart_port_3_l1_current",
+    "smart_port3_l2_current": "smart_port_3_l2_current",
+    "smart_port4_l1_current": "smart_port_4_l1_current",
+    "smart_port4_l2_current": "smart_port_4_l2_current",
     # Power
     "grid_l1_power": "grid_l1_power",
     "grid_l2_power": "grid_l2_power",

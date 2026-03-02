@@ -85,6 +85,16 @@ class MIDRuntimePropertiesMixin:
             return None
         return cast("int | None", getattr(self._runtime.midboxData, http_attr, None))
 
+    def _transport_float(self, attr: str) -> float | None:
+        """Get a float value from transport data only (no HTTP fallback).
+
+        Used for Modbus-only sensors that have no cloud API equivalent.
+        """
+        tr = self._transport_runtime
+        if tr is None:
+            return None
+        return cast("float | None", getattr(tr, attr, None))
+
     # ===========================================
     # Smart Port Power Helper
     # ===========================================
@@ -372,6 +382,51 @@ class MIDRuntimePropertiesMixin:
     def smart_port4_status(self) -> int | None:
         """Get smart port 4 status."""
         return self._raw_int("smart_port_4_status", "smartPort4Status")
+
+    # ===========================================
+    # Current Properties - Smart Ports 1-4
+    # Modbus-only: no cloud API fields for these.
+    # ===========================================
+
+    @property
+    def smart_port1_l1_current(self) -> float | None:
+        """Get Smart Port 1 L1 RMS current in amps."""
+        return self._transport_float("smart_port_1_l1_current")
+
+    @property
+    def smart_port1_l2_current(self) -> float | None:
+        """Get Smart Port 1 L2 RMS current in amps."""
+        return self._transport_float("smart_port_1_l2_current")
+
+    @property
+    def smart_port2_l1_current(self) -> float | None:
+        """Get Smart Port 2 L1 RMS current in amps."""
+        return self._transport_float("smart_port_2_l1_current")
+
+    @property
+    def smart_port2_l2_current(self) -> float | None:
+        """Get Smart Port 2 L2 RMS current in amps."""
+        return self._transport_float("smart_port_2_l2_current")
+
+    @property
+    def smart_port3_l1_current(self) -> float | None:
+        """Get Smart Port 3 L1 RMS current in amps."""
+        return self._transport_float("smart_port_3_l1_current")
+
+    @property
+    def smart_port3_l2_current(self) -> float | None:
+        """Get Smart Port 3 L2 RMS current in amps."""
+        return self._transport_float("smart_port_3_l2_current")
+
+    @property
+    def smart_port4_l1_current(self) -> float | None:
+        """Get Smart Port 4 L1 RMS current in amps."""
+        return self._transport_float("smart_port_4_l1_current")
+
+    @property
+    def smart_port4_l2_current(self) -> float | None:
+        """Get Smart Port 4 L2 RMS current in amps."""
+        return self._transport_float("smart_port_4_l2_current")
 
     # ===========================================
     # Power Properties - Smart Load 1

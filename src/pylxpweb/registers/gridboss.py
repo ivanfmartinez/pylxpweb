@@ -295,6 +295,83 @@ GRIDBOSS_REGISTERS: tuple[GridBossRegisterDefinition, ...] = (
         description="UPS L2 output RMS current.",
     ),
     # =========================================================================
+    # SMART PORT CURRENT (regs 18-25, ÷10 → A)
+    # Per-port L1/L2 current for all 4 smart ports.
+    # When port is in AC Couple mode (status=2), these show AC couple current.
+    # =========================================================================
+    GridBossRegisterDefinition(
+        address=18,
+        canonical_name="smart_port1_l1_current",
+        ha_sensor_key="smart_port1_current_l1",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 1, L1 RMS current.",
+    ),
+    GridBossRegisterDefinition(
+        address=19,
+        canonical_name="smart_port1_l2_current",
+        ha_sensor_key="smart_port1_current_l2",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 1, L2 RMS current.",
+    ),
+    GridBossRegisterDefinition(
+        address=20,
+        canonical_name="smart_port2_l1_current",
+        ha_sensor_key="smart_port2_current_l1",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 2, L1 RMS current.",
+    ),
+    GridBossRegisterDefinition(
+        address=21,
+        canonical_name="smart_port2_l2_current",
+        ha_sensor_key="smart_port2_current_l2",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 2, L2 RMS current.",
+    ),
+    GridBossRegisterDefinition(
+        address=22,
+        canonical_name="smart_port3_l1_current",
+        ha_sensor_key="smart_port3_current_l1",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 3, L1 RMS current.",
+    ),
+    GridBossRegisterDefinition(
+        address=23,
+        canonical_name="smart_port3_l2_current",
+        ha_sensor_key="smart_port3_current_l2",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 3, L2 RMS current.",
+    ),
+    GridBossRegisterDefinition(
+        address=24,
+        canonical_name="smart_port4_l1_current",
+        ha_sensor_key="smart_port4_current_l1",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 4, L1 RMS current.",
+    ),
+    GridBossRegisterDefinition(
+        address=25,
+        canonical_name="smart_port4_l2_current",
+        ha_sensor_key="smart_port4_current_l2",
+        scale=ScaleFactor.DIV_10,
+        unit="A",
+        category=GridBossCategory.CURRENT,
+        description="Smart port 4, L2 RMS current.",
+    ),
+    # =========================================================================
     # POWER (regs 26-33, signed, W — no scaling)
     # =========================================================================
     GridBossRegisterDefinition(

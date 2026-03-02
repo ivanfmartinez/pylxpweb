@@ -1429,6 +1429,21 @@ class MidboxRuntimeData:
     hybrid_power: float | None = None  # hybridPower (total AC couple power flow)
 
     # -------------------------------------------------------------------------
+    # Smart Port Current (A, unsigned)
+    # Per-port L1/L2 current for all 4 smart ports.
+    # When port is in AC Couple mode (status=2), these show AC couple current.
+    # Modbus-only: no corresponding cloud API fields.
+    # -------------------------------------------------------------------------
+    smart_port_1_l1_current: float | None = None
+    smart_port_1_l2_current: float | None = None
+    smart_port_2_l1_current: float | None = None
+    smart_port_2_l2_current: float | None = None
+    smart_port_3_l1_current: float | None = None
+    smart_port_3_l2_current: float | None = None
+    smart_port_4_l1_current: float | None = None
+    smart_port_4_l2_current: float | None = None
+
+    # -------------------------------------------------------------------------
     # Smart Load Power (W, signed)
     # When port is in AC Couple mode (status=2), these show AC Couple power
     # -------------------------------------------------------------------------
