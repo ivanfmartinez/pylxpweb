@@ -72,7 +72,8 @@ def _signed_int16(raw: int) -> int:
     Returns:
         Signed integer in range [-32768, 32767].
     """
-    return struct.unpack("h", struct.pack("H", raw & 0xFFFF))[0]
+    result: int = struct.unpack("h", struct.pack("H", raw & 0xFFFF))[0]
+    return result
 
 
 class EG4SlaveProtocol(BatteryProtocol):
