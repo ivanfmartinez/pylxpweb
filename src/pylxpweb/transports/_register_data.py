@@ -157,36 +157,28 @@ class RegisterDataMixin(_DataMixinBase):
             Dict of address→value for all accumulated batteries, or *None*
             if the read failed (no usable data).
         """
-        ceiling: int = getattr(self, "_battery_slot_ceiling", BATTERY_MAX_COUNT)
-        batteries_to_read = min(battery_count, ceiling)
+        batteries_to_read = min(battery_count, BATTERY_MAX_COUNT)
 
         if batteries_to_read <= 0:
             return None
 
         total_registers = batteries_to_read * BATTERY_REGISTER_COUNT
         _LOGGER.debug(
-            "[%s] Reading %d battery slots (%d regs) in single read (battery_count=%d, ceiling=%d)",
+            "[%s] Reading %d battery slots (%d regs) in single read (battery_count=%d)",
             self._serial,
             batteries_to_read,
             total_registers,
             battery_count,
-            ceiling,
         )
 
         try:
             values = await self._read_input_registers(BATTERY_BASE_ADDRESS, total_registers)
         except Exception:
             _LOGGER.warning(
-                "[%s] Failed to read battery registers %d-%d",
+                "[%s] Failed to read battery registers %d-%d, will retry next poll",
                 self._serial,
                 BATTERY_BASE_ADDRESS,
                 BATTERY_BASE_ADDRESS + total_registers - 1,
-            )
-            self._battery_slot_ceiling = 0
-            _LOGGER.info(
-                "[%s] Battery slot ceiling lowered from %d to 0",
-                self._serial,
-                ceiling,
             )
             return None
 

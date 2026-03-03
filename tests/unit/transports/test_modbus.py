@@ -773,17 +773,16 @@ class TestReadAllInputData:
 
 
 class TestAdaptiveBatterySlotCeiling:
-    """Tests for the adaptive slot ceiling with atomic battery reads.
+    """Tests for the atomic battery read with retry-on-failure behavior.
 
     Since v0.9.13 (#170), all battery slots are read in a single atomic
-    Modbus FC 04 call.  If the read fails, the ceiling drops to 0 so
-    subsequent polls skip battery registers entirely.  The ceiling
-    resets when the transport reconnects.
+    Modbus FC 04 call.  If the read fails, the function returns None for
+    that poll and retries on the next poll (no permanent disable).
     """
 
     @pytest.mark.asyncio
-    async def test_ceiling_drops_to_zero_on_failure(self) -> None:
-        """Atomic read failure sets ceiling to 0 and returns None."""
+    async def test_read_failure_returns_none(self) -> None:
+        """Atomic read failure returns None without permanently disabling reads."""
         transport = ModbusTransport(
             host="192.168.1.100",
             serial="CE12345678",
@@ -811,14 +810,15 @@ class TestAdaptiveBatterySlotCeiling:
             await transport.connect()
 
             # battery_count=12 capped at 4 (MAX_COUNT), single read of
-            # 120 regs fails -> ceiling drops to 0
+            # 120 regs fails -> returns None for this poll
             result = await transport._read_individual_battery_registers(12)
             assert result is None
-            assert transport._battery_slot_ceiling == 0
+            # No permanent state is set — no _battery_slot_ceiling attribute
+            assert not hasattr(transport, "_battery_slot_ceiling")
 
     @pytest.mark.asyncio
-    async def test_ceiling_prevents_retry_on_subsequent_polls(self) -> None:
-        """After ceiling drops to 0, battery reads are skipped entirely."""
+    async def test_read_retried_on_subsequent_polls(self) -> None:
+        """After a read failure, subsequent polls retry the battery registers."""
         transport = ModbusTransport(
             host="192.168.1.100",
             serial="CE12345678",
@@ -845,16 +845,17 @@ class TestAdaptiveBatterySlotCeiling:
 
             await transport.connect()
 
-            # First call: fails, ceiling drops to 0
+            # First call: fails
             await transport._read_individual_battery_registers(12)
             first_call_addrs = list(read_addresses)
 
-            # Second call: ceiling=0, returns None immediately without reading
+            # Second call: should retry (attempt read again), not skip
             read_addresses.clear()
             result = await transport._read_individual_battery_registers(12)
             assert result is None
-            assert len(read_addresses) == 0  # no reads attempted
-            assert 5002 in first_call_addrs  # first call did attempt
+            # Verify a retry was attempted (5002 was read again)
+            assert 5002 in read_addresses
+            assert 5002 in first_call_addrs
 
     @pytest.mark.asyncio
     async def test_successful_atomic_read(self) -> None:
