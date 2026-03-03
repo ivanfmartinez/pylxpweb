@@ -10,12 +10,16 @@ Register layout:
 
 from __future__ import annotations
 
-import struct
-
 from pylxpweb.constants.scaling import ScaleFactor
 from pylxpweb.transports.data import BatteryData
 
-from .base import BatteryProtocol, BatteryRegister, BatteryRegisterBlock
+from .base import (
+    BatteryProtocol,
+    BatteryRegister,
+    BatteryRegisterBlock,
+    decode_ascii,
+    signed_int16,
+)
 
 # Runtime registers (0-38)
 _RUNTIME_REGISTERS = (
@@ -44,38 +48,6 @@ _RUNTIME_BLOCK = BatteryRegisterBlock(start=0, count=39, registers=_RUNTIME_REGI
 _INFO_BLOCK = BatteryRegisterBlock(start=105, count=23, registers=())
 
 
-def _decode_ascii(registers: dict[int, int], start: int, count: int) -> str:
-    """Decode register values as ASCII (high byte, low byte per register).
-
-    Args:
-        registers: Dict mapping register address to raw 16-bit value.
-        start: First register address to decode.
-        count: Number of registers to decode.
-
-    Returns:
-        Decoded ASCII string with null bytes and whitespace stripped.
-    """
-    raw_bytes = bytearray()
-    for i in range(count):
-        val = registers.get(start + i, 0)
-        raw_bytes.append((val >> 8) & 0xFF)
-        raw_bytes.append(val & 0xFF)
-    return raw_bytes.decode("ascii", errors="replace").replace("\x00", "").strip()
-
-
-def _signed_int16(raw: int) -> int:
-    """Interpret a raw unsigned 16-bit value as signed int16.
-
-    Args:
-        raw: Unsigned 16-bit register value.
-
-    Returns:
-        Signed integer in range [-32768, 32767].
-    """
-    result: int = struct.unpack("h", struct.pack("H", raw & 0xFFFF))[0]
-    return result
-
-
 class EG4SlaveProtocol(BatteryProtocol):
     """Standard EG4-LL register map for slave batteries (unit ID 2+).
 
@@ -96,41 +68,26 @@ class EG4SlaveProtocol(BatteryProtocol):
         Returns:
             BatteryData with all values properly scaled.
         """
-        # Voltage (reg 0): /100
-        voltage = self.decode_register(
-            BatteryRegister(0, "voltage", ScaleFactor.SCALE_100, unit="V"),
-            raw_regs.get(0, 0),
-        )
+        voltage_reg = self._reg("voltage")
+        current_reg = self._reg("current")
+        capacity_reg = self._reg("designed_capacity")
 
-        # Current (reg 1): /100, signed
-        current = self.decode_register(
-            BatteryRegister(1, "current", ScaleFactor.SCALE_100, signed=True, unit="A"),
-            raw_regs.get(1, 0),
-        )
+        voltage = self.decode_register(voltage_reg, raw_regs.get(voltage_reg.address, 0))
+        current = self.decode_register(current_reg, raw_regs.get(current_reg.address, 0))
 
-        # Number of cells (reg 36)
         num_cells = raw_regs.get(36, 0)
+        cell_voltages, min_cell_v, max_cell_v = self.decode_cell_voltages(
+            raw_regs, start_address=2, num_cells=num_cells
+        )
 
-        # Cell voltages (regs 2-17): /1000
-        cell_voltages = [raw_regs.get(2 + i, 0) / 1000.0 for i in range(num_cells)]
-        non_zero_cells = [v for v in cell_voltages if v > 0]
+        pcb_temp = signed_int16(raw_regs.get(18, 0))
+        max_temp = signed_int16(raw_regs.get(20, 0))
 
-        # Temperatures (signed): PCB=reg18, avg=reg19, max=reg20
-        pcb_temp = _signed_int16(raw_regs.get(18, 0))
-        max_temp = _signed_int16(raw_regs.get(20, 0))
-
-        # SOC (reg 24) and SOH (reg 23): direct, no scaling
         soc = raw_regs.get(24, 0)
         soh = raw_regs.get(23, 100)
-
-        # Remaining capacity (reg 21): direct Ah
         remaining_capacity = float(raw_regs.get(21, 0))
-
-        # Max charge current (reg 22): direct A
         max_charge_current = float(raw_regs.get(22, 0))
-
-        # Designed capacity (reg 37): /10
-        max_capacity = raw_regs.get(37, 0) / 10.0
+        max_capacity = self.decode_register(capacity_reg, raw_regs.get(capacity_reg.address, 0))
 
         # Cycle count (regs 29-30): 32-bit big-endian
         cycle_count = (raw_regs.get(29, 0) << 16) | raw_regs.get(30, 0)
@@ -141,9 +98,9 @@ class EG4SlaveProtocol(BatteryProtocol):
         fault = raw_regs.get(27, 0)
 
         # Device info (if available in register map)
-        model = _decode_ascii(raw_regs, 105, 12)
-        firmware = _decode_ascii(raw_regs, 117, 3)
-        serial = _decode_ascii(raw_regs, 120, 8)
+        model = decode_ascii(raw_regs, 105, 12)
+        firmware = decode_ascii(raw_regs, 117, 3)
+        serial = decode_ascii(raw_regs, 120, 8)
 
         return BatteryData(
             battery_index=battery_index,
@@ -158,8 +115,8 @@ class EG4SlaveProtocol(BatteryProtocol):
             cycle_count=cycle_count,
             cell_count=num_cells,
             cell_voltages=cell_voltages,
-            min_cell_voltage=min(non_zero_cells) if non_zero_cells else 0.0,
-            max_cell_voltage=max(non_zero_cells) if non_zero_cells else 0.0,
+            min_cell_voltage=min_cell_v,
+            max_cell_voltage=max_cell_v,
             min_cell_temperature=float(pcb_temp),
             max_cell_temperature=float(max_temp),
             charge_current_limit=max_charge_current,

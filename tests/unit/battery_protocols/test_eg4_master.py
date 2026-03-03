@@ -13,7 +13,7 @@ import pytest
 from pylxpweb.battery_protocols.eg4_master import EG4MasterProtocol
 
 
-def _signed16(value: int) -> int:
+def _to_unsigned16(value: int) -> int:
     """Convert signed int16 to unsigned for raw register simulation."""
     return struct.unpack("H", struct.pack("h", value))[0]
 
@@ -42,7 +42,7 @@ class TestEG4MasterProtocol:
     def test_decode_aggregate_current(self) -> None:
         """Aggregate current: reg 23 /100, signed."""
         raw = self._base_regs()
-        raw[23] = _signed16(-3080)
+        raw[23] = _to_unsigned16(-3080)
         data = self.protocol.decode(raw)
         assert data.current == pytest.approx(-30.80)
 
@@ -119,7 +119,7 @@ class TestEG4MasterProtocol:
     def test_decode_negative_temperature(self) -> None:
         """Temperature can be negative (signed int16)."""
         raw = self._base_regs()
-        raw[24] = _signed16(-5)
+        raw[24] = _to_unsigned16(-5)
         data = self.protocol.decode(raw)
         assert data.temperature == -5.0
 

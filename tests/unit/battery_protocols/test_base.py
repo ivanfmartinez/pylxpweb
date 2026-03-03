@@ -10,6 +10,8 @@ from pylxpweb.battery_protocols.base import (
     BatteryProtocol,
     BatteryRegister,
     BatteryRegisterBlock,
+    decode_ascii,
+    signed_int16,
 )
 from pylxpweb.constants.scaling import ScaleFactor
 
@@ -61,6 +63,46 @@ class TestBatteryRegisterBlock:
         assert len(block.registers) == 2
 
 
+class TestSignedInt16:
+    """Tests for the signed_int16 utility function."""
+
+    def test_positive_value(self) -> None:
+        assert signed_int16(100) == 100
+
+    def test_negative_value(self) -> None:
+        raw = struct.unpack("H", struct.pack("h", -5))[0]
+        assert signed_int16(raw) == -5
+
+    def test_zero(self) -> None:
+        assert signed_int16(0) == 0
+
+    def test_max_positive(self) -> None:
+        assert signed_int16(32767) == 32767
+
+    def test_min_negative(self) -> None:
+        assert signed_int16(32768) == -32768
+
+
+class TestDecodeAscii:
+    """Tests for the decode_ascii utility function."""
+
+    def test_basic_string(self) -> None:
+        regs = {0: 0x4142, 1: 0x4344}  # "ABCD"
+        assert decode_ascii(regs, 0, 2) == "ABCD"
+
+    def test_with_null_bytes(self) -> None:
+        regs = {0: 0x4142, 1: 0x0000}  # "AB\x00\x00"
+        assert decode_ascii(regs, 0, 2) == "AB"
+
+    def test_missing_registers(self) -> None:
+        regs: dict[int, int] = {}
+        assert decode_ascii(regs, 0, 2) == ""
+
+    def test_offset_start(self) -> None:
+        regs = {105: 0x4547, 106: 0x342D}  # "EG4-"
+        assert decode_ascii(regs, 105, 2) == "EG4-"
+
+
 class TestBatteryProtocol:
     """Tests for BatteryProtocol base class."""
 
@@ -89,3 +131,63 @@ class TestBatteryProtocol:
         reg = BatteryRegister(address=41, name="num_cells", scale=ScaleFactor.SCALE_NONE)
         result = BatteryProtocol.decode_register(reg, 16)
         assert result == 16.0
+
+
+class TestDecodeCellVoltages:
+    """Tests for BatteryProtocol.decode_cell_voltages."""
+
+    def test_basic_cells(self) -> None:
+        raw = {2: 3310, 3: 3320, 4: 3330, 5: 3340}
+        cells, min_v, max_v = BatteryProtocol.decode_cell_voltages(
+            raw, start_address=2, num_cells=4
+        )
+        assert len(cells) == 4
+        assert cells[0] == pytest.approx(3.310)
+        assert cells[3] == pytest.approx(3.340)
+        assert min_v == pytest.approx(3.310)
+        assert max_v == pytest.approx(3.340)
+
+    def test_zero_cells(self) -> None:
+        raw: dict[int, int] = {}
+        cells, min_v, max_v = BatteryProtocol.decode_cell_voltages(
+            raw, start_address=2, num_cells=0
+        )
+        assert cells == []
+        assert min_v == 0.0
+        assert max_v == 0.0
+
+    def test_all_zero_values(self) -> None:
+        raw = {2: 0, 3: 0, 4: 0}
+        cells, min_v, max_v = BatteryProtocol.decode_cell_voltages(
+            raw, start_address=2, num_cells=3
+        )
+        assert len(cells) == 3
+        assert min_v == 0.0
+        assert max_v == 0.0
+
+    def test_offset_start_address(self) -> None:
+        raw = {113: 3308, 114: 3310}
+        cells, min_v, max_v = BatteryProtocol.decode_cell_voltages(
+            raw, start_address=113, num_cells=2
+        )
+        assert cells[0] == pytest.approx(3.308)
+        assert cells[1] == pytest.approx(3.310)
+
+
+class TestRegLookup:
+    """Tests for BatteryProtocol._reg name-based lookup."""
+
+    def test_lookup_existing(self) -> None:
+        from pylxpweb.battery_protocols.eg4_slave import EG4SlaveProtocol
+
+        proto = EG4SlaveProtocol()
+        reg = proto._reg("voltage")
+        assert reg.address == 0
+        assert reg.scale == ScaleFactor.SCALE_100
+
+    def test_lookup_missing_raises(self) -> None:
+        from pylxpweb.battery_protocols.eg4_slave import EG4SlaveProtocol
+
+        proto = EG4SlaveProtocol()
+        with pytest.raises(KeyError, match="nonexistent"):
+            proto._reg("nonexistent")

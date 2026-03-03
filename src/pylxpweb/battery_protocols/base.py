@@ -9,6 +9,38 @@ from pylxpweb.constants.scaling import ScaleFactor, apply_scale
 from pylxpweb.transports.data import BatteryData
 
 
+def signed_int16(raw: int) -> int:
+    """Interpret a raw unsigned 16-bit value as signed int16.
+
+    Args:
+        raw: Unsigned 16-bit register value.
+
+    Returns:
+        Signed integer in range [-32768, 32767].
+    """
+    result: int = struct.unpack("h", struct.pack("H", raw & 0xFFFF))[0]
+    return result
+
+
+def decode_ascii(registers: dict[int, int], start: int, count: int) -> str:
+    """Decode register values as ASCII (high byte, low byte per register).
+
+    Args:
+        registers: Dict mapping register address to raw 16-bit value.
+        start: First register address to decode.
+        count: Number of registers to decode.
+
+    Returns:
+        Decoded ASCII string with null bytes and whitespace stripped.
+    """
+    raw_bytes = bytearray()
+    for i in range(count):
+        val = registers.get(start + i, 0)
+        raw_bytes.append((val >> 8) & 0xFF)
+        raw_bytes.append(val & 0xFF)
+    return raw_bytes.decode("ascii", errors="replace").replace("\x00", "").strip()
+
+
 @dataclass(frozen=True)
 class BatteryRegister:
     """Single register field definition.
@@ -18,7 +50,7 @@ class BatteryRegister:
         name: Canonical field name (e.g. "voltage", "current").
         scale: How to convert raw 16-bit value to real units.
         signed: If True, interpret raw value as signed int16.
-        unit: Display unit string ("V", "A", "°C", "%").
+        unit: Display unit string ("V", "A", "deg-C", "%").
     """
 
     address: int
@@ -65,8 +97,49 @@ class BatteryProtocol:
             Scaled float value in proper units.
         """
         if reg.signed:
-            raw_value = struct.unpack("h", struct.pack("H", raw_value & 0xFFFF))[0]
+            raw_value = signed_int16(raw_value)
         return apply_scale(raw_value, reg.scale)
+
+    @staticmethod
+    def decode_cell_voltages(
+        raw_regs: dict[int, int],
+        start_address: int,
+        num_cells: int,
+    ) -> tuple[list[float], float, float]:
+        """Decode cell voltages from contiguous registers at /1000 scaling.
+
+        Args:
+            raw_regs: Dict mapping register address to raw 16-bit value.
+            start_address: Register address of the first cell voltage.
+            num_cells: Number of cells to decode.
+
+        Returns:
+            Tuple of (cell_voltages, min_cell_voltage, max_cell_voltage).
+            Min/max are 0.0 if no non-zero cells exist.
+        """
+        cell_voltages = [raw_regs.get(start_address + i, 0) / 1000.0 for i in range(num_cells)]
+        non_zero_cells = [v for v in cell_voltages if v > 0]
+        min_v = min(non_zero_cells) if non_zero_cells else 0.0
+        max_v = max(non_zero_cells) if non_zero_cells else 0.0
+        return cell_voltages, min_v, max_v
+
+    def _reg(self, name: str) -> BatteryRegister:
+        """Look up a register definition by name across all blocks.
+
+        Args:
+            name: Canonical register name (e.g. "voltage", "current").
+
+        Returns:
+            The matching BatteryRegister.
+
+        Raises:
+            KeyError: If no register with that name is found.
+        """
+        for block in self.register_blocks:
+            for reg in block.registers:
+                if reg.name == name:
+                    return reg
+        raise KeyError(f"No register named '{name}' in {self.name} protocol")
 
     def decode(self, raw_regs: dict[int, int], battery_index: int = 0) -> BatteryData:
         """Decode raw registers into a BatteryData object.

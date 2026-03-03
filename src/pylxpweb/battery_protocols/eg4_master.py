@@ -18,12 +18,15 @@ Key differences from slave protocol:
 
 from __future__ import annotations
 
-import struct
-
 from pylxpweb.constants.scaling import ScaleFactor
 from pylxpweb.transports.data import BatteryData
 
-from .base import BatteryProtocol, BatteryRegister, BatteryRegisterBlock
+from .base import (
+    BatteryProtocol,
+    BatteryRegister,
+    BatteryRegisterBlock,
+    signed_int16,
+)
 
 # Runtime registers (19-41)
 _RUNTIME_REGISTERS = (
@@ -50,19 +53,6 @@ _RUNTIME_BLOCK = BatteryRegisterBlock(start=19, count=23, registers=_RUNTIME_REG
 _CELL_BLOCK = BatteryRegisterBlock(start=113, count=16, registers=())
 
 
-def _signed_int16(raw: int) -> int:
-    """Interpret a raw unsigned 16-bit value as signed int16.
-
-    Args:
-        raw: Unsigned 16-bit register value.
-
-    Returns:
-        Signed integer in range [-32768, 32767].
-    """
-    result: int = struct.unpack("h", struct.pack("H", raw & 0xFFFF))[0]
-    return result
-
-
 class EG4MasterProtocol(BatteryProtocol):
     """Firmware-derived register map for master battery (unit ID 1).
 
@@ -86,46 +76,33 @@ class EG4MasterProtocol(BatteryProtocol):
         Returns:
             BatteryData with all values properly scaled.
         """
-        # Voltage: reg 22 /100
-        voltage = self.decode_register(
-            BatteryRegister(22, "voltage", ScaleFactor.SCALE_100, unit="V"),
-            raw_regs.get(22, 0),
-        )
+        voltage_reg = self._reg("voltage")
+        current_reg = self._reg("current")
+        max_cell_reg = self._reg("max_cell_voltage")
+        min_cell_reg = self._reg("min_cell_voltage")
 
-        # Current: reg 23 /100, signed (AGGREGATE across all batteries)
-        current = self.decode_register(
-            BatteryRegister(23, "current", ScaleFactor.SCALE_100, signed=True, unit="A"),
-            raw_regs.get(23, 0),
-        )
+        voltage = self.decode_register(voltage_reg, raw_regs.get(voltage_reg.address, 0))
+        current = self.decode_register(current_reg, raw_regs.get(current_reg.address, 0))
 
-        # Temperature: reg 24, direct (max across all batteries), signed
-        temperature = float(_signed_int16(raw_regs.get(24, 0)))
+        temperature = float(signed_int16(raw_regs.get(24, 0)))
 
         # SOC: reg 26 /10, truncate to int
-        soc_raw = raw_regs.get(26, 0)
-        soc = int(soc_raw / 10.0)
-
-        # SOH: reg 32, direct
+        soc = int(raw_regs.get(26, 0) / 10.0)
         soh = raw_regs.get(32, 100)
-
-        # Cycle count: reg 30, direct (max across all batteries)
         cycle_count = raw_regs.get(30, 0)
 
-        # Designed capacity: reg 33 /20
+        # Designed capacity: reg 33 /20 (unique to master protocol)
         max_capacity = raw_regs.get(33, 0) / 20.0
 
-        # Number of cells: reg 41
         num_cells = raw_regs.get(41, 0)
+        cell_voltages, fallback_min, fallback_max = self.decode_cell_voltages(
+            raw_regs, start_address=113, num_cells=num_cells
+        )
 
-        # Cell voltages: regs 113-128, /1000
-        cell_voltages = [raw_regs.get(113 + i, 0) / 1000.0 for i in range(num_cells)]
-        non_zero_cells = [v for v in cell_voltages if v > 0]
+        # Prefer dedicated max/min cell voltage registers; fall back to computed values
+        max_cell_v = self.decode_register(max_cell_reg, raw_regs.get(max_cell_reg.address, 0))
+        min_cell_v = self.decode_register(min_cell_reg, raw_regs.get(min_cell_reg.address, 0))
 
-        # Max/min cell voltage: regs 37/38 /1000
-        max_cell_v = raw_regs.get(37, 0) / 1000.0
-        min_cell_v = raw_regs.get(38, 0) / 1000.0
-
-        # Max/min cell index: regs 39/40, 0-based -> 1-based for BatteryData
         max_cell_index = raw_regs.get(39, 0)
         min_cell_index = raw_regs.get(40, 0)
 
@@ -151,12 +128,8 @@ class EG4MasterProtocol(BatteryProtocol):
             cycle_count=cycle_count,
             cell_count=num_cells,
             cell_voltages=cell_voltages,
-            min_cell_voltage=(
-                min_cell_v if min_cell_v > 0 else (min(non_zero_cells) if non_zero_cells else 0.0)
-            ),
-            max_cell_voltage=(
-                max_cell_v if max_cell_v > 0 else (max(non_zero_cells) if non_zero_cells else 0.0)
-            ),
+            min_cell_voltage=min_cell_v if min_cell_v > 0 else fallback_min,
+            max_cell_voltage=max_cell_v if max_cell_v > 0 else fallback_max,
             min_cell_temperature=temperature,
             max_cell_temperature=temperature,
             max_cell_num_voltage=max_cell_index + 1 if max_cell_index > 0 or num_cells > 0 else 0,
